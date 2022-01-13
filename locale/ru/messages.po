@@ -1,0 +1,450 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the PACKAGE package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2022-01-13 12:16+0300\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=koi8-r\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: cmdlnopts.c:68
+msgid "camera device type (fli/zwo/etc)"
+msgstr ""
+
+#: cmdlnopts.c:69
+msgid "focuser device type (fli/zwo/etc)"
+msgstr ""
+
+#: cmdlnopts.c:70
+msgid "wheel device type (fli/zwo/etc)"
+msgstr ""
+
+#: cmdlnopts.c:71
+msgid "camera device number (if many: 0, 1, 2 etc)"
+msgstr ""
+
+#: cmdlnopts.c:72
+msgid "filter wheel device number (if many: 0, 1, 2 etc)"
+msgstr ""
+
+#: cmdlnopts.c:73
+msgid "focuser device number (if many: 0, 1, 2 etc)"
+msgstr ""
+
+#: cmdlnopts.c:74
+msgid "show this help"
+msgstr ""
+
+#: cmdlnopts.c:75
+msgid "rewrite output file if exists"
+msgstr ""
+
+#: cmdlnopts.c:76
+msgid "verbose level (each -v increase it)"
+msgstr ""
+
+#: cmdlnopts.c:77
+msgid "not open shutter, when exposing (\"dark frames\")"
+msgstr ""
+
+#: cmdlnopts.c:78
+msgid "run in 8-bit mode"
+msgstr ""
+
+#: cmdlnopts.c:79
+msgid "fast (8MHz) readout mode"
+msgstr ""
+
+#: cmdlnopts.c:80
+msgid "set CCD temperature to given value (degr C)"
+msgstr ""
+
+#: cmdlnopts.c:81
+msgid "set fan speed (0 - off, 1 - low, 2 - high)"
+msgstr ""
+
+#: cmdlnopts.c:83
+msgid "program author"
+msgstr ""
+
+#: cmdlnopts.c:84
+msgid "object type (neon, object, flat etc)"
+msgstr ""
+
+#: cmdlnopts.c:85
+msgid "instrument name"
+msgstr ""
+
+#: cmdlnopts.c:86
+msgid "object name"
+msgstr ""
+
+#: cmdlnopts.c:87
+msgid "observers' names"
+msgstr ""
+
+#: cmdlnopts.c:88
+msgid "observing program name"
+msgstr ""
+
+#: cmdlnopts.c:89
+msgid "add records to header from given file[s]"
+msgstr ""
+
+#: cmdlnopts.c:91
+msgid "N flushes before exposing (default: 1)"
+msgstr ""
+
+#: cmdlnopts.c:92
+msgid "horizontal binning to N pixels"
+msgstr ""
+
+#: cmdlnopts.c:93
+msgid "vertical binning to N pixels"
+msgstr ""
+
+#: cmdlnopts.c:94
+msgid "make series of N frames"
+msgstr ""
+
+#: cmdlnopts.c:95
+msgid "make pause for N seconds between expositions"
+msgstr ""
+
+#: cmdlnopts.c:96
+msgid "set exposure time to given value (ms)"
+msgstr ""
+
+#: cmdlnopts.c:97
+msgid "frame X0 coordinate (-1 - all with overscan)"
+msgstr ""
+
+#: cmdlnopts.c:98
+msgid "frame Y0 coordinate (-1 - all with overscan)"
+msgstr ""
+
+#: cmdlnopts.c:99
+msgid "frame X1 coordinate (-1 - all with overscan)"
+msgstr ""
+
+#: cmdlnopts.c:100
+msgid "frame Y1 coordinate (-1 - all with overscan)"
+msgstr ""
+
+#: cmdlnopts.c:101
+msgid "grab full frame (with overscans)"
+msgstr ""
+
+#: cmdlnopts.c:103
+msgid "open shutter"
+msgstr ""
+
+#: cmdlnopts.c:104
+msgid "close shutter"
+msgstr ""
+
+#: cmdlnopts.c:105
+msgid "run exposition on LOW @ pin5 I/O port"
+msgstr ""
+
+#: cmdlnopts.c:106
+msgid "run exposition on HIGH @ pin5 I/O port"
+msgstr ""
+
+#: cmdlnopts.c:107
+msgid "get value of I/O port pins"
+msgstr ""
+
+#: cmdlnopts.c:108
+msgid "move stepper motor asynchronous"
+msgstr ""
+
+#: cmdlnopts.c:110
+msgid "set I/O port pins to given value (decimal number, pin1 is LSB)"
+msgstr ""
+
+#: cmdlnopts.c:111
+msgid ""
+"configure I/O port pins to given value (decimal number, pin1 is LSB, 1 == "
+"output, 0 == input)"
+msgstr ""
+
+#: cmdlnopts.c:113
+msgid "move focuser to absolute position, mm"
+msgstr ""
+
+#: cmdlnopts.c:114
+msgid "move focuser to relative position, mm"
+msgstr ""
+
+#: cmdlnopts.c:116
+msgid "set wheel position"
+msgstr ""
+
+#: cmdlnopts.c:119
+msgid "Display image in OpenGL window"
+msgstr ""
+
+#. Не могу сохранить файл
+#: ccdfunc.c:115
+msgid "Can't save file"
+msgstr ""
+
+#: ccdfunc.c:257
+#, c-format
+msgid "File saved as '%s'"
+msgstr ""
+
+#: ccdfunc.c:259
+msgid "Error saving file"
+msgstr ""
+
+#. Статистика по изображению:\n
+#: ccdfunc.c:279
+#, c-format
+msgid "Image stat:\n"
+msgstr ""
+
+#: ccdfunc.c:291
+msgid "Focuser device not pointed, try to guess"
+msgstr ""
+
+#: ccdfunc.c:307
+msgid "Focuser not found"
+msgstr ""
+
+#: ccdfunc.c:312
+#, c-format
+msgid "Found %d focusers, you point number %d"
+msgstr ""
+
+#: ccdfunc.c:316
+msgid "Can't set active focuser number"
+msgstr ""
+
+#: ccdfunc.c:330
+msgid "Can't get focuser limit positions"
+msgstr ""
+
+#: ccdfunc.c:337
+msgid "Can't get current focuser position"
+msgstr ""
+
+#: ccdfunc.c:351
+#, c-format
+msgid "Can't set position %g: out of limits [%g, %g]"
+msgstr ""
+
+#: ccdfunc.c:355
+msgid "Can't home focuser"
+msgstr ""
+
+#: ccdfunc.c:357
+#, c-format
+msgid "Can't set position %g"
+msgstr ""
+
+#: ccdfunc.c:369
+msgid "Wheel device not pointed, try to guess"
+msgstr ""
+
+#: ccdfunc.c:385
+msgid "Wheel not found"
+msgstr ""
+
+#: ccdfunc.c:390
+#, c-format
+msgid "Found %d wheels, you point number %d"
+msgstr ""
+
+#: ccdfunc.c:394
+msgid "Can't set active wheel number"
+msgstr ""
+
+#: ccdfunc.c:406
+msgid "Can't get max wheel position"
+msgstr ""
+
+#: ccdfunc.c:413
+#, c-format
+msgid "Wheel position should be from 0 to %d"
+msgstr ""
+
+#: ccdfunc.c:417
+#, c-format
+msgid "Can't set wheel position %d"
+msgstr ""
+
+#: ccdfunc.c:436
+msgid "Camera device not pointed, try to guess"
+msgstr ""
+
+#: ccdfunc.c:452
+msgid "Camera device not found"
+msgstr ""
+
+#: ccdfunc.c:457
+#, c-format
+msgid "Found %d cameras, you point number %d"
+msgstr ""
+
+#: ccdfunc.c:461
+msgid "Can't set active camera number"
+msgstr ""
+
+#: ccdfunc.c:467
+msgid "Can't set fan speed"
+msgstr ""
+
+#: ccdfunc.c:472
+#, c-format
+msgid "Camera model: %s"
+msgstr ""
+
+#: ccdfunc.c:473
+#, c-format
+msgid "Pixel size: %g x %g"
+msgstr ""
+
+#: ccdfunc.c:479
+#, c-format
+msgid "Full array: %s"
+msgstr ""
+
+#: ccdfunc.c:482
+#, c-format
+msgid "Field of view: %s"
+msgstr ""
+
+#: ccdfunc.c:485
+#, c-format
+msgid "Can't set T to %g degC"
+msgstr ""
+
+#: ccdfunc.c:492
+#, c-format
+msgid "Shutter command: %s\n"
+msgstr ""
+
+#: ccdfunc.c:494
+#, c-format
+msgid "Can't run shutter command %s (unsupported?)"
+msgstr ""
+
+#. "Попытка сконфигурировать порт I/O как %d\n"
+#: ccdfunc.c:498
+#, c-format
+msgid "Try to convfigure I/O port as %d"
+msgstr ""
+
+#: ccdfunc.c:500
+msgid "Can't configure (unsupported?)"
+msgstr ""
+
+#: ccdfunc.c:506
+msgid "Can't get IOport state (unsupported?)"
+msgstr ""
+
+#. "Попытка записи %d в порт I/O\n"
+#: ccdfunc.c:510
+#, c-format
+msgid "Try to write %d to I/O port"
+msgstr ""
+
+#: ccdfunc.c:512
+msgid "Can't set IOport"
+msgstr ""
+
+#: ccdfunc.c:524
+#, c-format
+msgid "Can't set binning %dx%d"
+msgstr ""
+
+#: ccdfunc.c:526
+msgid "Can't get current binning"
+msgstr ""
+
+#: ccdfunc.c:541
+msgid "Can't set given geometry"
+msgstr ""
+
+#: ccdfunc.c:544
+#, c-format
+msgid "Can't set %d flushes"
+msgstr ""
+
+#: ccdfunc.c:547
+#, c-format
+msgid "Can't set exposure time to %f seconds"
+msgstr ""
+
+#: ccdfunc.c:550
+msgid "Can't change frame type"
+msgstr ""
+
+#: ccdfunc.c:553
+msgid "Can't set bit depth"
+msgstr ""
+
+#: ccdfunc.c:556
+msgid "Can't set readout speed"
+msgstr ""
+
+#: ccdfunc.c:557
+msgid "Fast readout mode"
+msgstr ""
+
+#: ccdfunc.c:558
+msgid "Only show statistics"
+msgstr ""
+
+#. Захват кадра %d\n
+#: ccdfunc.c:565
+#, c-format
+msgid "Capture frame %d\n"
+msgstr ""
+
+#: ccdfunc.c:570
+#, c-format
+msgid "%.1f seconds till exposition ends"
+msgstr ""
+
+#: ccdfunc.c:578
+msgid "Can't capture image"
+msgstr ""
+
+#: ccdfunc.c:581
+msgid "Read grabbed image"
+msgstr ""
+
+#: ccdfunc.c:583 ccdfunc.c:606 ccdfunc.c:637
+msgid "Can't grab image"
+msgstr ""
+
+#: ccdfunc.c:594
+msgid "Can't open OpenGL window, image preview will be inaccessible"
+msgstr ""
+
+#. %d секунд до окончания паузы\n
+#: ccdfunc.c:619
+#, c-format
+msgid "%d seconds till pause ends\n"
+msgstr ""
+
+#: imageview.c:257
+msgid "Can't init mutex!"
+msgstr ""
+
+#: imageview.c:275
+msgid "Already initialized!"
+msgstr ""
