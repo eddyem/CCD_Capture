@@ -1,11 +1,10 @@
 /*
- * imageview.h
+ * This file is part of the CCD_Capture project.
+ * Copyright 2022 Edward V. Emelianov <edward.emelianoff@gmail.com>.
  *
- * Copyright 2015 Edward V. Emelianov <eddy@sao.ru, edward.emelianoff@gmail.com>
- *
- * This program is free software; you can redistribute it and/or modify
+ * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
+ * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful,
@@ -14,13 +13,12 @@
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
- * MA 02110-1301, USA.
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+
 #pragma once
-#ifndef __BMPVIEW_H__
-#define __BMPVIEW_H__
+#ifndef IMAGEVIEW_H__
+#define IMAGEVIEW_H__
 
 #include <math.h>
 #include <pthread.h>
@@ -88,4 +86,5 @@ void conv_image_to_mouse_coords(float X, float Y, int *x, int *y, windowData *wi
 
 void* image_thread(void *data);
 void change_displayed_image(windowData *win, IMG *img);
-#endif // __BMPVIEW_H__
+
+#endif // IMAGEVIEW_H__

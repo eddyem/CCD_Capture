@@ -1,6 +1,6 @@
 /*
- * This file is part of the FLI_control project.
- * Copyright 2020 Edward V. Emelianov <edward.emelianoff@gmail.com>.
+ * This file is part of the CCD_Capture project.
+ * Copyright 2022 Edward V. Emelianov <edward.emelianoff@gmail.com>.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -16,19 +16,9 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <fcntl.h>
-#include <fitsio.h>
 #include <libfli.h>
-#include <limits.h>
-#include <math.h>
-#include <pthread.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <time.h>
-#include <unistd.h>
 #include <usefull_macros.h>
 
 #include "flifunc.h"
@@ -57,19 +47,6 @@
 #define TRYFUNC(f, ...)             \
 do{ if((fli_err = f(__VA_ARGS__)))  \
         WARNX(#f "() failed");      \
-}while(0)
-
-#define TRYFITS(f, ...)                     \
-do{ int status = 0;                         \
-    f(__VA_ARGS__, &status);                \
-    if (status){                            \
-        fits_report_error(stderr, status);  \
-        return -1;}                         \
-}while(0)
-#define WRITEKEY(...)                           \
-do{ int status = 0;                             \
-    fits_write_key(__VA_ARGS__, &status);       \
-    if(status) fits_report_error(stderr, status);\
 }while(0)
 
 typedef struct{
@@ -687,7 +664,9 @@ Camera FLIcam = {
     .setbrightness = fli_ffalse,
     .setgain = fli_ffalse,
     .getmaxgain = fli_fpfalse,
+    .geometry = {0},
 };
+
 Focuser FLIfocus = {
     .check = fli_findFocuser,
     .setDevNo = fli_setActiceFocuser,
@@ -700,6 +679,7 @@ Focuser FLIfocus = {
     .home = fli_fhome,
     .setAbsPos = fli_fgoto,
 };
+
 Wheel FLIwheel = {
     .check = fli_findWheel,
     .setDevNo = fli_setActiceWheel,

@@ -54,6 +54,7 @@ typedef enum{
 typedef enum{
     FAN_OFF,
     FAN_LOW,
+    FAN_MID,
     FAN_HIGH,
 } fan_speed;
 
@@ -84,7 +85,9 @@ typedef struct{
     int (*setgeometry)(frameformat *fmt); // set geometry in UNBINNED coordinates
     int (*setfanspeed)(fan_speed spd); // set fan speed
     // getters:
+    int (*getbrightness)(float *b);// get brightnes level
     int (*getModelName)(char *n, int l);// string with model name (l - length of n in bytes)
+    int (*getgain)(float *g);   // get gain value
     int (*getmaxgain)(float *g);// get max available gain value
     // get limits of geometry: maximal values and steps
     int (*getgeomlimits)(frameformat *max, frameformat *step);

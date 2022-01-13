@@ -1,9 +1,9 @@
 cmake_minimum_required(VERSION 3.20)
-set(CCDLIB fli_module)
-set(FLILIB ${CCDLIB} PARENT_SCOPE)
+set(CCDLIB dummy_module)
+set(DUMMYLIB ${CCDLIB} PARENT_SCOPE)
 
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(${CCDLIB} REQUIRED fli>=1.71 usefull_macros)
+pkg_check_modules(${CCDLIB} REQUIRED usefull_macros)
 
 set(CFLAGS -O3 -Wextra -Wall -W -std=gnu99)
 set(CMAKE_COLOR_MAKEFILE ON)

@@ -1,42 +1,14 @@
-/*
- * cmdlnopts.c - the only function that parse cmdln args and returns glob parameters
- *
- * Copyright 2013 Edward V. Emelianoff <eddy@sao.ru>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
- * MA 02110-1301, USA.
- */
+
+
 #include <assert.h>
+#include <math.h> // NAN
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
-#include <strings.h>
-#include <math.h>
-#include <limits.h>
-#include <libfli.h>
+#include <usefull_macros.h>
 
 #include "cmdlnopts.h"
-#include "usefull_macros.h"
 
-#define RAD 57.2957795130823
-#define D2R(x) ((x) / RAD)
-#define R2D(x) ((x) * RAD)
-
-/*
- * here are global parameters initialisation
- */
 static int help;
 static glob_pars  G;
 glob_pars *GP = NULL;
@@ -159,7 +131,7 @@ glob_pars *parse_args(int argc, char **argv){
 void verbose(int levl, const char *fmt, ...){
     va_list ar;
     if(levl > G.verbose) return;
-    printf("%s: ", __progname);
+    //printf("%s: ", __progname);
     va_start(ar, fmt);
     vprintf(fmt, ar);
     va_end(ar);

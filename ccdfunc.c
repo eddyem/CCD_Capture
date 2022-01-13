@@ -1,6 +1,6 @@
 /*
- * This file is part of the FLI_control project.
- * Copyright 2020 Edward V. Emelianov <edward.emelianoff@gmail.com>.
+ * This file is part of the CCD_Capture project.
+ * Copyright 2022 Edward V. Emelianov <edward.emelianoff@gmail.com>.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -16,20 +16,14 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <fcntl.h>
 #include <fitsio.h>
-#include <limits.h>
-#include <math.h>
-#include <pthread.h>
 #include <stdio.h>
-#include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <time.h>
-#include <unistd.h>
 
 #include "ccdfunc.h"
 #include "cmdlnopts.h"
+#include "dummyfunc.h"
 #ifdef USEFLI
 #include "flifunc.h"
 #endif
@@ -261,7 +255,7 @@ cloerr:
     }
 }
 
-static void print_stat(IMG *image){
+static void calculate_stat(IMG *image){
     long i, Noverld = 0L, size = image->h*image->w;
     float pv, sum=0., sum2=0., sz = (float)size;
     uint16_t *ptr = image->data, val;
@@ -275,12 +269,13 @@ static void print_stat(IMG *image){
         if(min > val) min = val;
         if(val >= 65530) Noverld++;
     }
-    // Статистика по изображению:\n
-    printf(_("Image stat:\n"));
-    float avr = sum/sz;
-    printf("avr = %.1f, std = %.1f, Noverload = %ld\n", image->avr = avr,
-        image->std = sqrt(fabs(sum2/sz - avr*avr)), Noverld);
-    printf("max = %u, min = %u, size = %ld\n", max, min, size);
+    if(GP->verbose){
+        printf(_("Image stat:\n"));
+        float avr = sum/sz;
+        printf("avr = %.1f, std = %.1f, Noverload = %ld\n", image->avr = avr,
+            image->std = sqrt(fabs(sum2/sz - avr*avr)), Noverld);
+        printf("max = %u, min = %u, size = %ld\n", max, min, size);
+    }
 }
 
 /*
@@ -296,11 +291,12 @@ void focusers(){
         if(ZWOfocus.check()) focuser = &ZWOfocus;
 #endif
     }else{
+        if(strcasecmp(GP->cameradev, "dummy") == 0) focuser = &DUMMYfocus;
 #ifdef USEFLI
-        if(strcasecmp(GP->focuserdev, "fli") == 0) focuser = &FLIfocus;
+        else if(strcasecmp(GP->focuserdev, "fli") == 0) focuser = &FLIfocus;
 #endif
 #ifdef USEZWO
-        if(strcasecmp(GP->focuserdev, "zwo") == 0) focuser = &ZWOfocus;
+        else if(strcasecmp(GP->focuserdev, "zwo") == 0) focuser = &ZWOfocus;
 #endif
     }
     if(!focuser){
@@ -374,11 +370,12 @@ void wheels(){
         if(ZWOwheel.check()) wheel = &ZWOwheel;
 #endif
     }else{
+        if(strcasecmp(GP->cameradev, "dummy") == 0) wheel = &DUMMYwheel;
 #ifdef USEFLI
-        if(strcasecmp(GP->wheeldev, "fli") == 0) wheel = &FLIwheel;
+        else if(strcasecmp(GP->wheeldev, "fli") == 0) wheel = &FLIwheel;
 #endif
 #ifdef USEZWO
-        if(strcasecmp(GP->wheeldev, "zwo") == 0) wheel = &ZWOwheel;
+        else if(strcasecmp(GP->wheeldev, "zwo") == 0) wheel = &ZWOwheel;
 #endif
     }
     if(!wheel){
@@ -393,6 +390,10 @@ void wheels(){
     if(!wheel->setDevNo(num)){
         WARNX(_("Can't set active wheel number"));
         goto retn;
+    }
+    char buf[BUFSIZ];
+    if(wheel->getModelName(buf, BUFSIZ)){
+        verbose(2, "Wheel model: %s", buf);
     }
     float t;
     if(wheel->getTbody(&t)){
@@ -441,16 +442,17 @@ void ccds(){
         if(ZWOcam.check()) camera = &ZWOcam;
 #endif
     }else{
+        if(strcasecmp(GP->cameradev, "dummy") == 0) camera = &DUMMYcam;
 #ifdef USEFLI
-        if(strcasecmp(GP->cameradev, "fli") == 0) camera = &FLIcam;
+        else if(strcasecmp(GP->cameradev, "fli") == 0) camera = &FLIcam;
 #endif
 #ifdef USEZWO
-        if(strcasecmp(GP->cameradev, "zwo") == 0) camera = &ZWOcam;
+        else if(strcasecmp(GP->cameradev, "zwo") == 0) camera = &ZWOcam;
 #endif
     }
     if(!camera){
-        WARNX(_("Camera device not found"));
-        goto retn;
+        WARNX(_("Camera not found"));
+        return;
     }
     int num = GP->camdevno;
     if(num > camera->Ndevices - 1){
@@ -465,6 +467,7 @@ void ccds(){
         if(GP->fanspeed > FAN_HIGH) GP->fanspeed = FAN_HIGH;
         if(!camera->setfanspeed((fan_speed)GP->fanspeed))
             WARNX(_("Can't set fan speed"));
+        else verbose(0, _("Set fan speed to %d"), GP->fanspeed);
     }
     int x0,x1, y0,y1;
     char buf[BUFSIZ];
@@ -495,13 +498,13 @@ void ccds(){
     }
     if(GP->confio > -1){
         // "Попытка сконфигурировать порт I/O как %d\n"
-        verbose(1, _("Try to convfigure I/O port as %d"), GP->confio);
+        verbose(1, _("Try to configure I/O port as %d"), GP->confio);
         if(!camera->confio(GP->confio))
             WARNX(_("Can't configure (unsupported?)"));
     }
     if(GP->getio){
         if(camera->getio(&tmpi))
-            verbose(1, "CCDIOPORT=9x%02x\n", tmpi);
+            verbose(0, "CCDIOPORT=0x%02X\n", tmpi);
         else
             WARNX(_("Can't get IOport state (unsupported?)"));
     }
@@ -554,15 +557,14 @@ void ccds(){
     tmpi = (GP->fast) ? 1 : 0;
     if(!camera->setfastspeed(tmpi))
         WARNX(_("Can't set readout speed"));
-    else if(GP->fast) verbose(1, _("Fast readout mode"));
+    else verbose(1, _("Readout mode: %s"), GP->fast ? "fast" : "normal");
     if(!GP->outfile) verbose(1, _("Only show statistics"));
 
     uint16_t *img = MALLOC(uint16_t, raw_width * raw_height);
     IMG ima = {.data = img, .w = raw_width, .h = raw_height};
     for(int j = 0; j < GP->nframes; ++j){
-        verbose(1, "\n\n");
         // Захват кадра %d\n
-        verbose(1, _("Capture frame %d\n"), j);
+        verbose(1, _("Capture frame %d"), j);
         capture_status cs;
         float tleave = 1.;
         while(camera->pollcapture(&cs, &tleave)){
@@ -583,7 +585,7 @@ void ccds(){
             WARNX(_("Can't grab image"));
             break;
         }
-        print_stat(&ima);
+        calculate_stat(&ima);
         saveFITS(&ima, GP->outfile);
 #ifdef IMAGEVIEW
         if(GP->showimage){ // display image

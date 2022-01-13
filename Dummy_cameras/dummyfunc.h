@@ -17,23 +17,13 @@
  */
 
 #pragma once
-#ifndef EVENTS_H__
-#define EVENTS_H__
+#ifndef DUMMYFUNC_H__
+#define DUMMYFUNC_H__
 
-#include <stdlib.h>
-#include <stdio.h>
-#include <GL/glut.h>
-#include <GL/glext.h>
-#include <GL/freeglut.h>
+#include "ccdfunc.h"
 
-extern float Z; // координата Z (zoom)
+extern Camera DUMMYcam;
+extern Focuser DUMMYfocus;
+extern Wheel DUMMYwheel;
 
-void keyPressed(unsigned char key, int x, int y);
-//void keySpPressed(int key, int x, int y);
-void mousePressed(int key, int state, int x, int y);
-void mouseMove(int x, int y);
-void createMenu();
-void menuEvents(int opt);
-//void mouseWheel(int button, int dir, int x, int y);
-
-#endif // EVENTS_H__
+#endif // DUMMYFUNC_H__
