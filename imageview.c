@@ -19,15 +19,18 @@
 #include <X11/Xlib.h> // XInitThreads();
 #include <math.h>     // roundf(), log(), sqrt()
 #include <pthread.h>
+#include <signal.h>
 #include <unistd.h>
 #include <usefull_macros.h>
 
+#include "ccdfunc.h"
 #include "cmdlnopts.h"
 #include "imageview.h"
+#include "omp.h"
 
 static windowData *win = NULL; // main window
 static pthread_t GLUTthread = 0; // main GLUT thread
-
+static int imequalize = TRUE;
 static int initialized = 0; // ==1 if GLUT is initialized; ==0 after clear_GL_context
 
 static void *Redraw(_U_ void *p);
@@ -112,13 +115,17 @@ int killwindow(){
         // say threads to die
         win->killthread = 1;
     }
-    pthread_mutex_lock(&win->mutex);
+    //DBG("Lock mutex");
+    //pthread_mutex_lock(&win->mutex);
     //pthread_join(win->thread, NULL); // wait while thread dies
-    if(win->menu) glutDestroyMenu(win->menu);
+    if(win->menu){
+        DBG("Destroy menu");
+        glutDestroyMenu(win->menu);
+    }
+    DBG("Destroy window");
     glutDestroyWindow(win->ID);
-    DBG("destroy menu, wundow & texture %d", win->Tex);
+    DBG("Delete textures");
     glDeleteTextures(1, &(win->Tex));
-    glutLeaveMainLoop();
     DBG("Cancel");
     windowData *old = win;
     win = NULL;
@@ -126,7 +133,7 @@ int killwindow(){
     FREE(old->image->rawdata);
     DBG("free(image)");
     FREE(old->image);
-    pthread_mutex_unlock(&old->mutex);
+    //pthread_mutex_unlock(&old->mutex);
     DBG("free(win)");
     FREE(old);
     DBG("return");
@@ -289,9 +296,12 @@ void clear_GL_context(){
     FNAME();
     if(!initialized) return;
     initialized = 0;
+    cancel(); // cancel expositions
     DBG("kill");
     killwindow();
     DBG("join");
+    DBG("Leave mainloop");
+    glutLeaveMainLoop();
     if(GLUTthread) pthread_join(GLUTthread, NULL); // wait while main thread exits
     DBG("main GL thread cancelled");
 }
@@ -362,6 +372,7 @@ typedef enum{
     COLORFN_LINEAR, // linear
     COLORFN_LOG,    // ln
     COLORFN_SQRT,   // sqrt
+    COLORFN_POW,    // power
     COLORFN_MAX     // end of list
 } colorfn_type;
 
@@ -370,23 +381,31 @@ static colorfn_type ft = COLORFN_LINEAR;
 // all colorfun's should get argument in [0, 1] and return in [0, 1]
 static double linfun(double arg){ return arg; } // bung for PREVIEW_LINEAR
 static double logfun(double arg){ return log(1.+arg) / 0.6931472; } // for PREVIEW_LOG [log_2(x+1)]
+static double powfun(double arg){ return arg * arg;}
 static double (*colorfun)(double) = linfun; // default function to convert color
 
 static void change_colorfun(colorfn_type f){
     DBG("New colorfn: %d", f);
+    const char *cfn = NULL;
+    ft = f;
     switch (f){
         case COLORFN_LOG:
             colorfun = logfun;
-            ft = COLORFN_LOG;
+            cfn = "log";
         break;
         case COLORFN_SQRT:
             colorfun = sqrt;
-            ft = COLORFN_SQRT;
+            cfn = "sqrt";
+        break;
+        case COLORFN_POW:
+            colorfun = powfun;
+            cfn = "square";
         break;
         default: // linear
             colorfun = linfun;
-            ft = COLORFN_LINEAR;
+            cfn = "linear";
     }
+    verbose(1, _("Histogram conversion: %s"), cfn);
 }
 
 // cycle switch between palettes
@@ -407,13 +426,25 @@ static uint8_t *equalize(uint16_t *ori, int w, int h){
     double orig_hysto[0x10000] = {0.}; // original hystogram
     uint8_t eq_levls[0x10000] = {0};   // levels to convert: newpix = eq_levls[oldpix]
     int s = w*h;
-    for(int i = 0; i < s; ++i) ++orig_hysto[ori[i]];
+#pragma omp parallel
+{
+    //printf("%d\n", omp_get_thread_num());
+    size_t histogram_private[0x10000] = {0};
+    #pragma omp for nowait
+    for(int i = 0; i < s; ++i){
+        ++histogram_private[ori[i]];
+    }
+    #pragma omp critical
+    {
+        for(int i = 0; i < 0x10000; ++i) orig_hysto[i] += histogram_private[i];
+    }
+}
     double part = (double)(s + 1) / 0x100, N = 0.;
     for(int i = 0; i <= 0xffff; ++i){
         N += orig_hysto[i];
         eq_levls[i] = (uint8_t)(N/part);
     }
-
+    OMP_FOR()
     for(int i = 0; i < s; ++i){
         retn[i] = eq_levls[ori[i]];
     }
@@ -426,12 +457,21 @@ void change_displayed_image(windowData *win, IMG *img){
     DBG("imh=%d, imw=%d, ch=%u, cw=%u", im->h, im->w, img->w, img->h);
     pthread_mutex_lock(&win->mutex);
     int w = img->w, h = img->h, s = w*h;
-    uint8_t *newima = equalize(img->data, w, h);
-    GLubyte *dst = im->rawdata;
-    for(int i = 0; i < s; ++i, dst += 3){
-        gray2rgb(colorfun(newima[i] / 256.), dst);
+    if(imequalize){
+        uint8_t *newima = equalize(img->data, w, h);
+        GLubyte *dst = im->rawdata;
+        OMP_FOR()
+        for(int i = 0; i < s; ++i){
+            gray2rgb(colorfun(newima[i] / 256.), &dst[i*3]);
+        }
+        FREE(newima);
+    }else{
+        GLubyte *dst = im->rawdata;
+        OMP_FOR()
+        for(int i = 0; i < s; ++i){
+            gray2rgb(colorfun(img->data[i] / 65536.), &dst[i*3]);
+        }
     }
-    FREE(newima);
     win->image->changed = 1;
     pthread_mutex_unlock(&win->mutex);
 }
@@ -457,7 +497,18 @@ void* image_thread(_U_ void *data){
                 win->winevt &= ~WINEVT_ROLLCOLORFUN;
                 change_displayed_image(win, img);
             }
+            if(win->winevt & WINEVT_EQUALIZE){
+                win->winevt &= ~WINEVT_EQUALIZE;
+                imequalize = !imequalize;
+                verbose(1, _("Equalization of histogram: %s"), imequalize ? N_("on") : N_("off"));
+            }
         }
         usleep(10000);
     }
+}
+
+void closeGL(){
+    windowData *win = getWin();
+    if(win) win->killthread = 1;
+    while(getWin()) usleep(1000);
 }

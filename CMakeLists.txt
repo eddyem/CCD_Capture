@@ -1,16 +1,21 @@
 cmake_minimum_required(VERSION 3.20)
 set(PROJ ccd_capture)
-project(${PROJ})
 set(MINOR_VERSION "0")
 set(MID_VERSION "0")
 set(MAJOR_VERSION "1")
 set(VERSION "${MAJOR_VERSION}.${MID_VERSION}.${MINOR_VERSION}")
 
+project(${PROJ} VERSION ${VERSION} LANGUAGES C)
+
 message("VER: ${VERSION}")
 
 # default flags
-set(CFLAGS ${CFLAGS} -Wall -W -Wextra -O3 -std=gnu99)
-add_definitions(-D_XOPEN_SOURCE=1234 -D_DEFAULT_SOURCE -D_GNU_SOURCE)
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -W -Wextra -std=gnu99")
+
+add_definitions(-D_XOPEN_SOURCE=1234 -D_DEFAULT_SOURCE -D_GNU_SOURCE -DLOCALEDIR=\"${LOCALEDIR}\"
+        -DPACKAGE_VERSION=\"${VERSION}\" -DGETTEXT_PACKAGE=\"${PROJ}\"
+        -DMINOR_VERSION=\"${MINOR_VERSION}\" -DMID_VERSION=\"${MID_VERSION}\"
+        -DMAJOR_VERSION=\"${MAJOR_VESION}\")
 
 set(CMAKE_COLOR_MAKEFILE ON)
 
@@ -18,16 +23,27 @@ set(SOURCES main.c cmdlnopts.c ccdfunc.c)
 
 # cmake -DDEBUG=yes -> debugging
 if(DEFINED DEBUG AND DEBUG STREQUAL "yes")
-    set(CFLAGS ${CFLAGS} -Werror)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Og -ggdb -fno-builtin-strlen -Werror")
     add_definitions(-DEBUG)
+    set(CMAKE_BUILD_TYPE DEBUG)
     set(CMAKE_VERBOSE_MAKEFILE "ON")
+else()
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -march=native -fdata-sections -ffunction-sections")
+    SET(CMAKE_EXE_LINKER_FLAGS "-Wl,--gc-sections")
+    set(CMAKE_BUILD_TYPE RELEASE)
 endif()
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}")
-
 find_package(CFITSIO REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(${PROJ} REQUIRED usefull_macros)
+
+include(FindOpenMP)
+if(OPENMP_FOUND)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
+    add_definitions(-DOMP_FOUND)
+endif()
 
 if(DEFINED IMAGEVIEW AND IMAGEVIEW STREQUAL "yes")
     list(APPEND SOURCES events.c imageview.c)
@@ -91,10 +107,6 @@ add_executable(${PROJ} ${SOURCES} ${PO_FILE} ${MO_FILE})
 target_link_libraries(${PROJ} ${CFITSIO_LIBRARIES} ${X11_LIBRARIES} ${OPENGL_LIBRARIES} ${GLUT_LIBRARIES} ${${PROJ}_LIBRARIES} -lm)
 include_directories(${${PROJ}_INCLUDE_DIRS} .)
 link_directories(${${PROJ}_LIBRARY_DIRS} )
-add_definitions(${CFLAGS} -DLOCALEDIR=\"${LOCALEDIR}\"
-        -DPACKAGE_VERSION=\"${VERSION}\" -DGETTEXT_PACKAGE=\"${PROJ}\"
-        -DMINOR_VERSION=\"${MINOR_VERSION}\" -DMID_VERSION=\"${MID_VERSION}\"
-        -DMAJOR_VERSION=\"${MAJOR_VESION}\")
 
 # Installation of the program
 INSTALL(FILES ${MO_FILE} DESTINATION "share/locale/ru/LC_MESSAGES")

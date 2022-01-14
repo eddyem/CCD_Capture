@@ -38,7 +38,7 @@ static capture_status capstat = CAPTURE_NO;
 static int campoll(capture_status *st, float *remain){
     if(capstat == CAPTURE_NO){
         if(st) *st = capstat = CAPTURE_PROCESS;
-        if(remain) *remain = 0.5;
+        if(remain) *remain = 1e-6;
     }else{
         capstat = CAPTURE_NO;
         if(st) *st = CAPTURE_READY;
@@ -48,11 +48,15 @@ static int campoll(capture_status *st, float *remain){
 }
 
 static int camcapt(IMG *ima){
+    static int n = 0;
     if(!ima || !ima->data) return FALSE;
     uint16_t *d = ima->data;
     for(int y = 0; y < ima->h; ++y)
-        for(int x = 0; x < ima->w; ++x) // sinusoide 100x200
-            *d++ = (uint16_t)(sin(x * 50/M_PI)*sin(y * 100/M_PI)*65535.);
+        for(int x = 0; x < ima->w; ++x){ // sinusoide 100x200
+            //*d++ = (uint16_t)(((n+x)%100)/99.*65535.);
+            *d++ = (uint16_t)((1 + sin((n+x) * M_PI/50)*sin((n+y) * M_PI/100))*32767.);
+        }
+    ++n;
     return TRUE;
 }
 

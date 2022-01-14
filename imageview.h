@@ -44,6 +44,8 @@ typedef struct{
 #define WINEVT_SAVEIMAGE    (1<<2)
 // change color palette function
 #define WINEVT_ROLLCOLORFUN (1<<3)
+// invert equalization status
+#define WINEVT_EQUALIZE     (1<<4)
 
 // flip image
 #define WIN_FLIP_LR         (1<<0)
@@ -73,6 +75,7 @@ typedef enum{
 } winIdType;
 
 void imageview_init();
+void closeGL();
 windowData *createGLwin(char *title, int w, int h, rawimage *rawdata);
 windowData *getWin();
 int  killwindow();

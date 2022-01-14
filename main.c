@@ -15,7 +15,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-
+#include <omp.h>
 #include <signal.h>
 #include <stdio.h>
 #include <string.h>
@@ -30,16 +30,27 @@
 #ifdef IMAGEVIEW
 #include "imageview.h"
 #endif
+#include "omp.h"
 
 void signals(int signo){
+    WARNX("Get signal %d - exit", signo);
+    DBG("Cancel capturing");
     cancel();
+#ifdef IMAGEVIEW
+    DBG("KILL GL");
+    closeGL();
+    usleep(100000);
+#endif
     exit(signo);
 }
 
-extern const char *__progname;
-
 int main(int argc, char **argv){
     initial_setup();
+/*
+    int cpunumber = sysconf(_SC_NPROCESSORS_ONLN);
+    if(omp_get_max_threads() != cpunumber)
+        omp_set_num_threads(cpunumber);
+*/
     parse_args(argc, argv);
     signal(SIGINT, signals);
     signal(SIGQUIT, signals);

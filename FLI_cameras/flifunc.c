@@ -634,36 +634,37 @@ static int fli_fpfalse(_U_ float *f){ return FALSE; }
  */
 Camera FLIcam = {
     .check = fli_findCCD,
-    .setDevNo = fli_setActiceCam,
     .close = fli_closecam,
     .pollcapture = fli_pollcapt,
     .capture = fli_capt,
     .cancel = fli_cancel,
-
-    .setbin = fli_setbin,
-    .setgeometry = fli_setgeometry,
-    .setnflushes = fli_setnflushes,
-    .setT = fli_settemp,
-    .setio = fli_setio,
+    // setters:
+    .setDevNo = fli_setActiceCam,
+    .setbrightness = fli_ffalse,
     .setexp = fli_setexp,
+    .setgain = fli_ffalse,
+    .setT = fli_settemp,
+    .setbin = fli_setbin,
+    .setnflushes = fli_setnflushes,
+    .shuttercmd = fli_shutter,
+    .confio = fli_confio,
+    .setio = fli_setio,
     .setframetype = fli_setframetype,
     .setbitdepth = fli_setbitdepth,
     .setfastspeed = fli_setfastspeed,
+    .setgeometry = fli_setgeometry,
     .setfanspeed = fli_setfanspd,
-    .shuttercmd = fli_shutter,
-    .confio = fli_confio,
-
+    // getters:
+    .getbrightness = fli_fpfalse,
     .getModelName = fli_modelname,
-    .getbin = fli_getbin,
+    .getgain = fli_fpfalse,
+    .getmaxgain = fli_fpfalse,
+    .getgeomlimits = fli_geomlimits,
     .getTcold = fli_getTcold,
     .getThot = fli_getThot,
     .getTbody = fli_getTbody,
+    .getbin = fli_getbin,
     .getio = fli_getio,
-    .getgeomlimits = fli_geomlimits,
-
-    .setbrightness = fli_ffalse,
-    .setgain = fli_ffalse,
-    .getmaxgain = fli_fpfalse,
     .geometry = {0},
 };
 

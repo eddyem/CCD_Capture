@@ -33,6 +33,7 @@
 #ifdef IMAGEVIEW
 #include "imageview.h"
 #endif
+#include "omp.h"
 
 Camera *camera = NULL;
 Focuser *focuser = NULL;
@@ -256,24 +257,40 @@ cloerr:
 }
 
 static void calculate_stat(IMG *image){
-    long i, Noverld = 0L, size = image->h*image->w;
-    float pv, sum=0., sum2=0., sz = (float)size;
-    uint16_t *ptr = image->data, val;
+    uint64_t Noverld = 0L, size = image->h*image->w;
+    double sum = 0., sum2 = 0.;
     uint16_t max = 0, min = 65535;
-    for(i = 0; i < size; i++, ptr++){
-        val = *ptr;
-        pv = (float) val;
+#pragma omp parallel
+{
+    uint16_t maxpriv = 0, minpriv = 65535;
+    uint64_t ovrpriv = 0;
+    double sumpriv = 0., sum2priv = 0.;
+    #pragma omp for nowait
+    for(uint64_t i = 0; i < size; ++i){
+        uint16_t val = image->data[i];
+        float pv = (float) val;
         sum += pv;
         sum2 += (pv * pv);
         if(max < val) max = val;
         if(min > val) min = val;
-        if(val >= 65530) Noverld++;
+        if(val >= 65530) ovrpriv++;
     }
+    #pragma omp critical
+    {
+        if(max < maxpriv) max = maxpriv;
+        if(min > minpriv) min = minpriv;
+        sum += sumpriv;
+        sum2 += sum2priv;
+        Noverld += ovrpriv;
+    }
+}
+    double sz = (float)size;
+    double avr = sum/sz;
+    image->avr = avr;
+    image->std = sqrt(fabs(sum2/sz - avr*avr));
     if(GP->verbose){
         printf(_("Image stat:\n"));
-        float avr = sum/sz;
-        printf("avr = %.1f, std = %.1f, Noverload = %ld\n", image->avr = avr,
-            image->std = sqrt(fabs(sum2/sz - avr*avr)), Noverld);
+        printf("avr = %.1f, std = %.1f, Noverload = %ld\n", avr, image->std, Noverld);
         printf("max = %u, min = %u, size = %ld\n", max, min, size);
     }
 }
@@ -427,6 +444,22 @@ static void closeall(){
     if(wheel){wheel->close(); wheel = NULL;}
 }
 
+static capture_status capt(){
+    capture_status cs;
+    float tleave, tmpf;
+    while(camera->pollcapture(&cs, &tleave)){
+        if(cs != CAPTURE_PROCESS) break;
+        verbose(2, _("%.1f seconds till exposition ends"), tleave);
+        if(camera->getTcold(&tmpf)) verbose(1, "CCDTEMP=%.1f", tmpf);
+        if(camera->getTbody(&tmpf)) verbose(1, "BODYTEMP=%.1f", tmpf);
+        if(tleave > 6.) sleep(5);
+        else if(tleave > 0.9) sleep((int)(tleave+0.99));
+        else usleep((int)(1e6*tleave) + 1);
+        if(!camera) return CAPTURE_ABORTED;
+    }
+    return cs;
+}
+
 /*
  * Find CCDs and work with each of them
  */
@@ -516,10 +549,6 @@ void ccds(){
     }
     if(GP->exptime < 0.) goto retn;
     /*********************** expose control ***********************/
-#ifdef IMAGEVIEW
-    windowData *mainwin = NULL;
-    if(GP->showimage) imageview_init();
-#endif
     // cancel previous exp
     camera->cancel();
     int binh = 1, binv = 1;
@@ -562,25 +591,28 @@ void ccds(){
 
     uint16_t *img = MALLOC(uint16_t, raw_width * raw_height);
     IMG ima = {.data = img, .w = raw_width, .h = raw_height};
+#ifdef IMAGEVIEW
+    windowData *mainwin = NULL;
+    if(GP->showimage){
+        imageview_init();
+        DBG("Create new win");
+        mainwin = createGLwin("Sample window", raw_width, raw_height, NULL);
+        if(!mainwin){
+            WARNX(_("Can't open OpenGL window, image preview will be inaccessible"));
+        }else
+            pthread_create(&mainwin->thread, NULL, &image_thread, (void*)&ima);
+    }
+#endif
     for(int j = 0; j < GP->nframes; ++j){
         // Захват кадра %d\n
         verbose(1, _("Capture frame %d"), j);
-        capture_status cs;
-        float tleave = 1.;
-        while(camera->pollcapture(&cs, &tleave)){
-            if(cs != CAPTURE_PROCESS) break;
-            verbose(2, _("%.1f seconds till exposition ends"), tleave);
-            if(camera->getTcold(&tmpf)) verbose(1, "CCDTEMP=%.1f", tmpf);
-            if(camera->getTbody(&tmpf)) verbose(1, "BODYTEMP=%.1f", tmpf);
-            if(tleave > 6.) sleep(5);
-            else if(tleave > 0.9) sleep((int)(tleave+0.99));
-            else usleep((int)(1e6*tleave) + 99999);
-        }
-        if(cs != CAPTURE_READY){
+        if(!camera) return;
+        if(capt() != CAPTURE_READY){
             WARNX(_("Can't capture image"));
             break;
         }
         verbose(2, _("Read grabbed image"));
+        if(!camera) return;
         if(!camera->capture(&ima)){
             WARNX(_("Can't grab image"));
             break;
@@ -589,14 +621,6 @@ void ccds(){
         saveFITS(&ima, GP->outfile);
 #ifdef IMAGEVIEW
         if(GP->showimage){ // display image
-            if(!(mainwin = getWin())){
-                DBG("Create new win");
-                mainwin = createGLwin("Sample window", raw_width, raw_height, NULL);
-                if(!mainwin){
-                    WARNX(_("Can't open OpenGL window, image preview will be inaccessible"));
-                }else
-                    pthread_create(&mainwin->thread, NULL, &image_thread, (void*)&ima);
-            }
             if((mainwin = getWin())){
                 DBG("change image");
                 change_displayed_image(mainwin, &ima);
@@ -604,10 +628,19 @@ void ccds(){
                     if((mainwin->winevt & WINEVT_PAUSE) == 0) break;
                     if(mainwin->winevt & WINEVT_GETIMAGE){
                         mainwin->winevt &= ~WINEVT_GETIMAGE;
-                        if(!camera->capture(&ima)){
-                            WARNX(_("Can't grab image"));
+                        if(!camera) return;
+                        if(capt() != CAPTURE_READY){
+                            WARNX(_("Can't capture image"));
+                        }else{
+                            if(!camera) return;
+                            if(!camera->capture(&ima)){
+                                WARNX(_("Can't grab image"));
+                            }
+                            else{
+                                calculate_stat(&ima);
+                                change_displayed_image(mainwin, &ima);
+                            }
                         }
-                        change_displayed_image(mainwin, &ima);
                     }
                     usleep(10000);
                 }
@@ -621,24 +654,34 @@ void ccds(){
                 verbose(1, _("%d seconds till pause ends\n"), (int)delta);
                 if(camera->getTcold(&tmpf)) verbose(1, "CCDTEMP=%.1f\n", tmpf);
                 if(camera->getTbody(&tmpf)) verbose(1, "BODYTEMP=%.1f\n", tmpf);
-                if(delta > 10) sleep(10);
+                if(delta > 6.) sleep(5);
+                else if(delta > 0.9) sleep((int)(delta+0.99));
                 else usleep((int)(delta*1e6 + 1));
             }
         }
     }
 #ifdef IMAGEVIEW
     if(GP->showimage){
-        mainwin->winevt |= WINEVT_PAUSE;
+        if(mainwin) mainwin->winevt |= WINEVT_PAUSE;
         DBG("Waiting");
         while((mainwin = getWin())){
             if(mainwin->killthread) break;
             if(mainwin->winevt & WINEVT_GETIMAGE){
                 DBG("GRAB");
                 mainwin->winevt &= ~WINEVT_GETIMAGE;
-                if(!camera->capture(&ima)){
-                    WARNX(_("Can't grab image"));
+                if(!camera) return;
+                if(capt() != CAPTURE_READY){
+                    WARNX(_("Can't capture image"));
+                }else{
+                    if(!camera) return;
+                    if(!camera->capture(&ima)){
+                        WARNX(_("Can't grab image"));
+                    }
+                    else{
+                        calculate_stat(&ima);
+                        change_displayed_image(mainwin, &ima);
+                    }
                 }
-                change_displayed_image(mainwin, &ima);
             }
         }
         DBG("Close window");

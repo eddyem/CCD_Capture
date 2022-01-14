@@ -38,7 +38,7 @@ static void processKeybrd(unsigned char key, int mod, _U_ int x, _U_ int y){
             case 's': // save image
                 win->winevt |= WINEVT_SAVEIMAGE;
             break;
-            case 'q': // exit      case 17:
+            case 'q': // exit
                 win->killthread = 1;
             break;
         }
@@ -49,13 +49,16 @@ static void processKeybrd(unsigned char key, int mod, _U_ int x, _U_ int y){
             win->zoom = 1;
             win->x = 0; win->y = 0;
         break;
-        case 27: // esc - kill
-            win->killthread = 1;
-        break;
+        //case 27: // esc - kill
+        //    win->killthread = 1;
+        //break;
         case 'c': // capture in pause mode
             DBG("winevt = %d", win->winevt);
             if(win->winevt & WINEVT_PAUSE)
                 win->winevt |= WINEVT_GETIMAGE;
+        break;
+        case 'e': // equalize/not equalize
+            win->winevt |= WINEVT_EQUALIZE;
         break;
         case 'l': // flip left-right
             win->flip ^= WIN_FLIP_LR;
@@ -163,13 +166,14 @@ typedef struct{
 #define ALT_K(key)      (key | (GLUT_ACTIVE_ALT<<8))
 static const menuentry entries[] = {
     {"Capture in pause mode (c)", 'c'},
+    {"Switch histogram equalization (e)", 'e'},
     {"Flip image LR (l)", 'l'},
     {"Flip image UD (u)", 'u'},
     {"Make a pause/continue (p)", 'p'},
     {"Restore zoom (0)", '0'},
     {"Roll colorfun (ctrl+r)", CTRL_K('r')},
     {"Save image (ctrl+s)", CTRL_K('s')},
-    {"Close this window (ESC)", 27},
+    //{"Close this window (ESC)", 27},
     {"Quit (ctrl+q)", CTRL_K('q')},
     {NULL, 0}
 };
