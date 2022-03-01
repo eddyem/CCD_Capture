@@ -56,26 +56,29 @@ if(DEFINED IMAGEVIEW AND IMAGEVIEW STREQUAL "yes")
 endif()
 
 add_subdirectory(Dummy_cameras)
-list(APPEND ${PROJ}_INCLUDE_DIRS Dummy_cameras)
-list(APPEND ${PROJ}_LIBRARIES ${DUMMYLIB})
-include_directories(Dummy_cameras)
+#list(APPEND ${PROJ}_INCLUDE_DIRS Dummy_cameras)
+#list(APPEND ${PROJ}_LIBRARIES ${DUMMYLIB})
+#include_directories(Dummy_cameras)
+
+#add_custom_target(plugins)
+#add_dependencies(plugins devdummy)
 
 # additional modules with CCD/CMOS support
 if(DEFINED ZWO AND ZWO STREQUAL "yes")
     add_subdirectory(ZWO_cameras)
-    list(APPEND ${PROJ}_INCLUDE_DIRS ZWO_cameras)
-    add_definitions(-DUSEZWO)
-    list(APPEND ${PROJ}_LIBRARIES ${ZWOLIB})
-    include_directories(ZWO_cameras)
+#    list(APPEND ${PROJ}_INCLUDE_DIRS ZWO_cameras)
+#    add_definitions(-DUSEZWO)
+#    list(APPEND ${PROJ}_LIBRARIES ${ZWOLIB})
+#    include_directories(ZWO_cameras)
 endif()
 
 # additional modules with CCD/CMOS support
 if(DEFINED FLI AND FLI STREQUAL "yes")
     add_subdirectory(FLI_cameras)
-    list(APPEND ${PROJ}_INCLUDE_DIRS FLI_cameras)
-    add_definitions(-DUSEFLI)
-    list(APPEND ${PROJ}_LIBRARIES ${FLILIB})
-    include_directories(FLI_cameras)
+#    list(APPEND ${PROJ}_INCLUDE_DIRS FLI_cameras)
+#    add_definitions(-DUSEFLI)
+#    list(APPEND ${PROJ}_LIBRARIES ${FLILIB})
+#    include_directories(FLI_cameras)
 endif()
 
 

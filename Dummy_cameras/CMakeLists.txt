@@ -1,12 +1,12 @@
 cmake_minimum_required(VERSION 3.20)
-set(CCDLIB dummy_module)
-set(DUMMYLIB ${CCDLIB} PARENT_SCOPE)
+set(CCDLIB devdummy)
 
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(${CCDLIB} REQUIRED usefull_macros)
-
 aux_source_directory(${CMAKE_CURRENT_SOURCE_DIR} SRC)
-add_library(${CCDLIB} ${SRC})
-target_link_libraries(${CCDLIB}  ${${CCDLIB}_LIBRARIES})
+
 include_directories(${${CCDLIB}_INCLUDE_DIRS} ..)
 link_directories(${${CCDLIB}_LIBRARY_DIRS})
+
+add_library(${CCDLIB} SHARED ${SRC})
+target_link_libraries(${CCDLIB} ${${CCDLIB}_LIBRARIES})

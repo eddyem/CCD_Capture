@@ -10,13 +10,10 @@
 #include "cmdlnopts.h"
 
 static int help;
-static glob_pars  G;
 glob_pars *GP = NULL;
-
 //            DEFAULTS
 // default global parameters
-glob_pars const Gdefault = {
-    .objtype = "object",
+static glob_pars  G = {
     .instrument = "direct imaging",
     .exptime = -1,
     .nframes = 1,
@@ -37,9 +34,11 @@ glob_pars const Gdefault = {
  *  name    has_arg flag    val     type        argptr          help
 */
 myoption cmdlnopts[] = {
-    {"cameradev", NEED_ARG, NULL,   'C',    arg_string, APTR(&G.cameradev), N_("camera device type (fli/zwo/etc)")},
-    {"focuserdev", NEED_ARG,NULL,   'F',    arg_string, APTR(&G.focuserdev),N_("focuser device type (fli/zwo/etc)")},
-    {"wheeldev", NEED_ARG,  NULL,   'W',    arg_string, APTR(&G.wheeldev),  N_("wheel device type (fli/zwo/etc)")},
+    {"plugin"   ,NEED_ARG,  NULL,   0,      arg_string, APTR(&G.commondev), N_("common device plugin (e.g devfli.so)")},
+    {"cameradev", NEED_ARG, NULL,   'C',    arg_string, APTR(&G.cameradev), N_("camera device plugin (e.g. devfli.so)")},
+    {"focuserdev", NEED_ARG,NULL,   'F',    arg_string, APTR(&G.focuserdev),N_("focuser device plugin (e.g. devzwo.so)")},
+    {"wheeldev", NEED_ARG,  NULL,   'W',    arg_string, APTR(&G.wheeldev),  N_("wheel device plugin (e.g. devdummy.so)")},
+    {"list",    NO_ARGS,    NULL,   'L',    arg_int,    APTR(&G.listdevices),N_("list connected devices")},
     {"camdevno",NEED_ARG,   NULL,    0,     arg_int,    APTR(&G.camdevno),  N_("camera device number (if many: 0, 1, 2 etc)")},
     {"wheeldevno",NEED_ARG, NULL,    0,     arg_int,    APTR(&G.whldevno),  N_("filter wheel device number (if many: 0, 1, 2 etc)")},
     {"focdevno",NEED_ARG,   NULL,    0,     arg_int,    APTR(&G.focdevno),  N_("focuser device number (if many: 0, 1, 2 etc)")},
@@ -48,7 +47,7 @@ myoption cmdlnopts[] = {
     {"verbose", NO_ARGS,    NULL,   'V',    arg_none,   APTR(&G.verbose),   N_("verbose level (each -v increase it)")},
     {"dark",    NO_ARGS,    NULL,   'd',    arg_int,    APTR(&G.dark),      N_("not open shutter, when exposing (\"dark frames\")")},
     {"8bit",    NO_ARGS,    NULL,   '8',    arg_int,    APTR(&G._8bit),     N_("run in 8-bit mode")},
-    {"fast",    NO_ARGS,    NULL,   'f',    arg_int,    APTR(&G.fast),      N_("fast (8MHz) readout mode")},
+    {"fast",    NO_ARGS,    NULL,   'f',    arg_none,   APTR(&G.fast),      N_("fast (8MHz) readout mode")},
     {"set-temp",NEED_ARG,   NULL,   't',    arg_double, APTR(&G.temperature),N_("set CCD temperature to given value (degr C)")},
     {"set-fan", NEED_ARG,   NULL,   0,      arg_int,    APTR(&G.fanspeed),  N_("set fan speed (0 - off, 1 - low, 2 - high)")},
 
@@ -65,7 +64,7 @@ myoption cmdlnopts[] = {
     {"vbin",    NEED_ARG,   NULL,   'v',    arg_int,    APTR(&G.vbin),      N_("vertical binning to N pixels")},
     {"nframes", NEED_ARG,   NULL,   'n',    arg_int,    APTR(&G.nframes),   N_("make series of N frames")},
     {"pause",   NEED_ARG,   NULL,   'p',    arg_int,    APTR(&G.pause_len), N_("make pause for N seconds between expositions")},
-    {"exptime", NEED_ARG,   NULL,   'x',    arg_float,  APTR(&G.exptime),   N_("set exposure time to given value (ms)")},
+    {"exptime", NEED_ARG,   NULL,   'x',    arg_double, APTR(&G.exptime),   N_("set exposure time to given value (seconds!)")},
     {"X0",      NEED_ARG,   NULL,   0,      arg_int,    APTR(&G.X0),        N_("frame X0 coordinate (-1 - all with overscan)")},
     {"Y0",      NEED_ARG,   NULL,   0,      arg_int,    APTR(&G.Y0),        N_("frame Y0 coordinate (-1 - all with overscan)")},
     {"X1",      NEED_ARG,   NULL,   0,      arg_int,    APTR(&G.X1),        N_("frame X1 coordinate (-1 - all with overscan)")},
@@ -104,8 +103,6 @@ myoption cmdlnopts[] = {
  * @return allocated structure with global parameters
  */
 glob_pars *parse_args(int argc, char **argv){
-    void *ptr;
-    ptr = memcpy(&G, &Gdefault, sizeof(G)); assert(ptr);
     // format of help: "Usage: progname [args]\n"
     change_helpstring("Usage: %s [args] <output file prefix>\n\n\tWhere args are:\n");
     // parse arguments

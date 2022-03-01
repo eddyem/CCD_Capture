@@ -27,7 +27,8 @@
  * here are some typedef's for global data
  */
 typedef struct{
-    char *cameradev;    // camera device ("fli", "zwo" etc)
+    char *commondev;    // common (camera+focuser+wheel) plugin ("devfli.so", "devzwo.so" etc)
+    char *cameradev;    // camera device plugin
     char *focuserdev;   // focuser ...
     char *wheeldev;     // wheel ...
     char *objname;      // object's name
@@ -37,6 +38,7 @@ typedef struct{
     char *observers;    // observers' names
     char *prog_id;      // programm identificator
     char *author;       // programm author
+    int listdevices;    // list connected devices
     int fanspeed;       // fan speed: 0-2
     int noflush;        // turn off bg flushing
     int camdevno;       // camera number (0, 1, 2 etc)
@@ -56,7 +58,7 @@ typedef struct{
     int getio;          // get value of ioport
     int setio;          // set value of ioport
     int confio;         // configure ioport
-    float exptime;      // time of exposition in seconds
+    double exptime;     // time of exposition in seconds
     double temperature; // temperature of CCD
     double gotopos;     // move stepper motor of focuser to absolute position
     double addsteps;    // move stepper motor of focuser to relative position

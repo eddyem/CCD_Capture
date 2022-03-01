@@ -21,7 +21,11 @@
 #include <string.h>
 #include <usefull_macros.h>
 
-#include "flifunc.h"
+#include "ccdfunc.h"
+
+extern Camera camera;
+extern Focuser focuser;
+extern Wheel wheel;
 
 #define LIBVERSIZ 1024
 
@@ -124,12 +128,12 @@ static int fli_findCCD(){
         return FALSE;
     }
     if(!camz){ // build cameras list
-        FLIcam.Ndevices = findcams(FLIDOMAIN_USB | FLIDEVICE_CAMERA, &camz);
-        if(!FLIcam.Ndevices){
+        camera.Ndevices = findcams(FLIDOMAIN_USB | FLIDEVICE_CAMERA, &camz);
+        if(!camera.Ndevices){
             DBG("No cameras");
             return FALSE;
         }
-        for(int i = 0; i < FLIcam.Ndevices; i++){
+        for(int i = 0; i < camera.Ndevices; i++){
             DBG("Camera '%s', domain %s", camz[i].name, camz[i].dname);
         }
     }
@@ -137,7 +141,7 @@ static int fli_findCCD(){
 }
 static int fli_setActiceCam(int n){
     if(!camz && !fli_findCCD()) return FALSE;
-    if(n >= FLIcam.Ndevices){
+    if(n >= camera.Ndevices){
         return FALSE;
     }
     FLIClose(camdev);
@@ -157,25 +161,25 @@ static int fli_setActiceCam(int n){
     TRYFUNC(FLIGetPixelSize, camdev, &x, &y);
     if(!fli_err){
         DBG("Pixel size: %g x %g", x,y);
-        FLIcam.pixX = (float)x;
-        FLIcam.pixY = (float)y;
+        camera.pixX = (float)x;
+        camera.pixY = (float)y;
     }
     long x0, x1, y0, y1;
     TRYFUNC(FLIGetVisibleArea, camdev, &x0, &y0, &x1, &y1);
     if(!fli_err){
         DBG("Field of view: (%ld, %ld)(%ld, %ld)", x0, y0, x1, y1);
-        FLIcam.field = (frameformat){.w = x1 - x0, .h = y1 - y0, .xoff = x0, .yoff = y0};
+        camera.field = (frameformat){.w = x1 - x0, .h = y1 - y0, .xoff = x0, .yoff = y0};
     }
     TRYFUNC(FLIGetArrayArea, camdev, &x0, &y0, &x1, &y1);
     if(!fli_err){
         DBG("Array field: (%ld, %ld)(%ld, %ld)", x0, y0, x1, y1);
-        FLIcam.array = (frameformat){.w = x1 - x0, .h = y1 - y0, .xoff = x0, .yoff = y0};
+        camera.array = (frameformat){.w = x1 - x0, .h = y1 - y0, .xoff = x0, .yoff = y0};
     }
     return TRUE;
 }
 
 static int fli_geomlimits(frameformat *l, frameformat *s){
-    if(l) *l = FLIcam.array;
+    if(l) *l = camera.array;
     if(s) *s = (frameformat){.w = 1, .h = 1, .xoff = 1, .yoff = 1};
     return TRUE;
 }
@@ -187,12 +191,12 @@ static int fli_findFocuser(){
         return FALSE;
     }
     if(!focz){
-        FLIfocus.Ndevices = findcams(FLIDOMAIN_USB | FLIDEVICE_FOCUSER, &focz);
-        if(!FLIfocus.Ndevices){
+        focuser.Ndevices = findcams(FLIDOMAIN_USB | FLIDEVICE_FOCUSER, &focz);
+        if(!focuser.Ndevices){
             DBG("No focusers");
             return FALSE;
         }
-        for(int i = 0; i < FLIfocus.Ndevices; i++){
+        for(int i = 0; i < focuser.Ndevices; i++){
             DBG("Focuser '%s', domain %s", focz[i].name, focz[i].dname);
         }
     }
@@ -200,10 +204,10 @@ static int fli_findFocuser(){
 }
 static int fli_setActiceFocuser(int n){
     if(!focz && !fli_findFocuser()) return FALSE;
-    if(n >= FLIfocus.Ndevices) return FALSE;
+    if(n >= focuser.Ndevices) return FALSE;
     FLIClose(focdev);
     int OK = FALSE;
-    for(int i = 0; i < FLIfocus.Ndevices; ++i){
+    for(int i = 0; i < focuser.Ndevices; ++i){
         DBG("Try %s", focz[i].name);
         TRYFUNC(FLIOpen, &focdev, focz[i].name, focz[i].domain);
         if(fli_err) continue;
@@ -295,12 +299,12 @@ static int fli_findWheel(){
         DBG("FLI not found");
         return FALSE;
     }
-    FLIwheel.Ndevices = findcams(FLIDOMAIN_USB | FLIDEVICE_FILTERWHEEL, &whlz);
-    if(!FLIwheel.Ndevices){
+    wheel.Ndevices = findcams(FLIDOMAIN_USB | FLIDEVICE_FILTERWHEEL, &whlz);
+    if(!wheel.Ndevices){
         DBG("No wheels");
         return FALSE;
     }
-    for(int i = 0; i < FLIwheel.Ndevices; i++){
+    for(int i = 0; i < wheel.Ndevices; i++){
         DBG("Wheel '%s', domain %s", whlz[i].name, whlz[i].dname);
     }
     return TRUE;
@@ -310,10 +314,10 @@ static int fli_wgetpos(int *p);
 
 static int fli_setActiceWheel(int n){
     if(!whlz && !fli_findWheel()) return FALSE;
-    if(n >= FLIwheel.Ndevices) return FALSE;
+    if(n >= wheel.Ndevices) return FALSE;
     FLIClose(whldev);
     int OK = FALSE;
-    for(int i = 0; i < FLIfocus.Ndevices; ++i){
+    for(int i = 0; i < focuser.Ndevices; ++i){
         DBG("Try %s", whlz[i].name);
         TRYFUNC(FLIOpen, &whldev, whlz[i].name, whlz[i].domain);
         if(fli_err) continue;
@@ -390,6 +394,17 @@ static int fli_wgett(float *t){
     return TRUE;
 }
 
+static int fli_startexp(){
+    DBG("Start exposition");
+    TRYFUNC(FLIExposeFrame, camdev);
+    if(fli_err){
+        TRYFUNC(FLICancelExposure, camdev);
+        return FALSE;
+    }
+    capStatus = CAPTURE_PROCESS;
+    return TRUE;
+}
+
 static int fli_pollcapt(capture_status *st, float *remain){
     static int errctr = 0;
     if(capStatus == CAPTURE_READY){
@@ -398,14 +413,7 @@ static int fli_pollcapt(capture_status *st, float *remain){
     }
     if(capStatus == CAPTURE_NO){ // start capture
         errctr = 0;
-        DBG("Start exposition");
-        TRYFUNC(FLIExposeFrame, camdev);
-        if(fli_err){
-            TRYFUNC(FLICancelExposure, camdev);
-            if(st) *st = CAPTURE_CANTSTART;
-            return FALSE;
-        }
-        capStatus = CAPTURE_PROCESS;
+        goto retn;
     }
     if(capStatus == CAPTURE_PROCESS){
         TRYFUNC(FLIGetExposureStatus, camdev, &tmpl);
@@ -428,6 +436,7 @@ static int fli_pollcapt(capture_status *st, float *remain){
     }else{ // some error
         if(st) *st = CAPTURE_ABORTED;
         capStatus = CAPTURE_NO;
+        return FALSE;
     }
 retn:
     if(st) *st = capStatus;
@@ -469,7 +478,7 @@ static int fli_setgeometry(frameformat *f){
     TRYFUNC(FLISetImageArea, camdev, f->xoff, f->yoff,
             f->xoff + f->w/curhbin, f->yoff + f->h/curvbin);
     if(fli_err) return FALSE;
-    FLIcam.geometry = *f;
+    camera.geometry = *f;
     return TRUE;
 }
 
@@ -571,7 +580,7 @@ static int fli_setio(int io){
 }
 
 static int fli_setexp(float t){
-    long e = (long)(t*1000.);
+    long e = (long)(t*1000.); // milliseconds!
     TRYFUNC(FLISetExposureTime, camdev, e);
     if(fli_err) return FALSE;
     return TRUE;
@@ -615,15 +624,15 @@ static void camt_free(cam_t **c, int n, flidev_t dev){
 
 static void fli_closecam(){
     DBG("CAMERA CLOSE");
-    camt_free(&camz, FLIcam.Ndevices, camdev);
+    camt_free(&camz, camera.Ndevices, camdev);
 }
 static void fli_closefocuser(){
     DBG("FOCUSER CLOSE");
-    camt_free(&focz, FLIfocus.Ndevices, focdev);
+    camt_free(&focz, focuser.Ndevices, focdev);
 }
 static void fli_closewheel(){
     DBG("WHEEL CLOSE");
-    camt_free(&whlz, FLIwheel.Ndevices, whldev);
+    camt_free(&whlz, wheel.Ndevices, whldev);
 }
 
 static int fli_ffalse(_U_ float f){ return FALSE; }
@@ -632,12 +641,13 @@ static int fli_fpfalse(_U_ float *f){ return FALSE; }
 /*
  * Global objects: camera, focuser and wheel
  */
-Camera FLIcam = {
+Camera camera = {
     .check = fli_findCCD,
     .close = fli_closecam,
     .pollcapture = fli_pollcapt,
     .capture = fli_capt,
     .cancel = fli_cancel,
+    .startexposition = fli_startexp,
     // setters:
     .setDevNo = fli_setActiceCam,
     .setbrightness = fli_ffalse,
@@ -665,10 +675,9 @@ Camera FLIcam = {
     .getTbody = fli_getTbody,
     .getbin = fli_getbin,
     .getio = fli_getio,
-    .geometry = {0},
 };
 
-Focuser FLIfocus = {
+Focuser focuser = {
     .check = fli_findFocuser,
     .setDevNo = fli_setActiceFocuser,
     .close = fli_closefocuser,
@@ -681,7 +690,7 @@ Focuser FLIfocus = {
     .setAbsPos = fli_fgoto,
 };
 
-Wheel FLIwheel = {
+Wheel wheel = {
     .check = fli_findWheel,
     .setDevNo = fli_setActiceWheel,
     .close = fli_closewheel,

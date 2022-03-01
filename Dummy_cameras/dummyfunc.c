@@ -25,7 +25,11 @@
 #include <unistd.h>
 #include <usefull_macros.h>
 
-#include "dummyfunc.h"
+#include "ccdfunc.h"
+
+extern Camera camera;
+extern Focuser focuser;
+extern Wheel wheel;
 
 static const int filtermax = 5;
 static const float focmaxpos = 10.;
@@ -120,7 +124,7 @@ static int camshutter(_U_ shutter_op s){
 
 static int camsetgeom(frameformat *f){
     if(!f) return FALSE;
-    DUMMYcam.geometry = *f;
+    camera.geometry = *f;
     return TRUE;
 }
 
@@ -135,7 +139,7 @@ static int camgmg(float *mg){
 }
 
 static int camggl(frameformat *max, frameformat *step){
-    if(max) *max = DUMMYcam.array;
+    if(max) *max = camera.array;
     if(step) *step = (frameformat){1,1,1,1};
     return TRUE;
 }
@@ -210,6 +214,7 @@ static int stub(){
 }
 
 static void vstub(){
+    FNAME();
     return;
 }
 static int istub(_U_ int N){return TRUE;}
@@ -217,13 +222,14 @@ static int istub(_U_ int N){return TRUE;}
 /*
  * Global objects: camera, focuser and wheel
  */
-Camera DUMMYcam = {
+__attribute__ ((visibility("default"))) Camera camera = {
     .check = stub,
     .Ndevices = 1,
     .close = vstub,
     .pollcapture = campoll,
     .capture = camcapt,
     .cancel = camcancel,
+    .startexposition = stub,
     // setters:
     .setDevNo = setdevno,
     .setbrightness = camsetbrig,
@@ -258,7 +264,7 @@ Camera DUMMYcam = {
     .geometry = {0},
 };
 
-Focuser DUMMYfocus = {
+__attribute__ ((visibility("default"))) Focuser focuser = {
     .check = stub,
     .Ndevices = 1,
     .close = vstub,
@@ -274,7 +280,7 @@ Focuser DUMMYfocus = {
     .getMinPos = focmp,
 };
 
-Wheel DUMMYwheel = {
+__attribute__ ((visibility("default"))) Wheel wheel = {
     .check = stub,
     .Ndevices = 1,
     .close = vstub,
