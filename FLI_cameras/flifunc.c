@@ -21,7 +21,7 @@
 #include <string.h>
 #include <usefull_macros.h>
 
-#include "ccdfunc.h"
+#include "basestructs.h"
 
 extern Camera camera;
 extern Focuser focuser;

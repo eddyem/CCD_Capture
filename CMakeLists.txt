@@ -19,7 +19,7 @@ add_definitions(-D_XOPEN_SOURCE=1234 -D_DEFAULT_SOURCE -D_GNU_SOURCE -DLOCALEDIR
 
 set(CMAKE_COLOR_MAKEFILE ON)
 
-set(SOURCES main.c cmdlnopts.c ccdfunc.c)
+set(SOURCES main.c cmdlnopts.c ccdfunc.c socket.c server.c client.c)
 
 # cmake -DDEBUG=yes -> debugging
 if(DEFINED DEBUG AND DEBUG STREQUAL "yes")

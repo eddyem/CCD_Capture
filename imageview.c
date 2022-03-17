@@ -489,7 +489,7 @@ void* image_thread(_U_ void *data){
         if(win && win->winevt){
             if(win->winevt & WINEVT_SAVEIMAGE){ // save image
                 verbose(2, "Make screenshot\n");
-                saveFITS(img, "ScreenShot");
+                saveFITS(img);
                 win->winevt &= ~WINEVT_SAVEIMAGE;
             }
             if(win->winevt & WINEVT_ROLLCOLORFUN){

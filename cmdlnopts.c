@@ -9,24 +9,30 @@
 
 #include "cmdlnopts.h"
 
+#define DEFAULT_PID_FILE    "/tmp/CCD_Capture.pid"
+
 static int help;
 glob_pars *GP = NULL;
 //            DEFAULTS
 // default global parameters
 static glob_pars  G = {
-    .instrument = "direct imaging",
-    .exptime = -1,
+    .instrument = NULL,
+    .exptime = -1.,
     .nframes = 1,
     .hbin = 1, .vbin = 1,
     .X0 = -1, .Y0 = -1,
     .X1 = -1, .Y1 = -1,
-    .temperature = 1e6,
+    .focdevno = -1,
+    .camdevno = -1,
+    .whldevno = -1,
+    .temperature = NAN,
     .shtr_cmd = -1,
     .confio = -1, .setio = -1,
     .gotopos = NAN, .addsteps = NAN,
+    .pidfile = DEFAULT_PID_FILE,
+    .brightness = NAN, .gain = NAN,
     .setwheel = -1,
     .fanspeed = -1,
-    .nflushes = 1
 };
 
 /*
@@ -47,7 +53,7 @@ myoption cmdlnopts[] = {
     {"verbose", NO_ARGS,    NULL,   'V',    arg_none,   APTR(&G.verbose),   N_("verbose level (each -v increase it)")},
     {"dark",    NO_ARGS,    NULL,   'd',    arg_int,    APTR(&G.dark),      N_("not open shutter, when exposing (\"dark frames\")")},
     {"8bit",    NO_ARGS,    NULL,   '8',    arg_int,    APTR(&G._8bit),     N_("run in 8-bit mode")},
-    {"fast",    NO_ARGS,    NULL,   'f',    arg_none,   APTR(&G.fast),      N_("fast (8MHz) readout mode")},
+    {"fast",    NO_ARGS,    NULL,   'f',    arg_none,   APTR(&G.fast),      N_("fast readout mode")},
     {"set-temp",NEED_ARG,   NULL,   't',    arg_double, APTR(&G.temperature),N_("set CCD temperature to given value (degr C)")},
     {"set-fan", NEED_ARG,   NULL,   0,      arg_int,    APTR(&G.fanspeed),  N_("set fan speed (0 - off, 1 - low, 2 - high)")},
 
@@ -58,6 +64,8 @@ myoption cmdlnopts[] = {
     {"obsname", NEED_ARG,   NULL,   'N',    arg_string, APTR(&G.observers), N_("observers' names")},
     {"prog-id", NEED_ARG,   NULL,   'P',    arg_string, APTR(&G.prog_id),   N_("observing program name")},
     {"addrec",  MULT_PAR,   NULL,   'r',    arg_string, APTR(&G.addhdr),    N_("add records to header from given file[s]")},
+    {"outfile", NEED_ARG,   NULL,   'o',    arg_string, APTR(&G.outfile),   N_("output file name")},
+    {"wait",    NO_ARGS,    &G.waitexpend,1,arg_none,   NULL,               N_("wait while exposition ends")},
 
     {"nflushes",NEED_ARG,   NULL,   'l',    arg_int,    APTR(&G.nflushes),  N_("N flushes before exposing (default: 1)")},
     {"hbin",    NEED_ARG,   NULL,   'h',    arg_int,    APTR(&G.hbin),      N_("horizontal binning to N pixels")},
@@ -65,11 +73,11 @@ myoption cmdlnopts[] = {
     {"nframes", NEED_ARG,   NULL,   'n',    arg_int,    APTR(&G.nframes),   N_("make series of N frames")},
     {"pause",   NEED_ARG,   NULL,   'p',    arg_int,    APTR(&G.pause_len), N_("make pause for N seconds between expositions")},
     {"exptime", NEED_ARG,   NULL,   'x',    arg_double, APTR(&G.exptime),   N_("set exposure time to given value (seconds!)")},
-    {"X0",      NEED_ARG,   NULL,   0,      arg_int,    APTR(&G.X0),        N_("frame X0 coordinate (-1 - all with overscan)")},
-    {"Y0",      NEED_ARG,   NULL,   0,      arg_int,    APTR(&G.Y0),        N_("frame Y0 coordinate (-1 - all with overscan)")},
-    {"X1",      NEED_ARG,   NULL,   0,      arg_int,    APTR(&G.X1),        N_("frame X1 coordinate (-1 - all with overscan)")},
-    {"Y1",      NEED_ARG,   NULL,   0,      arg_int,    APTR(&G.Y1),        N_("frame Y1 coordinate (-1 - all with overscan)")},
-    {"fullframe",NO_ARGS,   NULL,   0,      arg_int,    APTR(&G.fullframe), N_("grab full frame (with overscans)")},
+    {"cancel",  NO_ARGS, &G.cancelexpose, 1,arg_none,   NULL,               N_("cancel current exposition")},
+    {"X0",      NEED_ARG,   NULL,   0,      arg_int,    APTR(&G.X0),        N_("absolute (not divided by binning!) frame X0 coordinate (-1 - all with overscan)")},
+    {"Y0",      NEED_ARG,   NULL,   0,      arg_int,    APTR(&G.Y0),        N_("absolute frame Y0 coordinate (-1 - all with overscan)")},
+    {"X1",      NEED_ARG,   NULL,   0,      arg_int,    APTR(&G.X1),        N_("absolute frame X1 coordinate (-1 - all with overscan)")},
+    {"Y1",      NEED_ARG,   NULL,   0,      arg_int,    APTR(&G.Y1),        N_("absolute frame Y1 coordinate (-1 - all with overscan)")},
 
     {"open-shutter",NO_ARGS,&G.shtr_cmd, SHUTTER_OPEN,arg_none,NULL,        N_("open shutter")},
     {"close-shutter",NO_ARGS,&G.shtr_cmd, SHUTTER_CLOSE,arg_none,NULL,      N_("close shutter")},
@@ -86,6 +94,14 @@ myoption cmdlnopts[] = {
 
     {"wheel-set",NEED_ARG,  NULL,   'w',    arg_int,    APTR(&G.setwheel),  N_("set wheel position")},
 
+    {"gain",    NEED_ARG,   NULL,   0,      arg_float,  APTR(&G.gain),      N_("CMOS gain level")},
+    {"brightness",NEED_ARG, NULL,   0,      arg_float,  APTR(&G.brightness),N_("CMOS brightness level")},
+
+    {"logfile", NEED_ARG,   NULL,   0,      arg_string, APTR(&G.logfile),   N_("logging file name (if run as server)")},
+    {"path",    NEED_ARG,   NULL,   0,      arg_string, APTR(&G.path),      N_("UNIX socket name")},
+    {"port",    NEED_ARG,   NULL,   0,      arg_string, APTR(&G.port),      N_("local INET socket port")},
+    {"pidfile", NEED_ARG,   NULL,   0,      arg_string, APTR(&G.pidfile),   N_("PID file (default: " DEFAULT_PID_FILE ")")},
+
 #ifdef IMAGEVIEW
     {"display", NO_ARGS,    NULL,   'D',    arg_int,   APTR(&G.showimage),  N_("Display image in OpenGL window")},
 #endif
@@ -93,7 +109,6 @@ myoption cmdlnopts[] = {
 
     end_option
 };
-
 
 /**
  * Parse command line options and return dynamically allocated structure
@@ -104,12 +119,12 @@ myoption cmdlnopts[] = {
  */
 glob_pars *parse_args(int argc, char **argv){
     // format of help: "Usage: progname [args]\n"
-    change_helpstring("Usage: %s [args] <output file prefix>\n\n\tWhere args are:\n");
+    change_helpstring("Usage: %s [args] [output file prefix]\n\n\tWhere args are:\n");
     // parse arguments
     parseargs(&argc, &argv, cmdlnopts);
     if(help) showhelp(-1, cmdlnopts);
     if(argc > 0){
-        G.outfile = strdup(argv[0]);
+        G.outfileprefix = strdup(argv[0]);
         if(argc > 1){
             WARNX("%d unused parameters:\n", argc - 1);
             for(int i = 1; i < argc; ++i)

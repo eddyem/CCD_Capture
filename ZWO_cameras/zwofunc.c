@@ -26,7 +26,7 @@
 #include <usefull_macros.h>
 #include <ASICamera2.h>
 
-#include "ccdfunc.h"
+#include "basestructs.h"
 
 extern Camera camera;
 extern Focuser focuser;
@@ -47,6 +47,7 @@ static struct{
     float mingain;
     float maxbright;
     float minbright;
+    int maxbin;
 } extrvalues = {0}; // extremal values
 
 static double starttime = 0.;   // time when exposure started
@@ -69,6 +70,7 @@ static int zwo_getfloat(float *f, ASI_CONTROL_TYPE t){
     long val; ASI_BOOL aut = ASI_FALSE;
     if(ASI_SUCCESS != ASIGetControlValue(caminfo.CameraID, t, &val, &aut))
         return FALSE;
+    if(aut) DBG("VALUE IS AUTO!!!");
     *f = (float) val;
     return TRUE;
 }
@@ -142,6 +144,7 @@ static int startcapt(){
 static void asi_closecam(){
     FNAME();
     if(caminfo.CameraID){
+        camcancel();
         ASICloseCamera(caminfo.CameraID);
         caminfo.CameraID = 0;
     }
@@ -154,12 +157,10 @@ static int setdevno(int n){
     DBG("Camera #%d, name: %s, ID: %d", n, caminfo.Name, caminfo.CameraID);
     DBG("WxH: %ldx%ld, %s", caminfo.MaxWidth, caminfo.MaxHeight, caminfo.IsColorCam == ASI_TRUE ? "color" : "monochrome");
     DBG("Pixel size: %1.1f mkm; gain: %1.2f e/ADU", caminfo.PixelSize, caminfo.ElecPerADU);
-#ifdef EBUG
     int *sup = caminfo.SupportedBins;
     while(*sup){
-        green("Supported bin: %d\n", *sup++);
+        extrvalues.maxbin = *sup++;
     }
-#endif
     camera.pixX = camera.pixY = (float)caminfo.PixelSize / 1e6; // um -> m
     camera.array = (frameformat){.w = caminfo.MaxWidth, .h = caminfo.MaxHeight, .xoff = 0, .yoff = 0};
     camera.field = camera.array; // initial setup (will update later)
@@ -217,7 +218,10 @@ static int setdevno(int n){
 }
 
 static int camsetbrig(float b){
-    if(b < extrvalues.minbright || b > extrvalues.maxbright) return FALSE;
+    if(b < extrvalues.minbright || b > extrvalues.maxbright){
+        WARNX(_("Brightness should be from %g to %g"), extrvalues.minbright, extrvalues.maxbright);
+        return FALSE;
+    }
     return zwo_setfloat(b, ASI_BRIGHTNESS);
 }
 
@@ -233,7 +237,10 @@ static int camsetexp(float t){
 }
 
 static int camsetgain(float g){
-    if(g < extrvalues.mingain || g > extrvalues.maxgain) return FALSE;
+    if(g < extrvalues.mingain || g > extrvalues.maxgain){
+        WARNX(_("Gain should be from %g to %g"), extrvalues.mingain, extrvalues.maxgain);
+        return FALSE;
+    }
     return zwo_setfloat(g, ASI_GAIN);
 }
 
@@ -243,6 +250,10 @@ static int camgetgain(float *g){
 }
 
 static int camsett(float t){
+    if(caminfo.IsCoolerCam == ASI_FALSE){
+        DBG("Cooling unsupported");
+        return FALSE;
+    }
     if(!zwo_setfloat(1., ASI_FAN_ON)){
         DBG("Can't set fan on");
         return FALSE;
@@ -251,6 +262,10 @@ static int camsett(float t){
     if(zwo_getfloat(&f, ASI_FAN_ON)){
         DBG("FAN: %g", f);
     }
+    if(!zwo_setfloat(1., ASI_COOLER_ON)){
+        DBG("Can't set cooler on");
+        return FALSE;
+    }
     if(!zwo_setfloat(t, ASI_TARGET_TEMP)){
         DBG("Can't set target temperature");
         return FALSE;
@@ -258,29 +273,24 @@ static int camsett(float t){
     if(zwo_getfloat(&f, ASI_TARGET_TEMP)){
         DBG("Ttarg = %g", f);
     }
-    if(!zwo_setfloat(1., ASI_COOLER_ON)){
-        DBG("Can't set cooler on");
-        return FALSE;
-    }
     if(!zwo_getfloat(&f, ASI_COOLER_ON)) return FALSE;
     DBG("COOLERON = %g", f);
-    usleep(100000);
+#ifdef EBUG
     double t0 = dtime();
     float c, p, tn;
-    while(dtime() - t0 < 10.){
-        green("%.1f", dtime()-t0);
+    while(dtime() - t0 < 1200.){
+        usleep(100000); // without this first ASI_FAN_ON will show false data
+        green("%.1f ", dtime()-t0);
         zwo_getfloat(&f, ASI_FAN_ON);
         zwo_getfloat(&t, ASI_TARGET_TEMP);
         zwo_getfloat(&c, ASI_COOLER_ON);
         zwo_getfloat(&tn, ASI_TEMPERATURE);
         zwo_getfloat(&p, ASI_COOLER_POWER_PERC);
         printf("fan: %g, t: %g, cooler: %g, perc: %g, tnow: %g\n", f, t, c, p, tn/10.);
-        if(f > 0.) break;
-        usleep(100000);
     }
+#endif
     return TRUE;
 }
-
 
 static int camgett(float *t){
     if(!t) return FALSE;
@@ -295,7 +305,13 @@ static int gett(_U_ float *t){
 }
 
 static int camsetbin(int h, int v){
-    if(h != v) return FALSE;
+    if(h != v){
+        WARNX(_("BinX and BinY should be equal"));
+        return FALSE;
+    }
+    if(h > extrvalues.maxbin){
+        WARNX(_("Maximal binning value is %d"), extrvalues.maxbin);
+    }
     if(zwo_setfloat(1., ASI_HARDWARE_BIN)){
         curbin = h;
         return TRUE;
@@ -322,8 +338,9 @@ static int camsetgeom(frameformat *f){ // w,h, xoff, yoff
         DBG(_("Can't get geometry"));
         return FALSE;
     }
+    DBG("curformat: w=%d, h=%d, bin=%d", f->w, f->h, curbin);
     DBG("w=%d, h=%d, bin=%d", f->w, f->h, curbin);
-    if(ASI_SUCCESS != ASISetStartPos(caminfo.CameraID, f->xoff, f->yoff)){
+    if(ASI_SUCCESS != ASISetStartPos(caminfo.CameraID, f->xoff/curbin, f->yoff/curbin)){
         DBG("Can't set start pos");
         return FALSE;
     }
@@ -331,6 +348,7 @@ static int camsetgeom(frameformat *f){ // w,h, xoff, yoff
         DBG("Can't get start pos");
         return FALSE;
     }
+    DBG("curstartpos: x=%d, y=%d", f->xoff, f->yoff);
     camera.geometry = *f;
     return TRUE;
 }
@@ -373,7 +391,20 @@ static int camgetio(_U_ int *io){ // not supported
     return FALSE;
 }
 
-static int camfan(_U_ fan_speed spd){ // not supported
+static int camfan(_U_ fan_speed spd){ // not supported, just turn it on/off
+    switch(spd){
+        case FAN_OFF:
+            if(!zwo_setfloat(0., ASI_FAN_ON)){
+                DBG("Can't set fan off");
+                return FALSE;
+            }
+        break;
+        default: // turn ON
+            if(!zwo_setfloat(1., ASI_FAN_ON)){
+                DBG("Can't set fan on");
+                return FALSE;
+            }
+    }
     return TRUE;
 }
 

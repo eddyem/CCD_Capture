@@ -32,24 +32,32 @@ typedef struct{
     char *focuserdev;   // focuser ...
     char *wheeldev;     // wheel ...
     char *objname;      // object's name
-    char *outfile;      // output filename prefix
+    char *outfile;      // output filename
+    char *outfileprefix;// output filename prefix
     char *objtype;      // type of object (dark/obj/bias)
     char *instrument;   // instrument's name
     char *observers;    // observers' names
     char *prog_id;      // programm identificator
     char *author;       // programm author
+    char *logfile;      // when run as server log here
+    char *path;         // UNIX socket name
+    char *port;         // local INET socket port
+    char *pidfile;      // PID file (default: /tmp/CCD_Capture.pid)
+    char **addhdr;      // list of files from which to add header records
+    int waitexpend;     // wait while exposition ends
+    int cancelexpose;   // cancel exp
+    int client;         // run as client
     int listdevices;    // list connected devices
     int fanspeed;       // fan speed: 0-2
     int noflush;        // turn off bg flushing
     int camdevno;       // camera number (0, 1, 2 etc)
-    int focdevno;
-    int whldevno;
+    int focdevno;       // focuser -//-
+    int whldevno;       // wheel -//-
     int dark;           // dark frame
     int nframes;        // amount of frames to take
     int hbin; int vbin; // binning
     int X0; int Y0;     // top left corner coordinate (-1 - all, including overscan)
     int X1; int Y1;     // bottom right corner coordinate
-    int fullframe;      // grab full frame (with overscans)
     int nflushes;       // amount of flushes
     int pause_len;      // pause (in seconds) between expositions
     int shtr_cmd;       // shutter command (flishutter_t)
@@ -58,16 +66,17 @@ typedef struct{
     int getio;          // get value of ioport
     int setio;          // set value of ioport
     int confio;         // configure ioport
-    double exptime;     // time of exposition in seconds
-    double temperature; // temperature of CCD
-    double gotopos;     // move stepper motor of focuser to absolute position
-    double addsteps;    // move stepper motor of focuser to relative position
     int setwheel;       // set wheel position
     int async;          // asynchronous moving
     int verbose;        // each '-V' increases it
     int rewrite;        // rewrite file
     int showimage;      // show image preview
-    char **addhdr;      // list of files from which to add header records
+    float gain;         // gain level (only for CMOS)
+    float brightness;   // brightness (only for CMOS)
+    double exptime;     // time of exposition in seconds
+    double temperature; // temperature of CCD
+    double gotopos;     // move stepper motor of focuser to absolute position
+    double addsteps;    // move stepper motor of focuser to relative position
 } glob_pars;
 
 

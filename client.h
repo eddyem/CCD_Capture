@@ -17,27 +17,17 @@
  */
 
 #pragma once
-#ifndef CCDFUNC_H__
-#define CCDFUNC_H__
+#ifndef CLIENT_H__
+#define CLIENT_H__
 
-#include "basestructs.h"
+// waiting for answer timeout
+#define ANSWER_TIMEOUT  1.0
+// wait for exposition ends (between subsequent check calls)
+#define WAIT_TIMEOUT    2.0
+// client will disconnect after this time from last server message
+#define CLIENT_TIMEOUT  10.0
 
-extern Camera *camera;
-extern Focuser *focuser;
-extern Wheel *wheel;
+// client-side functions
+void client(int fd);
 
-void calculate_stat(IMG *image);
-void saveFITS(IMG *img); // for imageview module
-void focusers();
-void wheels();
-void ccds();
-void cancel();
-
-int startCCD(void **dlh);
-int startWheel(void **dlh);
-int startFocuser(void **dlh);
-void focclose(void *dlh);
-void closewheel(void *dlh);
-void closecam(void *dlh);
-
-#endif // CCDFUNC_H__
+#endif // CLIENT_H__

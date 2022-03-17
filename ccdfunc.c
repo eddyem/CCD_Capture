@@ -41,9 +41,10 @@ static int fitserror = 0;
 #define TRYFITS(f, ...)                     \
 do{ int status = 0;                         \
     f(__VA_ARGS__, &status);                \
-    if(status){                            \
+    if(status){                             \
         fits_report_error(stderr, status);  \
-        fitserror = status;}                         \
+        LOGERR("Fits error %d", status);    \
+        fitserror = status;}                \
 }while(0)
 #define WRITEKEY(...)                           \
 do{ int status = 0;                             \
@@ -105,16 +106,16 @@ static size_t curtime(char *s_time){ // current date/time
     return strftime(s_time, TMBUFSIZ, "%d/%m/%Y,%H:%M:%S", localtime(&tm));
 }*/
 
-static int check_filename(char *buff, char *outfile, char *ext){
-    struct stat filestat;
-    int num;
-    for(num = 1; num < 10000; num++){
-        if(snprintf(buff, PATH_MAX, "%s_%04d.%s", outfile, num, ext) < 1)
-            return 0;
+// check if I can create file prefix_XXXX.fits
+static int check_filenameprefix(char *buff, int buflen){
+    for(int num = 1; num < 10000; num++){
+        if(snprintf(buff, buflen-1, "%s_%04d.fits", GP->outfileprefix, num) < 1)
+            return FALSE;
+        struct stat filestat;
         if(stat(buff, &filestat)) // no such file or can't stat()
-            return 1;
+            return TRUE;
     }
-    return 0;
+    return FALSE;
 }
 
 /**
@@ -144,21 +145,37 @@ static void addrec(fitsfile *f, char *filename){
     }
 }
 
-void saveFITS(IMG *img, char *filename){
+// save FITS file `img` into GP->outfile or GP->outfileprefix_XXXX.fits
+void saveFITS(IMG *img){
     if(!camera){
+        LOGERR("Can't save image: no camera device");
         WARNX(_("Camera device unknown"));
         return;
     }
     char buff[PATH_MAX], fnam[PATH_MAX];
-    if(filename == NULL) return;
-    fitserror = 0;
-    if(!check_filename(fnam, filename, "fits") && !GP->rewrite){
-        // Не могу сохранить файл
-        WARNX(_("Can't save file"));
-    }else{
-        if(GP->rewrite){
-            DBG("REW");
-            snprintf(fnam, PATH_MAX, "!%s.fits", filename);
+    if(!GP->outfile && !GP->outfileprefix){
+        LOGERR("Can't save image: neither filename nor filename prefix pointed");
+        WARNX(_("Neither filename nor filename prefix pointed!"));
+        return;
+    }
+    if(GP->outfile){ // pointed specific output file name like "file.fits", check it
+        struct stat filestat;
+        int s = stat(GP->outfile, &filestat);
+        if(s){ // not exists
+            snprintf(fnam, PATH_MAX-1, "%s", GP->outfile);
+        }else{ // exists
+            if(!GP->rewrite){
+                LOGERR("Can't save image: file %s exists", GP->outfile);
+                WARNX("File %s exists!", GP->outfile);
+                return;
+            }
+            snprintf(fnam, PATH_MAX-1, "!%s", GP->outfile);
+        }
+    }else{ // user pointed output file prefix
+        if(!check_filenameprefix(fnam, PATH_MAX)){
+            // Не могу сохранить файл
+            WARNX(_("Can't save file with prefix %s"), GP->outfileprefix);
+            LOGERR("Can't save image with prefix %s", GP->outfileprefix);
         }
     }
     int width = img->w, height = img->h;
@@ -171,12 +188,13 @@ void saveFITS(IMG *img, char *filename){
     char bufc[FLEN_CARD];
     time_t savetime = time(NULL);
     fitsfile *fp;
+    fitserror = 0;
     TRYFITS(fits_create_file, &fp, fnam);
     if(fitserror) goto cloerr;
     TRYFITS(fits_create_img, fp, USHORT_IMG, 2, naxes);
     if(fitserror) goto cloerr;
     // FILE / Input file original name
-    WRITEKEY(fp, TSTRING, "FILE", filename, "Input file original name");
+    WRITEKEY(fp, TSTRING, "FILE", fnam, "Input file original name");
     // ORIGIN / organization responsible for the data
     WRITEKEY(fp, TSTRING, "ORIGIN", "SAO RAS", "organization responsible for the data");
     // OBSERVAT / Observatory name
@@ -200,8 +218,8 @@ void saveFITS(IMG *img, char *filename){
              camera->array.xoff + camera->array.w, camera->array.yoff + camera->array.h);
     WRITEKEY(fp, TSTRING, "ARRAYFLD", bufc, "Camera full array size");
     // CRVAL1, CRVAL2 / Offset in X, Y
-    if(GP->X0 > -1) WRITEKEY(fp, TINT, "X0", &GP->X0, "Subframe left border");
-    if(GP->Y0 > -1) WRITEKEY(fp, TINT, "Y0", &GP->Y0, "Subframe upper border");
+    if(GP->X0 > -1) WRITEKEY(fp, TINT, "X0", &GP->X0, "Subframe left border without binning");
+    if(GP->Y0 > -1) WRITEKEY(fp, TINT, "Y0", &GP->Y0, "Subframe upper border without binning");
     if(GP->objtype) strncpy(bufc, GP->objtype, FLEN_CARD-1);
     else if(GP->dark) sprintf(bufc, "dark");
     else sprintf(bufc, "light");
@@ -221,7 +239,7 @@ void saveFITS(IMG *img, char *filename){
     WRITEKEY(fp, TFLOAT, "STATAVR", &tmpf, "Average data value");
     tmpf = img->std;
     WRITEKEY(fp, TFLOAT, "STATSTD", &tmpf, "Std. of data value");
-    WRITEKEY(fp, TFLOAT, "CAMTEMP0", &GP->temperature, "Camera temperature at exp. start, degr C");
+//    WRITEKEY(fp, TFLOAT, "CAMTEMP0", &GP->temperature, "Camera temperature at exp. start, degr C");
     if(camera->getTcold(&tmpf))
         WRITEKEY(fp, TFLOAT, "CAMTEMP", &tmpf, "Camera temperature at exp. end, degr C");
     if(camera->getTbody(&tmpf))
@@ -231,6 +249,12 @@ void saveFITS(IMG *img, char *filename){
     // EXPTIME / actual exposition time (sec)
     tmpd = GP->exptime;
     WRITEKEY(fp, TDOUBLE, "EXPTIME", &tmpd, "Actual exposition time (sec)");
+    if(camera->getgain(&tmpf)){
+        WRITEKEY(fp, TFLOAT, "CAMGAIN", &tmpf, "CMOS gain value");
+    }
+    if(camera->getbrightness(&tmpf)){
+        WRITEKEY(fp, TFLOAT, "CAMBRIGH", &tmpf, "CMOS brightness value");
+    }
     // DATE / Creation date (YYYY-MM-DDThh:mm:ss, UTC)
     strftime(bufc, FLEN_VALUE, "%Y-%m-%dT%H:%M:%S", gmtime(&savetime));
     WRITEKEY(fp, TSTRING, "DATE", bufc, "Creation date (YYYY-MM-DDThh:mm:ss, UTC)");
@@ -301,14 +325,16 @@ void saveFITS(IMG *img, char *filename){
     TRYFITS(fits_close_file, fp);
 cloerr:
     if(fitserror == 0){
+        LOGMSG("Save file '%s'", fnam);
         verbose(1, _("File saved as '%s'"), fnam);
     }else{
+        LOGERR("Can't save %s", fnam);
         WARNX(_("Error saving file"));
         fitserror = 0;
     }
 }
 
-static void calculate_stat(IMG *image){
+void calculate_stat(IMG *image){
     uint64_t Noverld = 0L, size = image->h*image->w;
     double sum = 0., sum2 = 0.;
     uint16_t max = 0, min = 65535;
@@ -340,11 +366,34 @@ static void calculate_stat(IMG *image){
     double avr = sum/sz;
     image->avr = avr;
     image->std = sqrt(fabs(sum2/sz - avr*avr));
+    image->max = max; image->min = min;
     if(GP->verbose){
         printf(_("Image stat:\n"));
         printf("avr = %.1f, std = %.1f, Noverload = %ld\n", avr, image->std, Noverld);
         printf("max = %u, min = %u, size = %ld\n", max, min, size);
     }
+}
+
+int startFocuser(void **dlh){
+    if(!GP->focuserdev && !GP->commondev){
+        verbose(3, _("Focuser device not pointed"));
+        return FALSE;
+    }else{
+        char *plugin = GP->commondev ? GP->commondev : GP->focuserdev;
+        if(!(*dlh = init_focuser(plugin))) return FALSE;
+    }
+    if(!focuser->check()){
+        verbose(3, _("No focusers found"));
+        focuser = NULL;
+        return FALSE;
+    }
+    return TRUE;
+}
+
+void focclose(void *dlh){
+    focuser->close();
+    dlclose(dlh);
+    focuser = NULL;
 }
 
 /*
@@ -353,26 +402,17 @@ static void calculate_stat(IMG *image){
 void focusers(){
     FNAME();
     void *dlh = NULL;
-    if(!GP->focuserdev && !GP->commondev){
-        verbose(3, _("Focuser device not pointed"));
-        return;
-    }else{
-        char *plugin = GP->commondev ? GP->commondev : GP->focuserdev;
-        if(!(dlh = init_focuser(plugin))) return;
-    }
-    if(!focuser->check()){
-        verbose(3, _("No focusers found"));
-        focuser = NULL;
-        return;
-    }
+    if(!startFocuser(&dlh)) return;
     if(GP->listdevices){
         for(int i = 0; i < focuser->Ndevices; ++i){
+            if(!focuser->setDevNo(i)) continue;
             char modname[256];
             focuser->getModelName(modname, 255);
             printf("Found focuser #%d: %s\n", i, modname);
         }
     }
     int num = GP->focdevno;
+    if(num < 0) num = 0;
     if(num > focuser->Ndevices - 1){
         WARNX(_("Found %d focusers, you point number %d"), focuser->Ndevices, num);
         goto retn;
@@ -422,9 +462,29 @@ void focusers(){
         if(!focuser->setAbsPos(GP->async, tagpos)) WARNX(_("Can't set position %g"), tagpos);
     }
 retn:
-    focuser->close();
+    focclose(dlh);
+}
+
+int startWheel(void **dlh){
+    if(!GP->wheeldev && !GP->commondev){
+        verbose(3, _("Wheel device not pointed"));
+        return FALSE;
+    }else{
+        char *plugin = GP->commondev ? GP->commondev : GP->wheeldev;
+        if(!(*dlh = init_wheel(plugin))) return FALSE;
+    }
+    if(!wheel->check()){
+        verbose(3, _("No wheels found"));
+        wheel = NULL;
+        return FALSE;
+    }
+    return TRUE;
+}
+
+void closewheel(void *dlh){
+    wheel->close();
     dlclose(dlh);
-    focuser = NULL;
+    wheel = NULL;
 }
 
 /*
@@ -433,26 +493,17 @@ retn:
 void wheels(){
     FNAME();
     void *dlh = NULL;
-    if(!GP->wheeldev && !GP->commondev){
-        verbose(3, _("Wheel device not pointed"));
-        return;
-    }else{
-        char *plugin = GP->commondev ? GP->commondev : GP->wheeldev;
-        if(!(dlh = init_wheel(plugin))) return;
-    }
-    if(!wheel->check()){
-        verbose(3, _("No wheels found"));
-        wheel = NULL;
-        return;
-    }
+    if(!startWheel(&dlh)) return;
     if(GP->listdevices){
         for(int i = 0; i < wheel->Ndevices; ++i){
+            if(!wheel->setDevNo(i)) continue;
             char modname[256];
             wheel->getModelName(modname, 255);
             printf("Found wheel #%d: %s\n", i, modname);
         }
     }
     int num = GP->whldevno;
+    if(num < 0) num = 0;
     if(num > wheel->Ndevices - 1){
         WARNX(_("Found %d wheels, you point number %d"), wheel->Ndevices, num);
         goto retn;
@@ -487,9 +538,7 @@ void wheels(){
     if(!wheel->setPos(pos))
         WARNX(_("Can't set wheel position %d"), pos);
 retn:
-    wheel->close();
-    dlclose(dlh);
-    wheel = NULL;
+    closewheel(dlh);
 }
 /*
 static void closeall(){
@@ -500,20 +549,45 @@ static void closeall(){
 
 static capture_status capt(){
     capture_status cs;
-    float tleave, tmpf;
-    while(camera->pollcapture(&cs, &tleave)){
+    float tremain, tmpf;
+    while(camera->pollcapture(&cs, &tremain)){
         if(cs != CAPTURE_PROCESS) break;
-        if(tleave > 0.1){
-            verbose(2, _("%.1f seconds till exposition ends"), tleave);
+        if(tremain > 0.1){
+            verbose(2, _("%.1f seconds till exposition ends"), tremain);
             if(camera->getTcold(&tmpf)) verbose(1, "CCDTEMP=%.1f", tmpf);
             if(camera->getTbody(&tmpf)) verbose(1, "BODYTEMP=%.1f", tmpf);
         }
-        if(tleave > 6.) sleep(5);
-        else if(tleave > 0.9) sleep((int)(tleave+0.99));
-        else usleep((int)(1e6*tleave) + 100000);
+        if(tremain > 6.) sleep(5);
+        else if(tremain > 0.9) sleep((int)(tremain+0.99));
+        else usleep((int)(1e6*tremain) + 100000);
         if(!camera) return CAPTURE_ABORTED;
     }
     return cs;
+}
+
+int startCCD(void **dlh){
+    if(!GP->cameradev && !GP->commondev){
+        verbose(3, _("Camera device not pointed"));
+        return FALSE;
+    }else{
+        char *plugin = GP->commondev ? GP->commondev : GP->cameradev;
+        if(!(*dlh = init_camera(plugin))) return FALSE;
+    }
+    if(!camera->check()){
+        verbose(3, _("No cameras found"));
+        LOGWARN(_("No cameras found"));
+        return FALSE;
+    }
+    return TRUE;
+}
+
+void closecam(void *dlh){
+    if(!dlh) return;
+    DBG("Close cam");
+    camera->close();
+    DBG("close dlh");
+    dlclose(dlh);
+    camera = NULL;
 }
 
 /*
@@ -524,25 +598,17 @@ void ccds(){
     float tmpf;
     int tmpi;
     void *dlh = NULL;
-    if(!GP->cameradev && !GP->commondev){
-        verbose(3, _("Camera device not pointed"));
-        return;
-    }else{
-        char *plugin = GP->commondev ? GP->commondev : GP->cameradev;
-        if(!(dlh = init_camera(plugin))) return;
-    }
-    if(!camera->check()){
-        verbose(3, _("No cameras found"));
-        return;
-    }
+    if(!startCCD(&dlh)) return;
     if(GP->listdevices){
         for(int i = 0; i < camera->Ndevices; ++i){
+            if(!camera->setDevNo(i)) continue;
             char modname[256];
             camera->getModelName(modname, 255);
             printf("Found camera #%d: %s\n", i, modname);
         }
     }
     int num = GP->camdevno;
+    if(num < 0) num = 0;
     if(num > camera->Ndevices - 1){
         WARNX(_("Found %d cameras, you point number %d"), camera->Ndevices, num);
         goto retn;
@@ -571,7 +637,7 @@ void ccds(){
     snprintf(buf, BUFSIZ, "(%d, %d)(%d, %d)", camera->field.xoff, camera->field.yoff,
                 camera->field.xoff + camera->field.w, camera->field.yoff + camera->field.h);
     verbose(2, _("Field of view: %s"), buf);
-    if(GP->temperature < 40.){
+    if(!isnan(GP->temperature)){
         if(!camera->setT((float)GP->temperature))
             WARNX(_("Can't set T to %g degC"), GP->temperature);
         verbose(3, "SetT=%.1f", GP->temperature);
@@ -603,29 +669,40 @@ void ccds(){
             WARNX(_("Can't set IOport"));
     }
     if(GP->exptime < 0.) goto retn;
+    if(!isnan(GP->gain)){
+        DBG("Change gain to %g", GP->gain);
+        if(camera->setgain(GP->gain)){
+            camera->getgain(&GP->gain);
+            verbose(1, _("Set gain to %g"), GP->gain);
+        }else WARNX(_("Can't set gain to %g"), GP->gain);
+    }
+    if(!isnan(GP->brightness)){
+        if(camera->setbrightness(GP->brightness)){
+            camera->getbrightness(&GP->brightness);
+            verbose(1, _("Set brightness to %g"), GP->brightness);
+        }else WARNX(_("Can't set brightness to %g"), GP->brightness);
+    }
     /*********************** expose control ***********************/
     // cancel previous exp
     camera->cancel();
     if(!camera->setbin(GP->hbin, GP->vbin))
         WARNX(_("Can't set binning %dx%d"), GP->hbin, GP->vbin);
-    if(GP->fullframe){
-        DBG("FULLFRAME");
-        GP->X0 = x0; GP->Y0 = y0; GP->X1 = x1; GP->Y1 = y1;
-    }
-    if(GP->X0 == -1) GP->X0 = x0; // default values
-    if(GP->Y0 == -1) GP->Y0 = y0;
-    if(GP->X1 == -1) GP->X1 = x1;
+    if(GP->X0 < 0) GP->X0 = x0; // default values
+    if(GP->Y0 < 0) GP->Y0 = y0;
+    if(GP->X1 < 0) GP->X1 = x1;
     else if(GP->X1 > x1) GP->X1 = x1;
-    if(GP->Y1 == -1) GP->Y1 = y1;
+    if(GP->Y1 < 0) GP->Y1 = y1;
     else if(GP->Y1 > y1) GP->Y1 = y1;
     frameformat fmt = {.w = GP->X1 - GP->X0, .h = GP->Y1 - GP->Y0, .xoff = GP->X0, .yoff = GP->Y0};
     int raw_width = fmt.w / GP->hbin,  raw_height = fmt.h / GP->vbin;
     if(!camera->setgeometry(&fmt))
         WARNX(_("Can't set given geometry"));
     verbose(3, "Geometry: off=%d/%d, wh=%d/%d", fmt.xoff, fmt.yoff, fmt.w, fmt.h);
-    if(!camera->setnflushes(GP->nflushes))
-        WARNX(_("Can't set %d flushes"), GP->nflushes);
-    verbose(3, "Nflushes=%d", GP->nflushes);
+    if(GP->nflushes > 0){
+        if(!camera->setnflushes(GP->nflushes))
+            WARNX(_("Can't set %d flushes"), GP->nflushes);
+        else verbose(3, "Nflushes=%d", GP->nflushes);
+    }
     if(!camera->setexp(GP->exptime))
         WARNX(_("Can't set exposure time to %f seconds"), GP->exptime);
     tmpi = (GP->dark) ? 0 : 1;
@@ -675,7 +752,7 @@ void ccds(){
             break;
         }
         calculate_stat(&ima);
-        saveFITS(&ima, GP->outfile);
+        saveFITS(&ima);
 #ifdef IMAGEVIEW
         if(GP->showimage){ // display image
             if((mainwin = getWin())){
@@ -748,11 +825,7 @@ void ccds(){
     DBG("FREE img");
     FREE(img);
 retn:
-    DBG("Close cam");
-    camera->close();
-    DBG("close dlh");
-    dlclose(dlh);
-    camera = NULL;
+    closecam(dlh);
 }
 
 void cancel(){
