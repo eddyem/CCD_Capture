@@ -19,7 +19,6 @@ static glob_pars  G = {
     .instrument = NULL,
     .exptime = -1.,
     .nframes = 1,
-    .hbin = 1, .vbin = 1,
     .X0 = -1, .Y0 = -1,
     .X1 = -1, .Y1 = -1,
     .focdevno = -1,

@@ -108,8 +108,10 @@ static void process_data(int sock){
     if(!isnan(GP->gain)) SENDMSG(CMD_GAIN "=%g", GP->gain);
     if(!isnan(GP->brightness)) SENDMSG(CMD_BRIGHTNESS "=%g", GP->brightness);
     if(GP->nflushes > 0) SENDMSG(CMD_NFLUSHES "=%d", GP->nflushes);
-    if(GP->rewrite) SENDMSG(CMD_REWRITE "=1");
-    else SENDMSG(CMD_REWRITE "=0");
+    if(GP->outfile || GP->outfileprefix){
+        if(GP->rewrite) SENDMSG(CMD_REWRITE "=1");
+        else SENDMSG(CMD_REWRITE "=0");
+    }
     if(GP->outfile) SENDMSG(CMD_FILENAME "=%s", makeabspath(GP->outfile));
     if(GP->outfileprefix) SENDMSG(CMD_FILENAMEPREFIX "=%s", makeabspath(GP->outfileprefix));
     // if client gives filename and exptime, make exposition
@@ -123,9 +125,9 @@ static void process_data(int sock){
 
 void client(int sock){
     process_data(sock);
-    if(!GP->waitexpend) return;
+    double timeout = GP->waitexpend ? CLIENT_TIMEOUT : 0.1;
     double t0 = dtime(), tw = t0;
-    while(dtime() - t0 < CLIENT_TIMEOUT){
+    while(dtime() - t0 < timeout){
         if(GP->waitexpend && dtime() - tw > WAIT_TIMEOUT){
             SENDMSG(CMD_TREMAIN); // get remained time
             tw = dtime();
@@ -150,6 +152,6 @@ void client(int sock){
             }
         }
     }
-    WARNX(_("Server timeout"));
+    if(GP->waitexpend) WARNX(_("Server timeout"));
     DBG("Timeout");
 }

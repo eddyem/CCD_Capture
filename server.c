@@ -196,6 +196,8 @@ static int camdevini(int n){
     if(GP->hbin < 1) GP->hbin = 1;
     if(GP->vbin < 1) GP->vbin = 1;
     fixima();
+    if(!camera->setbin(GP->hbin, GP->vbin)) WARNX(_("Can't set binning %dx%d"), GP->hbin, GP->vbin);
+    if(!camera->setgeometry(&curformat)) WARNX(_("Can't set given geometry"));
     pthread_mutex_unlock(&locmutex);
     return TRUE;
 }
@@ -516,9 +518,9 @@ static hresult formathandler(int fd, const char *key, const char *val){
         fixima();
     }
     if(0 == strcmp(key, CMD_FRAMEMAX)) snprintf(buf, 63, CMD_FRAMEMAX "=%d,%d,%d,%d",
-        frmformatmax.xoff, frmformatmax.yoff, frmformatmax.xoff+frmformatmax.w, frmformatmax.yoff+frmformatmax.w);
+        frmformatmax.xoff, frmformatmax.yoff, frmformatmax.xoff+frmformatmax.w, frmformatmax.yoff+frmformatmax.h);
     else snprintf(buf, 63, CMD_FRAMEFORMAT "=%d,%d,%d,%d",
-        camera->array.xoff, camera->array.yoff, camera->array.xoff+camera->array.w, camera->array.yoff+camera->array.w);
+        camera->geometry.xoff, camera->geometry.yoff, camera->geometry.xoff+camera->geometry.w, camera->geometry.yoff+camera->geometry.h);
     sendstrmessage(fd, buf);
     return RESULT_SILENCE;
 }

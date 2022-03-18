@@ -111,8 +111,9 @@ int start_socket(int isserver, char *path, int isnet){
     if(isnet) freeaddrinfo(res);
     if(isserver) server(sock);
     else client(sock);
+    DBG("Close socket");
     close(sock);
-    signals(0);
+    if(isserver) signals(0);
     return 0;
 }
 

@@ -215,11 +215,13 @@ int saveFITS(IMG *img){
     WRITEKEY(fp, TSTRING, "PXSIZE", bufc, "Pixel size in m");
     snprintf(bufc, FLEN_VALUE, "(%d, %d)(%d, %d)", camera->field.xoff, camera->field.yoff,
              camera->field.xoff + camera->field.w, camera->field.yoff + camera->field.h);
-    WRITEKEY(fp, TSTRING, "VIEWFLD", bufc, "Camera field of view");
+    WRITEKEY(fp, TSTRING, "VIEWFLD", bufc, "Camera maximal field of view");
     snprintf(bufc, FLEN_VALUE, "(%d, %d)(%d, %d)", camera->array.xoff, camera->array.yoff,
              camera->array.xoff + camera->array.w, camera->array.yoff + camera->array.h);
-    WRITEKEY(fp, TSTRING, "ARRAYFLD", bufc, "Camera full array size");
-    // CRVAL1, CRVAL2 / Offset in X, Y
+    WRITEKEY(fp, TSTRING, "ARRAYFLD", bufc, "Camera full array size (with overscans)");
+    snprintf(bufc, FLEN_VALUE, "(%d, %d)(%d, %d)", camera->geometry.xoff, camera->geometry.yoff,
+             camera->geometry.xoff + camera->geometry.w, camera->geometry.yoff + camera->geometry.h);
+    WRITEKEY(fp, TSTRING, "GEOMETRY", bufc, "Camera current frame geometry");    // CRVAL1, CRVAL2 / Offset in X, Y
     if(GP->X0 > -1) WRITEKEY(fp, TINT, "X0", &GP->X0, "Subframe left border without binning");
     if(GP->Y0 > -1) WRITEKEY(fp, TINT, "Y0", &GP->Y0, "Subframe upper border without binning");
     if(GP->objtype) strncpy(bufc, GP->objtype, FLEN_CARD-1);
@@ -690,6 +692,8 @@ void ccds(){
     /*********************** expose control ***********************/
     // cancel previous exp
     camera->cancel();
+    if(GP->hbin < 1) GP->hbin = 1;
+    if(GP->vbin < 1) GP->vbin = 1;
     if(!camera->setbin(GP->hbin, GP->vbin))
         WARNX(_("Can't set binning %dx%d"), GP->hbin, GP->vbin);
     if(GP->X0 < 0) GP->X0 = x0; // default values

@@ -51,8 +51,10 @@ void signals(int signo){
     }
     // slave: cancel exposition
     WARNX("Get signal %d - exit", signo);
-    DBG("Cancel capturing");
-    if(!GP->client) cancel();
+    if(!GP->client){
+        DBG("Cancel capturing");
+        cancel();
+    }
 #ifdef IMAGEVIEW
     DBG("KILL GL");
     closeGL();

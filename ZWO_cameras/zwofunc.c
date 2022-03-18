@@ -113,7 +113,7 @@ static int camcapt(IMG *ima){
     long image_size = ima->h * ima->w * 2;
     if(ASI_SUCCESS != ASIGetDataAfterExp(caminfo.CameraID, d, image_size)){
         printf("Couldn't read exposure data\n");
-        return 1;
+        return FALSE;
     }
     return TRUE;
 }
@@ -275,6 +275,7 @@ static int camsett(float t){
     }
     if(!zwo_getfloat(&f, ASI_COOLER_ON)) return FALSE;
     DBG("COOLERON = %g", f);
+    /*
 #ifdef EBUG
     double t0 = dtime();
     float c, p, tn;
@@ -289,6 +290,7 @@ static int camsett(float t){
         printf("fan: %g, t: %g, cooler: %g, perc: %g, tnow: %g\n", f, t, c, p, tn/10.);
     }
 #endif
+    */
     return TRUE;
 }
 
@@ -365,6 +367,7 @@ static int camgmg(float *mg){ // get max gain
 }
 
 static int camggl(frameformat *max, frameformat *step){ // get geometry limits
+    DBG("array: %dx%d, off: %dx%d", camera.array.w, camera.array.h, camera.array.xoff, camera.array.yoff);
     if(max) *max = camera.array;
     if(step) *step = (frameformat){1,1,1,1};
     return TRUE;
