@@ -52,7 +52,7 @@ void signals(int signo){
     // slave: cancel exposition
     WARNX("Get signal %d - exit", signo);
     DBG("Cancel capturing");
-    cancel();
+    if(!GP->client) cancel();
 #ifdef IMAGEVIEW
     DBG("KILL GL");
     closeGL();
@@ -75,7 +75,7 @@ int main(int argc, char **argv){
         struct stat filestat;
         if(0 == stat(GP->outfile, &filestat)) ERRX("File %s exists!", GP->outfile);
     }
-    if(GP->port || GP->path){
+    if(GP->port){
         if(GP->path){
             WARNX("Options `port` and `path` can't be used together! Point `port` for TCP socket or `path` for UNIX.");
             return 1;
@@ -87,6 +87,7 @@ int main(int argc, char **argv){
         }
         if(!GP->client) isserver = TRUE;
     }
+    if(GP->path && !GP->client) isserver = TRUE;
     if(GP->logfile){
         int lvl = LOGLEVEL_WARN + GP->verbose;
         DBG("level = %d", lvl);

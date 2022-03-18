@@ -129,7 +129,7 @@ void sendmessage(int fd, const char *msg, int l){
     }else{
         if(globlog){ // logging turned ON
             tmpbuf[l-1] = 0; // remove trailing '\n' for logging
-            LOGMSG("SEND '%s'", tmpbuf);
+            LOGDBG("SEND '%s'", tmpbuf);
         }
     }
     FREE(tmpbuf);
@@ -183,8 +183,8 @@ char *get_keyval(char *keyval){
 static void parsestring(int fd, handleritem *handlers, char *str){
     if(fd < 1 || !handlers || !handlers->key || !str || !*str) return;
     char *val = get_keyval(str);
-    if(val) LOGMSG("RECEIVE '%s=%s'", str, val);
-    else LOGMSG("RECEIVE '%s'", str);
+    if(val) LOGDBG("RECEIVE '%s=%s'", str, val);
+    else LOGDBG("RECEIVE '%s'", str);
     for(handleritem *h = handlers; h->key; ++h){
         if(strcmp(str, h->key) == 0){ // found command
             if(h->chkfunction && !h->chkfunction(val)) sendstrmessage(fd, resmessages[RESULT_FAIL]);

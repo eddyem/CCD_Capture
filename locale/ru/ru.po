@@ -7,7 +7,7 @@
 msgid   ""
 msgstr  "Project-Id-Version: PACKAGE VERSION\n"
         "Report-Msgid-Bugs-To: \n"
-        "POT-Creation-Date: 2022-03-17 18:04+0300\n"
+        "POT-Creation-Date: 2022-03-18 15:13+0300\n"
         "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
         "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
         "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -16,13 +16,13 @@ msgstr  "Project-Id-Version: PACKAGE VERSION\n"
         "Content-Type: text/plain; charset=koi8-r\n"
         "Content-Transfer-Encoding: 8bit\n"
 
-#: ccdfunc.c:556
+#: ccdfunc.c:561
 #, c-format
 msgid   "%.1f seconds till exposition ends"
 msgstr  ""
 
 #. %d секунд до окончания паузы\n
-#: ccdfunc.c:788
+#: ccdfunc.c:793
 #, c-format
 msgid   "%d seconds till pause ends\n"
 msgstr  ""
@@ -39,28 +39,28 @@ msgstr  ""
 msgid   "CMOS gain level"
 msgstr  ""
 
-#: ccdfunc.c:570
+#: ccdfunc.c:575
 msgid   "Camera device not pointed"
 msgstr  ""
 
-#: ccdfunc.c:152
+#: ccdfunc.c:154
 msgid   "Camera device unknown"
 msgstr  ""
 
-#: ccdfunc.c:629
+#: ccdfunc.c:634
 #, c-format
 msgid   "Camera model: %s"
 msgstr  ""
 
-#: ccdfunc.c:745 ccdfunc.c:767 ccdfunc.c:808
+#: ccdfunc.c:750 ccdfunc.c:772 ccdfunc.c:813
 msgid   "Can't capture image"
 msgstr  ""
 
-#: ccdfunc.c:710
+#: ccdfunc.c:715
 msgid   "Can't change frame type"
 msgstr  ""
 
-#: ccdfunc.c:657
+#: ccdfunc.c:662
 msgid   "Can't configure (unsupported?)"
 msgstr  ""
 
@@ -84,32 +84,32 @@ msgstr  ""
 msgid   "Can't find wheel in plugin %s: %s"
 msgstr  ""
 
-#: ccdfunc.c:663
+#: ccdfunc.c:668
 msgid   "Can't get IOport state (unsupported?)"
 msgstr  ""
 
 #. GET binning should be AFTER setgeometry!
-#: ccdfunc.c:719
+#: ccdfunc.c:724
 msgid   "Can't get current binning"
 msgstr  ""
 
-#: ccdfunc.c:442
+#: ccdfunc.c:447
 msgid   "Can't get current focuser position"
 msgstr  ""
 
-#: ccdfunc.c:435
+#: ccdfunc.c:440
 msgid   "Can't get focuser limit positions"
 msgstr  ""
 
-#: ccdfunc.c:528
+#: ccdfunc.c:533
 msgid   "Can't get max wheel position"
 msgstr  ""
 
-#: ccdfunc.c:751 ccdfunc.c:771 ccdfunc.c:812
+#: ccdfunc.c:756 ccdfunc.c:776 ccdfunc.c:817
 msgid   "Can't grab image"
 msgstr  ""
 
-#: ccdfunc.c:460
+#: ccdfunc.c:465
 msgid   "Can't home focuser"
 msgstr  ""
 
@@ -117,113 +117,113 @@ msgstr  ""
 msgid   "Can't init mutex!"
 msgstr  ""
 
-#: client.c:164
+#: client.c:143
 msgid   "Can't make exposition"
 msgstr  ""
 
-#: ccdfunc.c:732
+#: ccdfunc.c:737
 msgid   "Can't open OpenGL window, image preview will be inaccessible"
 msgstr  ""
 
-#: ccdfunc.c:651
+#: ccdfunc.c:656
 #, c-format
 msgid   "Can't run shutter command %s (unsupported?)"
 msgstr  ""
 
 #. Не могу сохранить файл
-#: ccdfunc.c:177
+#: ccdfunc.c:179
 #, c-format
 msgid   "Can't save file with prefix %s"
 msgstr  ""
 
-#: ccdfunc.c:703
+#: ccdfunc.c:708
 #, c-format
 msgid   "Can't set %d flushes"
 msgstr  ""
 
-#: ccdfunc.c:669
+#: ccdfunc.c:674
 msgid   "Can't set IOport"
 msgstr  ""
 
-#: ccdfunc.c:642
+#: ccdfunc.c:647
 #, c-format
 msgid   "Can't set T to %g degC"
 msgstr  ""
 
-#: ccdfunc.c:617
+#: ccdfunc.c:622
 msgid   "Can't set active camera number"
 msgstr  ""
 
-#: ccdfunc.c:421
+#: ccdfunc.c:426
 msgid   "Can't set active focuser number"
 msgstr  ""
 
-#: ccdfunc.c:512
+#: ccdfunc.c:517
 msgid   "Can't set active wheel number"
 msgstr  ""
 
-#: ccdfunc.c:689
+#: ccdfunc.c:694
 #, c-format
 msgid   "Can't set binning %dx%d"
 msgstr  ""
 
-#: ccdfunc.c:713
+#: ccdfunc.c:718
 msgid   "Can't set bit depth"
 msgstr  ""
 
-#: ccdfunc.c:683
+#: ccdfunc.c:688
 #, c-format
 msgid   "Can't set brightness to %g"
 msgstr  ""
 
-#: ccdfunc.c:707
+#: ccdfunc.c:712
 #, c-format
 msgid   "Can't set exposure time to %f seconds"
 msgstr  ""
 
-#: ccdfunc.c:623
+#: ccdfunc.c:628
 msgid   "Can't set fan speed"
 msgstr  ""
 
-#: ccdfunc.c:677
+#: ccdfunc.c:682
 #, c-format
 msgid   "Can't set gain to %g"
 msgstr  ""
 
-#: ccdfunc.c:699
+#: ccdfunc.c:704
 msgid   "Can't set given geometry"
 msgstr  ""
 
-#: ccdfunc.c:462
+#: ccdfunc.c:467
 #, c-format
 msgid   "Can't set position %g"
 msgstr  ""
 
-#: ccdfunc.c:456
+#: ccdfunc.c:461
 #, c-format
 msgid   "Can't set position %g: out of limits [%g, %g]"
 msgstr  ""
 
-#: ccdfunc.c:715
+#: ccdfunc.c:720
 msgid   "Can't set readout speed"
 msgstr  ""
 
-#: ccdfunc.c:539
+#: ccdfunc.c:544
 #, c-format
 msgid   "Can't set wheel position %d"
 msgstr  ""
 
-#: ccdfunc.c:741 server.c:64
+#: ccdfunc.c:746 server.c:108
 msgid   "Can't start exposition"
 msgstr  ""
 
 #. Захват кадра %d\n
-#: ccdfunc.c:739
+#: ccdfunc.c:744
 #, c-format
 msgid   "Capture frame %d"
 msgstr  ""
 
-#: cmdlnopts.c:106
+#: cmdlnopts.c:107
 msgid   "Display image in OpenGL window"
 msgstr  ""
 
@@ -232,40 +232,40 @@ msgstr  ""
 msgid   "Equalization of histogram: %s"
 msgstr  ""
 
-#: ccdfunc.c:332
+#: ccdfunc.c:336
 msgid   "Error saving file"
 msgstr  ""
 
-#: ccdfunc.c:639
+#: ccdfunc.c:644
 #, c-format
 msgid   "Field of view: %s"
 msgstr  ""
 
-#: ccdfunc.c:329
+#: ccdfunc.c:332
 #, c-format
 msgid   "File saved as '%s'"
 msgstr  ""
 
-#: ccdfunc.c:379
+#: ccdfunc.c:384
 msgid   "Focuser device not pointed"
 msgstr  ""
 
-#: ccdfunc.c:613
+#: ccdfunc.c:618
 #, c-format
 msgid   "Found %d cameras, you point number %d"
 msgstr  ""
 
-#: ccdfunc.c:417
+#: ccdfunc.c:422
 #, c-format
 msgid   "Found %d focusers, you point number %d"
 msgstr  ""
 
-#: ccdfunc.c:508
+#: ccdfunc.c:513
 #, c-format
 msgid   "Found %d wheels, you point number %d"
 msgstr  ""
 
-#: ccdfunc.c:636
+#: ccdfunc.c:641
 #, c-format
 msgid   "Full array: %s"
 msgstr  ""
@@ -275,7 +275,7 @@ msgstr  ""
 msgid   "Histogram conversion: %s"
 msgstr  ""
 
-#: ccdfunc.c:371
+#: ccdfunc.c:376
 #, c-format
 msgid   "Image stat:\n"
 msgstr  ""
@@ -284,80 +284,80 @@ msgstr  ""
 msgid   "N flushes before exposing (default: 1)"
 msgstr  ""
 
-#: ccdfunc.c:158
+#: ccdfunc.c:160
 msgid   "Neither filename nor filename prefix pointed!"
 msgstr  ""
 
-#: server.c:89
+#: server.c:146
 msgid   "No camera device"
 msgstr  ""
 
-#: ccdfunc.c:577 ccdfunc.c:578
+#: ccdfunc.c:582 ccdfunc.c:583
 msgid   "No cameras found"
 msgstr  ""
 
-#: ccdfunc.c:386
+#: ccdfunc.c:391
 msgid   "No focusers found"
 msgstr  ""
 
-#: ccdfunc.c:477
+#: ccdfunc.c:482
 msgid   "No wheels found"
 msgstr  ""
 
-#: ccdfunc.c:717
+#: ccdfunc.c:722
 msgid   "Only show statistics"
 msgstr  ""
 
-#: cmdlnopts.c:103
+#: cmdlnopts.c:104
 msgid   "PID file (default: "
 msgstr  ""
 
-#: ccdfunc.c:630
+#: ccdfunc.c:635
 #, c-format
 msgid   "Pixel size: %g x %g"
 msgstr  ""
 
-#: ccdfunc.c:748
+#: ccdfunc.c:753
 msgid   "Read grabbed image"
 msgstr  ""
 
-#: ccdfunc.c:716
+#: ccdfunc.c:721
 #, c-format
 msgid   "Readout mode: %s"
 msgstr  ""
 
-#: client.c:174
+#: client.c:153
 msgid   "Server timeout"
 msgstr  ""
 
-#: ccdfunc.c:682
+#: ccdfunc.c:687
 #, c-format
 msgid   "Set brightness to %g"
 msgstr  ""
 
-#: ccdfunc.c:624
+#: ccdfunc.c:629
 #, c-format
 msgid   "Set fan speed to %d"
 msgstr  ""
 
-#: ccdfunc.c:676
+#: ccdfunc.c:681
 #, c-format
 msgid   "Set gain to %g"
 msgstr  ""
 
-#: ccdfunc.c:649
+#: ccdfunc.c:654
 #, c-format
 msgid   "Shutter command: %s\n"
 msgstr  ""
 
 #. "Попытка сконфигурировать порт I/O как %d\n"
-#: ccdfunc.c:655
+#: ccdfunc.c:660
 #, c-format
 msgid   "Try to configure I/O port as %d"
 msgstr  ""
 
 #. "Попытка записи %d в порт I/O\n"
-#: ccdfunc.c:667
+#: ccdfunc.c:672
 #, c-format
 msgid   "Try to write %d to I/O port"
 msgstr  ""
@@ -366,11 +366,11 @@ msgstr  ""
 msgid   "UNIX socket name"
 msgstr  ""
 
-#: ccdfunc.c:470
+#: ccdfunc.c:475
 msgid   "Wheel device not pointed"
 msgstr  ""
 
-#: ccdfunc.c:535
+#: ccdfunc.c:540
 #, c-format
 msgid   "Wheel position should be from 0 to %d"
 msgstr  ""
@@ -523,6 +523,10 @@ msgstr  ""
 
 #: cmdlnopts.c:52
 msgid   "rewrite output file if exists"
+msgstr  ""
+
+#: cmdlnopts.c:103
+msgid   "run as client"
 msgstr  ""
 
 #: cmdlnopts.c:85

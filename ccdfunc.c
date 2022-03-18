@@ -146,30 +146,32 @@ static void addrec(fitsfile *f, char *filename){
 }
 
 // save FITS file `img` into GP->outfile or GP->outfileprefix_XXXX.fits
-void saveFITS(IMG *img){
+// return FALSE if failed
+int saveFITS(IMG *img){
+    int ret = FALSE;
     if(!camera){
         LOGERR("Can't save image: no camera device");
         WARNX(_("Camera device unknown"));
-        return;
+        return FALSE;
     }
-    char buff[PATH_MAX], fnam[PATH_MAX];
+    char buff[PATH_MAX+1], fnam[PATH_MAX+1];
     if(!GP->outfile && !GP->outfileprefix){
         LOGERR("Can't save image: neither filename nor filename prefix pointed");
         WARNX(_("Neither filename nor filename prefix pointed!"));
-        return;
+        return FALSE;
     }
     if(GP->outfile){ // pointed specific output file name like "file.fits", check it
         struct stat filestat;
         int s = stat(GP->outfile, &filestat);
         if(s){ // not exists
-            snprintf(fnam, PATH_MAX-1, "%s", GP->outfile);
+            snprintf(fnam, PATH_MAX, "%s", GP->outfile);
         }else{ // exists
             if(!GP->rewrite){
                 LOGERR("Can't save image: file %s exists", GP->outfile);
                 WARNX("File %s exists!", GP->outfile);
-                return;
+                return FALSE;
             }
-            snprintf(fnam, PATH_MAX-1, "!%s", GP->outfile);
+            snprintf(fnam, PATH_MAX, "!%s", GP->outfile);
         }
     }else{ // user pointed output file prefix
         if(!check_filenameprefix(fnam, PATH_MAX)){
@@ -323,15 +325,18 @@ void saveFITS(IMG *img){
     TRYFITS(fits_write_img, fp, TUSHORT, 1, width * height, data);
     if(fitserror) goto cloerr;
     TRYFITS(fits_close_file, fp);
+    DBG("file %s saved", fnam);
 cloerr:
     if(fitserror == 0){
         LOGMSG("Save file '%s'", fnam);
         verbose(1, _("File saved as '%s'"), fnam);
+        ret = TRUE;
     }else{
         LOGERR("Can't save %s", fnam);
         WARNX(_("Error saving file"));
         fitserror = 0;
     }
+    return ret;
 }
 
 void calculate_stat(IMG *image){

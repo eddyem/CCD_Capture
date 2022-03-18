@@ -36,18 +36,31 @@ static const float focmaxpos = 10.;
 static int curhbin = 1, curvbin = 1;
 static int filterpos = 0;
 static float focuserpos = 1., brightness = 1., gain = 0.;
-static float camtemp = -30.;
+static float camtemp = -30., exptime = 0.;
 static capture_status capstat = CAPTURE_NO;
+static double texpstart = 0.;
 
 static int campoll(capture_status *st, float *remain){
-    if(capstat == CAPTURE_NO){
-        if(st) *st = capstat = CAPTURE_PROCESS;
-        if(remain) *remain = 1e-6;
-    }else{
-        capstat = CAPTURE_NO;
+    if(capstat != CAPTURE_PROCESS){
+        if(st) *st = capstat;
+        if(remain) *remain = 0.;
+        return TRUE;
+    }
+    if(dtime() - texpstart > exptime){
         if(st) *st = CAPTURE_READY;
         if(remain) *remain = 0.;
+        capstat = CAPTURE_NO;
+        return TRUE;
     }
+    if(st) *st = capstat;
+    if(remain) *remain = exptime + texpstart - dtime();
+    return TRUE;
+}
+
+static int startexp(){
+    if(capstat == CAPTURE_PROCESS) return FALSE;
+    capstat = CAPTURE_PROCESS;
+    texpstart = dtime();
     return TRUE;
 }
 
@@ -84,7 +97,8 @@ static int camgetbrig(float *b){
     return TRUE;
 }
 
-static int camsetexp(_U_ float t){
+static int camsetexp(float t){
+    exptime = t;
     return TRUE;
 }
 
@@ -114,6 +128,7 @@ static int gett(float *t){
 }
 
 static int camsetbin(int h, int v){
+    DBG("set bin %dx%d", h, v);
     curhbin = h; curvbin = v;
     return TRUE;
 }
@@ -189,7 +204,7 @@ static int focmp(float *p){
 }
 
 static int whlsetpos(int n){
-    if(n > filtermax || n < 0) return FALSE;
+    if(n >= filtermax || n < 0) return FALSE;
     filterpos = n;
     return TRUE;
 }
@@ -229,7 +244,7 @@ __attribute__ ((visibility("default"))) Camera camera = {
     .pollcapture = campoll,
     .capture = camcapt,
     .cancel = camcancel,
-    .startexposition = stub,
+    .startexposition = startexp,
     // setters:
     .setDevNo = setdevno,
     .setbrightness = camsetbrig,

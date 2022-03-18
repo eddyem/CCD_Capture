@@ -305,6 +305,7 @@ static int gett(_U_ float *t){
 }
 
 static int camsetbin(int h, int v){
+    DBG("set bin %dx%d", h, v);
     if(h != v){
         WARNX(_("BinX and BinY should be equal"));
         return FALSE;

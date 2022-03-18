@@ -32,9 +32,11 @@ typedef enum{
 
 // server-side functions
 void server(int fd);
+char *makeabspath(const char *path);
 
 // common information about everything
 #define CMD_INFO        "info"
+#define CMD_HELP        "help"
 
 // CCD/CMOS
 #define CMD_CAMLIST     "camlist"
@@ -63,7 +65,7 @@ void server(int fd);
 // focuser
 #define CMD_FOCLIST     "foclist"
 #define CMD_FDEVNO      "focdevno"
-#define CMD_FGOTO       "focgoto"
+#define CMD_FGOTO       "focpos"
 
 // wheel
 #define CMD_WLIST       "wlist"

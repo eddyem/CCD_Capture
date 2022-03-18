@@ -44,21 +44,65 @@ static float focmaxpos = 0., focminpos = 0.; // focuser extremal positions
 static int wmaxpos = 0.; // wheel max pos
 static float tremain = 0.; // time when capture done
 
+typedef struct{
+    const char *key;
+    const char *help;
+}strpair;
+
+// cat | awk '{print "{ " $3 ", \"\" }," }' | sort
+strpair allcommands[] = {
+    { "brightness", "camera brightness" },
+    { "camdevno", "camera device number" },
+    { "camlist", "list all connected cameras" },
+    { "ccdfanspeed", "fan speed of camera" },
+    { "confio", "camera IO configuration" },
+    { "expstate", "get exposition state" },
+    { "exptime", "exposition time" },
+    { "filename", "save file with this name, like file.fits" },
+    { "filenameprefix", "prefix of files, like ex (will be saved as exXXXX.fits)" },
+    { "focdevno", "focuser device number" },
+    { "foclist", "list all connected focusers" },
+    { "focpos", "focuser position" },
+    { "format", "camera frame format (X0,Y0,X1,Y1)" },
+    { "gain", "camera gain" },
+    { "hbin", "horizontal binning" },
+    { "help", "show this help" },
+    { "info", "connected devices state" },
+    { "io", "get/set camera IO" },
+    { "maxformat", "camera maximal available format" },
+    { "nflushes", "camera number of preflushes" },
+    { "rewrite", "rewrite file (if give `filename`, not `filenameprefix`" },
+    { "shutter", "camera shutter's operations" },
+    { "tcold", "camera chip temperature" },
+    { "tremain", "time (in seconds) of exposition remained" },
+    { "vbin", "vertical binning" },
+    { "wdevno", "wheel device number" },
+    { "wlist", "list all connected wheels" },
+    { "wpos", "wheel position" },
+    {NULL, NULL},
+};
+
 static IMG ima = {0};
 static void fixima(){
-    FREE(ima.data);
+    FNAME();
     int raw_width = curformat.w / GP->hbin,  raw_height = curformat.h / GP->vbin;
-    ima.h = curformat.h;
-    ima.w = curformat.w;
+    if(ima.data && raw_width == ima.w && raw_height == ima.h) return; // all OK
+    FREE(ima.data);
+    DBG("curformat: %dx%d", curformat.w, curformat.h);
+    ima.h = raw_height;
+    ima.w = raw_width;
     ima.data = MALLOC(uint16_t, raw_width * raw_height);
+    DBG("new image: %dx%d", raw_width, raw_height);
 }
 
 // functions for processCAM finite state machine
 static inline void cameraidlestate(){ // idle - wait for capture commands
     if(camflags & FLAG_STARTCAPTURE){ // start capturing
-        camflags &= ~FLAG_STARTCAPTURE;
+        DBG("Start exposition");
+        camflags &= ~(FLAG_STARTCAPTURE | FLAG_CANCEL);
         camstate = CAMERA_CAPTURE;
         camera->cancel();
+        fixima();
         if(!camera->startexposition()){
             LOGERR("Can't start exposition");
             WARNX(_("Can't start exposition"));
@@ -69,7 +113,8 @@ static inline void cameraidlestate(){ // idle - wait for capture commands
 }
 static inline void cameracapturestate(){ // capturing - wait for exposition ends
     if(camflags & FLAG_CANCEL){ // cancel all expositions
-        camflags &= ~FLAG_CANCEL;
+        DBG("Cancel exposition");
+        camflags &= ~(FLAG_STARTCAPTURE | FLAG_CANCEL);
         camera->cancel();
         camstate = CAMERA_IDLE;
         return;
@@ -77,9 +122,21 @@ static inline void cameracapturestate(){ // capturing - wait for exposition ends
     capture_status cs;
     if(camera->pollcapture(&cs, &tremain)){
         if(cs != CAPTURE_PROCESS){
+            DBG("Capture ready");
             tremain = 0.;
-            camstate = CAMERA_FRAMERDY;
-            return;
+            // now save frame
+            if(!ima.data) LOGERR("Can't save image: not initialized");
+            else{
+                if(!camera->capture(&ima)) LOGERR("Can't capture image");
+                else{
+                    calculate_stat(&ima);
+                    if(saveFITS(&ima)){
+                        camstate = CAMERA_FRAMERDY;
+                        return;
+                    }
+                }
+            }
+            camstate = CAMERA_ERROR;
         }
     }
 }
@@ -87,8 +144,7 @@ static inline void cameracapturestate(){ // capturing - wait for exposition ends
 // base camera thread
 static void* processCAM(_U_ void *d){
     if(!camera) ERRX(_("No camera device"));
-    camera_state curstate = camstate;
-    double logt = dtime();
+    double logt = 0;
     while(1){
         // log
         if(dtime() - logt > TLOG_PAUSE){
@@ -104,6 +160,7 @@ static void* processCAM(_U_ void *d){
                LOGMSG("BODYTEMP=%f", t);
             }
         }
+        camera_state curstate = camstate;
         switch(curstate){
             case CAMERA_IDLE:
                 cameraidlestate();
@@ -213,7 +270,7 @@ static hresult exphandler(int fd, _U_ const char *key, const char *val){
                 GP->exptime = v;
             }else LOGWARN("Can't set exptime to %g", v);
             pthread_mutex_unlock(&locmutex);
-        }
+        }else return RESULT_BUSY;
     }
     snprintf(buf, 63, CMD_EXPOSITION "=%g", GP->exptime);
     sendstrmessage(fd, buf);
@@ -221,33 +278,45 @@ static hresult exphandler(int fd, _U_ const char *key, const char *val){
 }
 // filename setter/getter
 static hresult namehandler(int fd, _U_ const char *key, const char *val){
-    char buf[64];
+    char buf[PATH_MAX+1];
     if(val){
         pthread_mutex_lock(&locmutex);
+        char *path = makeabspath(val);
+        if(!path){
+            LOGERR("Can't create file '%s'", val);
+            pthread_mutex_unlock(&locmutex);
+            return RESULT_BADVAL;
+        }
         FREE(outfile);
-        outfile = strdup(val);
+        outfile = strdup(path);
         GP->outfile = outfile;
         GP->outfileprefix = NULL;
         pthread_mutex_unlock(&locmutex);
     }
     if(!GP->outfile) return RESULT_FAIL;
-    snprintf(buf, 63, CMD_FILENAME "=%s", GP->outfile);
+    snprintf(buf, PATH_MAX, CMD_FILENAME "=%s", GP->outfile);
     sendstrmessage(fd, buf);
     return RESULT_SILENCE;
 }
 // filename prefix
 static hresult nameprefixhandler(_U_ int fd, _U_ const char *key, const char *val){
-    char buf[64];
+    char buf[PATH_MAX+1];
     if(val){
         pthread_mutex_lock(&locmutex);
+        char *path = makeabspath(val);
+        if(!path){
+            LOGERR("Can't create file '%s'", val);
+            pthread_mutex_unlock(&locmutex);
+            return RESULT_BADVAL;
+        }
         FREE(outfile);
-        outfile = strdup(val);
+        outfile = strdup(path);
         GP->outfileprefix = outfile;
         GP->outfile = NULL;
         pthread_mutex_unlock(&locmutex);
     }
     if(!GP->outfileprefix) return RESULT_FAIL;
-    snprintf(buf, 63, CMD_FILENAMEPREFIX "=%s", GP->outfileprefix);
+    snprintf(buf, PATH_MAX, CMD_FILENAMEPREFIX "=%s", GP->outfileprefix);
     sendstrmessage(fd, buf);
     return RESULT_SILENCE;
 }
@@ -278,6 +347,7 @@ static hresult binhandler(_U_ int fd, const char *key, const char *val){
             return RESULT_BADVAL;
         }
         fixima();
+        pthread_mutex_unlock(&locmutex);
     }
     pthread_mutex_lock(&locmutex);
     int r = camera->getbin(&GP->hbin, &GP->vbin);
@@ -293,18 +363,20 @@ static hresult binhandler(_U_ int fd, const char *key, const char *val){
 static hresult temphandler(_U_ int fd, _U_ const char *key, const char *val){
     float f;
     char buf[64];
+    int r;
     if(val){
         f = atof(val);
         pthread_mutex_lock(&locmutex);
-        if(!camera->setT((float)f)){
-            pthread_mutex_unlock(&locmutex);
+        r = camera->setT((float)f);
+        pthread_mutex_unlock(&locmutex);
+        if(!r){
             LOGWARN("Can't set camera T to %.1f", f);
             return RESULT_FAIL;
         }
         LOGMSG("Set camera T to %.1f", f);
     }
     pthread_mutex_lock(&locmutex);
-    int r = camera->getTcold(&f);
+    r = camera->getTcold(&f);
     pthread_mutex_unlock(&locmutex);
     if(r){
         snprintf(buf, 63, CMD_CAMTEMPER "=%.1f", f);
@@ -443,10 +515,10 @@ static hresult formathandler(int fd, const char *key, const char *val){
         curformat = fmt;
         fixima();
     }
-    if(strcmp(key, CMD_FRAMEMAX)) snprintf(buf, 63, CMD_FRAMEMAX "=%d,%d,%d,%d",
+    if(0 == strcmp(key, CMD_FRAMEMAX)) snprintf(buf, 63, CMD_FRAMEMAX "=%d,%d,%d,%d",
         frmformatmax.xoff, frmformatmax.yoff, frmformatmax.xoff+frmformatmax.w, frmformatmax.yoff+frmformatmax.w);
     else snprintf(buf, 63, CMD_FRAMEFORMAT "=%d,%d,%d,%d",
-                  camera->array.xoff, camera->array.yoff, camera->array.xoff+camera->array.w, camera->array.yoff+camera->array.w);
+        camera->array.xoff, camera->array.yoff, camera->array.xoff+camera->array.w, camera->array.yoff+camera->array.w);
     sendstrmessage(fd, buf);
     return RESULT_SILENCE;
 }
@@ -600,17 +672,14 @@ static hresult fgotohandler(int fd, _U_ const char *key, const char *val){
     r = focuser->getPos(&f);
     pthread_mutex_unlock(&locmutex);
     if(!r) return RESULT_FAIL;
-    snprintf(buf, 63, "FOCPOS=%g", f);
+    snprintf(buf, 63, CMD_FGOTO "=%g", f);
     sendstrmessage(fd, buf);
     return RESULT_SILENCE;
 }
 
-/*
-static hresult handler(_U_ int fd, _U_ const char *key, _U_ const char *val){
-    char buf[64];
-    return RESULT_SILENCE;
-}
-*/
+/*******************************************************************************
+ **************************** Common handlers **********************************
+ ******************************************************************************/
 
 // information about everything
 static hresult infohandler(int fd, _U_ const char *key, _U_ const char *val){
@@ -634,14 +703,14 @@ static hresult infohandler(int fd, _U_ const char *key, _U_ const char *val){
             sendstrmessage(fd, buf);
         }
         if(wheel->getTbody(&f)){
-            snprintf(buf, BUFSIZ-1, "WHEELTEMP=%.1f", f);
+            snprintf(buf, BUFSIZ-1, "wtemp=%.1f", f);
             sendstrmessage(fd, buf);
         }
         if(wheel->getPos(&i)){
-            snprintf(buf, BUFSIZ-1, "WHEELPOS=%d", i);
+            snprintf(buf, BUFSIZ-1, CMD_WPOS "=%d", i);
             sendstrmessage(fd, buf);
         }
-        snprintf(buf, BUFSIZ-1, "WHEELMAXPOS=%d", wmaxpos);
+        snprintf(buf, BUFSIZ-1, "wmaxpos=%d", wmaxpos);
         sendstrmessage(fd, buf);
     }
     if(focuser){
@@ -650,17 +719,28 @@ static hresult infohandler(int fd, _U_ const char *key, _U_ const char *val){
             sendstrmessage(fd, buf);
         }
         if(focuser->getTbody(&f)){
-            snprintf(buf, BUFSIZ-1, "FOCTEMP=%.1f", f);
+            snprintf(buf, BUFSIZ-1, "foctemp=%.1f", f);
             sendstrmessage(fd, buf);
         }
-        snprintf(buf, BUFSIZ-1, "FOCMINPOS=%g", focminpos);
+        snprintf(buf, BUFSIZ-1, "focminpos=%g", focminpos);
         sendstrmessage(fd, buf);
-        snprintf(buf, BUFSIZ-1, "FOCMAXPOS=%g", focmaxpos);
+        snprintf(buf, BUFSIZ-1, "focmaxpos=%g", focmaxpos);
         sendstrmessage(fd, buf);
         if(focuser->getPos(&f)){
-            snprintf(buf, BUFSIZ-1, "FOCPOS=%g", f);
+            snprintf(buf, BUFSIZ-1, CMD_FGOTO "=%g", f);
             sendstrmessage(fd, buf);
         }
+    }
+    return RESULT_SILENCE;
+}
+// show help
+static hresult helphandler(int fd, _U_ const char *key, _U_ const char *val){
+    char buf[256];
+    strpair *ptr = allcommands;
+    while(ptr->key){
+        snprintf(buf, 255, "%s - %s", ptr->key, ptr->help);
+        sendstrmessage(fd, buf);
+        ++ptr;
     }
     return RESULT_SILENCE;
 }
@@ -691,6 +771,7 @@ static int chkfoc(char *val){
 }
 static handleritem items[] = {
     {chktrue, infohandler, CMD_INFO},
+    {chktrue, helphandler, CMD_HELP},
     {chkcam, camlisthandler, CMD_CAMLIST},
     {chkcam, camsetNhandler, CMD_CAMDEVNO},
     {chkcam, camfanhandler, CMD_CAMFANSPD},
@@ -769,21 +850,10 @@ void server(int sock){
         // process some data & send messages to ALL
         if(camstate == CAMERA_FRAMERDY || camstate == CAMERA_ERROR){
             char buff[32];
-            int l = 0;
             snprintf(buff, 31, CMD_EXPSTATE "=%d", camstate);
             DBG("Send %s to %d clients", buff, nfd - 1);
             for(int i = 1; i < nfd; ++i)
-                sendmessage(poll_set[i].fd, buff, l);
-            if(camstate == CAMERA_FRAMERDY){ // save frame
-                if(!ima.data) LOGERR("Can't save image: not initialized");
-                else{
-                    if(!camera->capture(&ima)) LOGERR("Can't capture image");
-                    else{
-                        calculate_stat(&ima);
-                        saveFITS(&ima);
-                    }
-                }
-            }
+                sendstrmessage(poll_set[i].fd, buff);
             camstate = CAMERA_IDLE;
         }
         // scan connections
@@ -806,3 +876,25 @@ void server(int sock){
     closecam(camdev);
 }
 
+char *makeabspath(const char *path){
+    static char buf[PATH_MAX+1];
+    if(!path) return NULL;
+    char *ret = NULL;
+    int unl = 0;
+    FILE *f = fopen(path, "r");
+    if(!f){
+        f = fopen(path, "a");
+        if(!f){
+            WARN("Can't create %s", path);
+            return NULL;
+        }
+        unl = 1;
+    }
+    if(!realpath(path, buf)){
+        WARN("realpath()");
+        return NULL;
+    }else ret = buf;
+    fclose(f);
+    if(unl) unlink(path);
+    return ret;
+}

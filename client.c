@@ -76,30 +76,9 @@ static char *getans(int sock){
         buf[n] = 0;
         DBG("Got from server: %s", buf);
         verbose(1, "%s", buf);
+        if(buf[n-1] == '\n') break;
     }
     return ans;
-}
-
-static char *makeabspath(const char *path){
-    static char buf[PATH_MAX];
-    if(!path) return NULL;
-    char *ret = NULL;
-    int unl = 0;
-    FILE *f = fopen(path, "r");
-    if(!f){
-        f = fopen(path, "a");
-        if(!f){
-            ERR("Can't create %s", path);
-            return NULL;
-        }
-        unl = 1;
-    }
-    if(!realpath(path, buf)){
-        ERR("realpath()");
-    }else ret = buf;
-    fclose(f);
-    if(unl) unlink(path);
-    return ret;
 }
 
 /**
