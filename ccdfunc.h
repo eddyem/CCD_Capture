@@ -27,7 +27,7 @@ extern Focuser *focuser;
 extern Wheel *wheel;
 
 void calculate_stat(IMG *image);
-int saveFITS(IMG *img); // for imageview module
+int saveFITS(IMG *img, char **outp); // for imageview module
 void focusers();
 void wheels();
 void ccds();

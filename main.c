@@ -40,7 +40,13 @@ static int isserver = FALSE;
 static pid_t childpid = 0;
 
 void signals(int signo){
+    signal(signo, SIG_IGN);
     if(childpid){ // master process
+        if(signo == SIGUSR1){ // kill child
+            kill(childpid, signo);
+            signal(signo, signals);
+            return;
+        }
         DBG("Master killed with sig=%d", signo);
         LOGWARN("Master killed with sig=%d", signo);
         if(!GP->client){
@@ -104,6 +110,7 @@ int main(int argc, char **argv){
     signal(SIGTERM, signals);
     signal(SIGHUP, SIG_IGN);
     signal(SIGTSTP, SIG_IGN);
+    signal(SIGUSR1, signals); // restart server
     // check for another running process in server and standalone mode
     if(!GP->client) check4running(self, GP->pidfile);
     if(!isserver && !GP->client){ // standalone mode
@@ -112,7 +119,6 @@ int main(int argc, char **argv){
         ccds();
         return 0;
     }
-
     LOGMSG("Started");
 #ifndef EBUG
     if(isserver){

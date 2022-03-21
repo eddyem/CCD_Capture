@@ -474,7 +474,7 @@ static void vstub(){
     return;
 }
 static int istub(_U_ int N){
-    return TRUE;
+    return FALSE;
 }
 
 /*

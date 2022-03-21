@@ -32,7 +32,7 @@ typedef enum{
 
 // server-side functions
 void server(int fd);
-char *makeabspath(const char *path);
+char *makeabspath(const char *path, int shouldbe);
 
 // common information about everything
 #define CMD_INFO        "info"
@@ -42,6 +42,7 @@ char *makeabspath(const char *path);
 #define CMD_CAMLIST     "camlist"
 #define CMD_CAMDEVNO    "camdevno"
 #define CMD_EXPOSITION  "exptime"
+#define CMD_LASTFNAME   "lastfilename"
 #define CMD_FILENAME    "filename"
 #define CMD_FILENAMEPREFIX "filenameprefix"
 // rewrite=1 will rewrite files, =0 - not (only for `filename`)
@@ -61,6 +62,17 @@ char *makeabspath(const char *path);
 // expstate=CAMERA_CAPTURE will start exposition, CAMERA_IDLE - cancel
 #define CMD_EXPSTATE    "expstate"
 #define CMD_TREMAIN     "tremain"
+#define CMD_8BIT        "8bit"
+#define CMD_FASTSPD     "fastspeed"
+#define CMD_DARK        "dark"
+// FITS file keywords
+#define CMD_AUTHOR      "author"
+#define CMD_INSTRUMENT  "instrument"
+#define CMD_OBSERVER    "observer"
+#define CMD_OBJECT      "object"
+#define CMD_PROGRAM     "program"
+#define CMD_OBJTYPE     "objtype"
+#define CMD_HEADERFILES "headerfiles"
 
 // focuser
 #define CMD_FOCLIST     "foclist"

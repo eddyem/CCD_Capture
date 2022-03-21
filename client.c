@@ -76,7 +76,13 @@ static char *getans(int sock){
         buf[n] = 0;
         DBG("Got from server: %s", buf);
         verbose(1, "%s", buf);
-        if(buf[n-1] == '\n') break;
+        if(buf[n-1] == '\n'){
+            buf[n-1] = 0;
+            break;
+        }
+    }
+    if(0 == strcmp(hresult2str(RESULT_BUSY), buf)){
+        ERRX("Server busy");
     }
     return ans;
 }
@@ -108,16 +114,42 @@ static void process_data(int sock){
     if(!isnan(GP->gain)) SENDMSG(CMD_GAIN "=%g", GP->gain);
     if(!isnan(GP->brightness)) SENDMSG(CMD_BRIGHTNESS "=%g", GP->brightness);
     if(GP->nflushes > 0) SENDMSG(CMD_NFLUSHES "=%d", GP->nflushes);
-    if(GP->outfile || GP->outfileprefix){
+    if(GP->outfile || GP->outfileprefix){ // exposition and reading control: only if start of exposition
+        if(GP->_8bit) SENDMSG(CMD_8BIT "=1");
+        else SENDMSG(CMD_8BIT "=0");
+        if(GP->fast) SENDMSG(CMD_FASTSPD "=1");
+        else SENDMSG(CMD_FASTSPD "=0");
+        if(GP->dark) SENDMSG(CMD_DARK "=1");
+        else SENDMSG(CMD_DARK "=0");
+    }
+    if(GP->outfile){
+        SENDMSG(CMD_FILENAME "=%s", makeabspath(GP->outfile, FALSE));
         if(GP->rewrite) SENDMSG(CMD_REWRITE "=1");
         else SENDMSG(CMD_REWRITE "=0");
     }
-    if(GP->outfile) SENDMSG(CMD_FILENAME "=%s", makeabspath(GP->outfile));
-    if(GP->outfileprefix) SENDMSG(CMD_FILENAMEPREFIX "=%s", makeabspath(GP->outfileprefix));
-    // if client gives filename and exptime, make exposition
-    if(GP->exptime > -DBL_EPSILON){
-        SENDMSG(CMD_EXPOSITION "=%g", GP->exptime);
-        if(GP->outfile || GP->outfileprefix) SENDMSG(CMD_EXPSTATE "=%d", CAMERA_CAPTURE);
+    if(GP->outfileprefix) SENDMSG(CMD_FILENAMEPREFIX "=%s", makeabspath(GP->outfileprefix, FALSE));
+    if(GP->exptime > -DBL_EPSILON) SENDMSG(CMD_EXPOSITION "=%g", GP->exptime);
+    // FITS header keywords:
+#define CHKHDR(x, cmd)   do{if(x) SENDMSG(cmd "=%s", x);}while(0)
+    CHKHDR(GP->author, CMD_AUTHOR);
+    CHKHDR(GP->instrument, CMD_INSTRUMENT);
+    CHKHDR(GP->observers, CMD_OBSERVER);
+    CHKHDR(GP->objname, CMD_OBJECT);
+    CHKHDR(GP->prog_id, CMD_PROGRAM);
+    CHKHDR(GP->objtype, CMD_OBJTYPE);
+#undef CHKHDR
+    if(GP->addhdr){
+        char buf[1024], *ptr = buf, **sptr = GP->addhdr;
+        *buf = 0;
+        int L = 1024;
+        while(*sptr){
+            if(!**sptr){
+                ++sptr; continue;
+            }
+            int N = snprintf(ptr, L-1, "%s,", *sptr++);
+            L -= N; ptr += N;
+        }
+        SENDMSG(CMD_HEADERFILES "=%s", buf);
     }
     // common information
     SENDMSG(CMD_INFO);
@@ -125,14 +157,23 @@ static void process_data(int sock){
 
 void client(int sock){
     process_data(sock);
-    double timeout = GP->waitexpend ? CLIENT_TIMEOUT : 0.1;
     double t0 = dtime(), tw = t0;
+    int Nremain = 0, nframe = 1;
+    // if client gives filename/prefix or Nframes, make exposition
+    if(GP->outfile || GP->outfileprefix || GP->nframes > 0){
+        Nremain = GP->nframes - 1;
+        if(Nremain < 1) Nremain = 0;
+        else GP->waitexpend = TRUE; // N>1 - wait for exp ends
+        SENDMSG(CMD_EXPSTATE "=%d", CAMERA_CAPTURE);
+    }
+    double timeout = GP->waitexpend ? CLIENT_TIMEOUT : 0.1;
+    verbose(1, "Exposing frame 1");
+    if(GP->waitexpend) verbose(2, "Wait for exposition end");
     while(dtime() - t0 < timeout){
         if(GP->waitexpend && dtime() - tw > WAIT_TIMEOUT){
             SENDMSG(CMD_TREMAIN); // get remained time
             tw = dtime();
             sprintf(sendbuf, "%s", CMD_EXPSTATE);
-            verbose(2, "%s", sendbuf);
             sendstrmessage(sock, sendbuf);
         }
         char *ans = getans(sock);
@@ -147,7 +188,27 @@ void client(int sock){
                 }
                 if(state != CAMERA_CAPTURE){
                     verbose(2, "Frame ready!");
-                    return;
+                    SENDMSG(CMD_LASTFNAME);
+                    if(Nremain){
+                        if(GP->pause_len > 0){
+                            double delta, time1 = dtime() + GP->pause_len;
+                            while(1){
+                                SENDMSG(CMD_CAMTEMPER);
+                                if((delta = time1 - dtime()) < __FLT_EPSILON__) break;
+                                // %d секунд до окончания паузы\n
+                                if(delta > 1.) verbose(1, _("%d seconds till pause ends\n"), (int)delta);
+                                if(delta > 6.) sleep(5);
+                                else if(delta > 1.) sleep((int)delta);
+                                else usleep((int)(delta*1e6 + 1));
+                            }
+                        }
+                        verbose(1, "Exposing frame %d", ++nframe);
+                        --Nremain;
+                        SENDMSG(CMD_EXPSTATE "=%d", CAMERA_CAPTURE);
+                    }else{
+                        GP->waitexpend = 0;
+                        timeout = 0.2; // wait for last file name
+                    }
                 }
             }
         }

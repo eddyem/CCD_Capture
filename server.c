@@ -35,7 +35,7 @@ static _Atomic camera_state camstate = CAMERA_IDLE;
 #define FLAG_STARTCAPTURE       (1<<0)
 #define FLAG_CANCEL             (1<<1)
 static atomic_int camflags = 0, camfanspd = 0, confio = 0, nflushes;
-static char *outfile = NULL;
+static char *outfile = NULL, *lastfile = NULL; // current output file name/prefix; last name of saved file
 static pthread_mutex_t locmutex = PTHREAD_MUTEX_INITIALIZER; // mutex for wheel/camera/focuser functions
 static frameformat frmformatmax = {0}, curformat = {0}; // maximal format
 static void *camdev = NULL, *focdev = NULL, *wheeldev = NULL;
@@ -51,13 +51,17 @@ typedef struct{
 
 // cat | awk '{print "{ " $3 ", \"\" }," }' | sort
 strpair allcommands[] = {
+    { "8bit", "run in 8 bit mode instead of 16 bit" },
+    { "author", "FITS 'AUTHOR' field" },
     { "brightness", "camera brightness" },
     { "camdevno", "camera device number" },
     { "camlist", "list all connected cameras" },
     { "ccdfanspeed", "fan speed of camera" },
     { "confio", "camera IO configuration" },
+    { "dark", "don't open shutter @ exposure" },
     { "expstate", "get exposition state" },
     { "exptime", "exposition time" },
+    { "fastspeed", "fast readout speed" },
     { "filename", "save file with this name, like file.fits" },
     { "filenameprefix", "prefix of files, like ex (will be saved as exXXXX.fits)" },
     { "focdevno", "focuser device number" },
@@ -66,11 +70,17 @@ strpair allcommands[] = {
     { "format", "camera frame format (X0,Y0,X1,Y1)" },
     { "gain", "camera gain" },
     { "hbin", "horizontal binning" },
+    { "headerfiles", "add FITS records from these files (comma-separated list)" },
     { "help", "show this help" },
     { "info", "connected devices state" },
+    { "instrument", "FITS 'INSTRUME' field" },
     { "io", "get/set camera IO" },
     { "maxformat", "camera maximal available format" },
     { "nflushes", "camera number of preflushes" },
+    { "object", "FITS 'OBJECT' field" },
+    { "objtype", "FITS 'IMAGETYP' field" },
+    { "observer", "FITS 'OBSERVER' field" },
+    { "program", "FITS 'PROG-ID' field" },
     { "rewrite", "rewrite file (if give `filename`, not `filenameprefix`" },
     { "shutter", "camera shutter's operations" },
     { "tcold", "camera chip temperature" },
@@ -130,7 +140,7 @@ static inline void cameracapturestate(){ // capturing - wait for exposition ends
                 if(!camera->capture(&ima)) LOGERR("Can't capture image");
                 else{
                     calculate_stat(&ima);
-                    if(saveFITS(&ima)){
+                    if(saveFITS(&ima, &lastfile)){
                         camstate = CAMERA_FRAMERDY;
                         return;
                     }
@@ -278,12 +288,21 @@ static hresult exphandler(int fd, _U_ const char *key, const char *val){
     sendstrmessage(fd, buf);
     return RESULT_SILENCE;
 }
+// show last filename of saved FITS
+static hresult lastfnamehandler(int fd, _U_ const char *key, _U_ const char *val){
+    char buf[PATH_MAX+1];
+    pthread_mutex_lock(&locmutex);
+    snprintf(buf, PATH_MAX, CMD_LASTFNAME "=%s", lastfile);
+    sendstrmessage(fd, buf);
+    pthread_mutex_unlock(&locmutex);
+    return RESULT_SILENCE;
+}
 // filename setter/getter
 static hresult namehandler(int fd, _U_ const char *key, const char *val){
     char buf[PATH_MAX+1];
     if(val){
         pthread_mutex_lock(&locmutex);
-        char *path = makeabspath(val);
+        char *path = makeabspath(val, FALSE);
         if(!path){
             LOGERR("Can't create file '%s'", val);
             pthread_mutex_unlock(&locmutex);
@@ -305,7 +324,7 @@ static hresult nameprefixhandler(_U_ int fd, _U_ const char *key, const char *va
     char buf[PATH_MAX+1];
     if(val){
         pthread_mutex_lock(&locmutex);
-        char *path = makeabspath(val);
+        char *path = makeabspath(val, FALSE);
         if(!path){
             LOGERR("Can't create file '%s'", val);
             pthread_mutex_unlock(&locmutex);
@@ -567,6 +586,141 @@ static hresult tremainhandler(_U_ int fd, _U_ const char *key, _U_ const char *v
     sendstrmessage(fd, buf);
     return RESULT_SILENCE;
 }
+static hresult _8bithandler(int fd, _U_ const char *key, const char *val){
+    char buf[64];
+    if(val){
+        int s = atoi(val);
+        if(s != 0 && s != 1) return RESULT_BADVAL;
+        GP->_8bit = s;
+        s = !s;
+        if(!camera->setbitdepth(s)) return RESULT_FAIL;
+    }
+    snprintf(buf, 63, CMD_8BIT "=%d", GP->_8bit);
+    sendstrmessage(fd, buf);
+    return RESULT_SILENCE;
+}
+static hresult fastspdhandler(int fd, _U_ const char *key, const char *val){
+    char buf[64];
+    if(val){
+        int b = atoi(val);
+        if(b != 0 && b != 1) return RESULT_BADVAL;
+        GP->fast = b;
+        if(!camera->setfastspeed(b)) return RESULT_FAIL;
+    }
+    snprintf(buf, 63, CMD_FASTSPD "=%d", GP->fast);
+    sendstrmessage(fd, buf);
+    return RESULT_SILENCE;
+}
+static hresult darkhandler(int fd, _U_ const char *key, const char *val){
+    char buf[64];
+    if(val){
+        int d = atoi(val);
+        if(d != 0 && d != 1) return RESULT_BADVAL;
+        GP->dark = d;
+        d = !d;
+        if(!camera->setframetype(d)) return RESULT_FAIL;
+    }
+    snprintf(buf, 63, CMD_DARK "=%d", GP->dark);
+    sendstrmessage(fd, buf);
+    return RESULT_SILENCE;
+}
+static hresult FITSparhandler(int fd, const char *key, const char *val){
+    char buf[256], **fitskey = NULL;
+    if(0 == strcmp(key, CMD_AUTHOR)){
+        fitskey = &GP->author;
+    }else if(0 == strcmp(key, CMD_INSTRUMENT)){
+        fitskey = &GP->instrument;
+    }else if(0 == strcmp(key, CMD_OBSERVER)){
+        fitskey = &GP->observers;
+    }else if(0 == strcmp(key, CMD_OBJECT)){
+        fitskey = &GP->objname;
+    }else if(0 == strcmp(key, CMD_PROGRAM)){
+        fitskey = &GP->prog_id;
+    }else if(0 == strcmp(key, CMD_OBJTYPE)){
+        fitskey = &GP->objtype;
+    }else return RESULT_BADKEY;
+    if(val){
+        FREE(*fitskey);
+        *fitskey = strdup(val);
+    }
+    snprintf(buf, 255, "%s=%s", key, *fitskey);
+    sendstrmessage(fd, buf);
+    return RESULT_SILENCE;
+}
+static hresult FITSheaderhandler(int fd, _U_ const char *key, const char *val){
+    char buf[BUFSIZ], **sptr;
+    static char *curhdr = NULL;
+    static int firstrun = 1;
+    if(val){
+        int sz = 10, amount = 0;
+        pthread_mutex_lock(&locmutex);
+        // first we should check `val`
+        char b2[BUFSIZ], *bptr = buf;
+        snprintf(b2, BUFSIZ-1, "%s", val);
+        char **list = MALLOC(char*, sz), **lptr = list;
+        int L = BUFSIZ;
+        for(char *s = b2; ; s = NULL){
+            char *tok = strtok(s, ",;");
+            if(!tok){
+                *lptr = NULL;
+                break;
+            }
+            // check path
+            char *newpath = makeabspath(tok, TRUE);
+            DBG("next token: %s, path: %s", tok, newpath);
+            if(!newpath){ // error! Free list and return err
+                DBG("No such file");
+                sptr = list;
+                while(*sptr){
+                    FREE(*sptr++);
+                }
+                FREE(list);
+                pthread_mutex_unlock(&locmutex);
+                return RESULT_BADVAL;
+            }
+            *lptr++ = strdup(newpath);
+            if(++amount == sz){
+                DBG("Realloc");
+                sz += 10;
+                list = realloc(list, sz*sizeof(char*));
+                bzero(&list[sz-10], 10*sizeof(char*));
+            }
+            int N = snprintf(bptr, L-1, "%s,", newpath);
+            bptr += N; L -= N;
+        }
+        // free old list and change its value
+        if(GP->addhdr){
+            DBG("Free old list");
+            sptr = GP->addhdr;
+            while(*sptr){
+                DBG("Free %s", *sptr);
+                free(*(sptr++));
+            }
+        }
+        GP->addhdr = list;
+        FREE(curhdr);
+        if(*val && *val != ',') curhdr = strdup(buf);
+        DBG("curhdr now: %s", curhdr);
+        pthread_mutex_unlock(&locmutex);
+    }
+    if(!curhdr && firstrun){
+        firstrun = 0;
+        if(GP->addhdr && *GP->addhdr){
+            char *ptr = buf;
+            int L = BUFSIZ;
+            sptr = GP->addhdr;
+            while(*sptr){
+                DBG("Add to curhdr: %s", *sptr);
+                int N = snprintf(ptr, L-1, "%s,", *sptr++);
+                L -= N; ptr += N;
+            }
+            curhdr = strdup(buf);
+        }
+    }
+    snprintf(buf, BUFSIZ-1, CMD_HEADERFILES "=%s", curhdr);
+    sendstrmessage(fd, buf);
+    return RESULT_SILENCE;
+}
 /*
 static hresult handler(_U_ int fd, _U_ const char *key, _U_ const char *val){
     char buf[64];
@@ -790,10 +944,21 @@ static handleritem items[] = {
     {chkcam, formathandler, CMD_FRAMEFORMAT},
     {chkcam, formathandler, CMD_FRAMEMAX},
     {chkcam, nflusheshandler, CMD_NFLUSHES},
-    {chkcam, expstatehandler, CMD_EXPSTATE},
+    {chktrue, expstatehandler, CMD_EXPSTATE},
     {chkcam, nameprefixhandler, CMD_FILENAMEPREFIX},
     {chkcam, rewritefilehandler, CMD_REWRITE},
+    {chkcam, _8bithandler, CMD_8BIT},
+    {chkcam, fastspdhandler, CMD_FASTSPD},
+    {chkcam, darkhandler, CMD_DARK},
     {chktrue, tremainhandler, CMD_TREMAIN},
+    {chktrue, FITSparhandler, CMD_AUTHOR},
+    {chktrue, FITSparhandler, CMD_INSTRUMENT},
+    {chktrue, FITSparhandler, CMD_OBSERVER},
+    {chktrue, FITSparhandler, CMD_OBJECT},
+    {chktrue, FITSparhandler, CMD_PROGRAM},
+    {chktrue, FITSparhandler, CMD_OBJTYPE},
+    {chktrue, FITSheaderhandler, CMD_HEADERFILES},
+    {chktrue, lastfnamehandler, CMD_LASTFNAME},
     {chkfoc, foclisthandler, CMD_FOCLIST},
     {chkfoc, fsetNhandler, CMD_FDEVNO},
     {chkfoc, fgotohandler, CMD_FGOTO},
@@ -878,13 +1043,20 @@ void server(int sock){
     closecam(camdev);
 }
 
-char *makeabspath(const char *path){
+/**
+ * @brief makeabspath - convert path to absolute and check it
+ * @param path - path to file
+ * @param shoulbe - ==1 if file must exists
+ * @return abs path or NULL (if can't convert, can't create or file not exists)
+ */
+char *makeabspath(const char *path, int shouldbe){
     static char buf[PATH_MAX+1];
     if(!path) return NULL;
     char *ret = NULL;
     int unl = 0;
     FILE *f = fopen(path, "r");
     if(!f){
+        if(shouldbe) return NULL;
         f = fopen(path, "a");
         if(!f){
             WARN("Can't create %s", path);

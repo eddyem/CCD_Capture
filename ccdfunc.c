@@ -146,8 +146,9 @@ static void addrec(fitsfile *f, char *filename){
 }
 
 // save FITS file `img` into GP->outfile or GP->outfileprefix_XXXX.fits
+// if outp != NULL, put into it strdup() of last file name
 // return FALSE if failed
-int saveFITS(IMG *img){
+int saveFITS(IMG *img, char **outp){
     int ret = FALSE;
     if(!camera){
         LOGERR("Can't save image: no camera device");
@@ -224,8 +225,8 @@ int saveFITS(IMG *img){
     WRITEKEY(fp, TSTRING, "GEOMETRY", bufc, "Camera current frame geometry");    // CRVAL1, CRVAL2 / Offset in X, Y
     if(GP->X0 > -1) WRITEKEY(fp, TINT, "X0", &GP->X0, "Subframe left border without binning");
     if(GP->Y0 > -1) WRITEKEY(fp, TINT, "Y0", &GP->Y0, "Subframe upper border without binning");
-    if(GP->objtype) strncpy(bufc, GP->objtype, FLEN_CARD-1);
-    else if(GP->dark) sprintf(bufc, "dark");
+    if(GP->dark) sprintf(bufc, "dark");
+    else if(GP->objtype) strncpy(bufc, GP->objtype, FLEN_CARD-1);
     else sprintf(bufc, "light");
     // IMAGETYP / object, flat, dark, bias, scan, eta, neon, push
     WRITEKEY(fp, TSTRING, "IMAGETYP", bufc, "Image type");
@@ -327,11 +328,15 @@ int saveFITS(IMG *img){
     TRYFITS(fits_write_img, fp, TUSHORT, 1, width * height, data);
     if(fitserror) goto cloerr;
     TRYFITS(fits_close_file, fp);
-    DBG("file %s saved", fnam);
 cloerr:
     if(fitserror == 0){
         LOGMSG("Save file '%s'", fnam);
         verbose(1, _("File saved as '%s'"), fnam);
+        DBG("file %s saved", fnam);
+        if(outp){
+            FREE(*outp);
+            *outp = strdup(fnam);
+        }
         ret = TRUE;
     }else{
         LOGERR("Can't save %s", fnam);
@@ -761,7 +766,7 @@ void ccds(){
             break;
         }
         calculate_stat(&ima);
-        saveFITS(&ima);
+        saveFITS(&ima, NULL);
 #ifdef IMAGEVIEW
         if(GP->showimage){ // display image
             if((mainwin = getWin())){

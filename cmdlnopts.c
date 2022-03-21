@@ -89,7 +89,7 @@ myoption cmdlnopts[] = {
     {"conf-ioport",NEED_ARG,NULL,   'c',    arg_int,    APTR(&G.confio),    N_("configure I/O port pins to given value (decimal number, pin1 is LSB, 1 == output, 0 == input)")},
 
     {"goto",    NEED_ARG,   NULL,   'g',    arg_double, APTR(&G.gotopos),   N_("move focuser to absolute position, mm")},
-    {"addsteps",NEED_ARG,   NULL,   'a',    arg_double, APTR(&G.addsteps),  N_("move focuser to relative position, mm")},
+    {"addsteps",NEED_ARG,   NULL,   'a',    arg_double, APTR(&G.addsteps),  N_("move focuser to relative position, mm (only for standalone)")},
 
     {"wheel-set",NEED_ARG,  NULL,   'w',    arg_int,    APTR(&G.setwheel),  N_("set wheel position")},
 
@@ -119,7 +119,7 @@ myoption cmdlnopts[] = {
  */
 glob_pars *parse_args(int argc, char **argv){
     // format of help: "Usage: progname [args]\n"
-    change_helpstring("Usage: %s [args] [output file prefix]\n\n\tWhere args are:\n");
+    change_helpstring("Usage: %s [args] [output file prefix]\nTo restart server kill it with SIGUSR1\n\tArgs are:\n");
     // parse arguments
     parseargs(&argc, &argv, cmdlnopts);
     if(help) showhelp(-1, cmdlnopts);
