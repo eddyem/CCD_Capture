@@ -18,7 +18,7 @@ glob_pars *GP = NULL;
 static glob_pars  G = {
     .instrument = NULL,
     .exptime = -1.,
-    .nframes = 1,
+    .nframes = 0,
     .X0 = -1, .Y0 = -1,
     .X1 = -1, .Y1 = -1,
     .focdevno = -1,
@@ -49,7 +49,7 @@ myoption cmdlnopts[] = {
     {"focdevno",NEED_ARG,   NULL,    0,     arg_int,    APTR(&G.focdevno),  N_("focuser device number (if many: 0, 1, 2 etc)")},
     {"help",    NO_ARGS,    &help,   1,     arg_none,   NULL,               N_("show this help")},
     {"rewrite", NO_ARGS,    &G.rewrite,1,   arg_none,   NULL,               N_("rewrite output file if exists")},
-    {"verbose", NO_ARGS,    NULL,   'V',    arg_none,   APTR(&G.verbose),   N_("verbose level (each -v increase it)")},
+    {"verbose", NO_ARGS,    NULL,   'V',    arg_none,   APTR(&G.verbose),   N_("verbose level (-V - messages, -VV - debug, -VVV - all shit)")},
     {"dark",    NO_ARGS,    NULL,   'd',    arg_int,    APTR(&G.dark),      N_("not open shutter, when exposing (\"dark frames\")")},
     {"8bit",    NO_ARGS,    NULL,   '8',    arg_int,    APTR(&G._8bit),     N_("run in 8-bit mode")},
     {"fast",    NO_ARGS,    NULL,   'f',    arg_none,   APTR(&G.fast),      N_("fast readout mode")},
@@ -101,6 +101,7 @@ myoption cmdlnopts[] = {
     {"port",    NEED_ARG,   NULL,   0,      arg_string, APTR(&G.port),      N_("local INET socket port")},
     {"client",  NO_ARGS,    &G.client,1,    arg_none,   NULL,               N_("run as client")},
     {"pidfile", NEED_ARG,   NULL,   0,      arg_string, APTR(&G.pidfile),   N_("PID file (default: " DEFAULT_PID_FILE ")")},
+    {"restart", NO_ARGS,    &G.restart,1,   arg_none,   NULL,               N_("restart image server")},
 
 #ifdef IMAGEVIEW
     {"display", NO_ARGS,    NULL,   'D',    arg_int,   APTR(&G.showimage),  N_("Display image in OpenGL window")},

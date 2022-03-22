@@ -44,9 +44,9 @@ const char *hresult2str(hresult r);
 typedef hresult (*mesghandler)(int fd, const char *key, const char *val);
 
 typedef struct{
-    int (*chkfunction)(char *val);   // function to check device is ready
-    mesghandler handler;            // handler function
-    const char *key;                // keyword
+    hresult (*chkfunction)(char *val);  // function to check device is ready
+    mesghandler handler;                // handler function
+    const char *key;                    // keyword
 } handleritem;
 
 int start_socket(int server, char *path, int isnet);

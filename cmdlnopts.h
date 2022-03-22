@@ -44,6 +44,7 @@ typedef struct{
     char *port;         // local INET socket port
     char *pidfile;      // PID file (default: /tmp/CCD_Capture.pid)
     char **addhdr;      // list of files from which to add header records
+    int restart;        // restart server
     int waitexpend;     // wait while exposition ends
     int cancelexpose;   // cancel exp
     int client;         // run as client

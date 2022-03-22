@@ -48,7 +48,7 @@ void signals(int signo){
             return;
         }
         DBG("Master killed with sig=%d", signo);
-        LOGWARN("Master killed with sig=%d", signo);
+        LOGERR("Master killed with sig=%d", signo);
         if(!GP->client){
             DBG("Unlink pid file");
             unlink(GP->pidfile);
@@ -129,7 +129,7 @@ int main(int argc, char **argv){
                 double t0 = dtime();
                 LOGMSG("Created child with pid %d", childpid);
                 wait(NULL);
-                LOGWARN("Child %d died", childpid);
+                LOGERR("Child %d died", childpid);
                 if(dtime() - t0 < 1.) pause += 5;
                 else pause = 1;
                 if(pause > 900) pause = 900;

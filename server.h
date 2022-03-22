@@ -37,6 +37,8 @@ char *makeabspath(const char *path, int shouldbe);
 // common information about everything
 #define CMD_INFO        "info"
 #define CMD_HELP        "help"
+// restart server
+#define CMD_RESTART     "restartTheServer"
 
 // CCD/CMOS
 #define CMD_CAMLIST     "camlist"

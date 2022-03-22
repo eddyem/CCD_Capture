@@ -29,7 +29,8 @@
 #include "socket.h"
 
 static char sendbuf[BUFSIZ];
-#define SENDMSG(...) do{snprintf(sendbuf, BUFSIZ-1, __VA_ARGS__); verbose(2, "%s", sendbuf); sendstrmessage(sock, sendbuf); getans(sock);}while(0)
+#define SENDMSG(...) do{snprintf(sendbuf, BUFSIZ-1, __VA_ARGS__); verbose(2, "\t> %s", sendbuf); sendstrmessage(sock, sendbuf); getans(sock);}while(0)
+static int expstate = 0;
 
 /**
  * check data from  fd (polling function for client)
@@ -61,30 +62,59 @@ static int canberead(int fd){
     return 0;
 }
 
-static char *getans(int sock){
-    static char buf[BUFSIZ];
+static char *readmsg(int fd){
+    static char buf[BUFSIZ] = {0}, line[BUFSIZ];
+    int curlen = strlen(buf);
+    if(curlen == BUFSIZ-1) curlen = 0; // buffer overflow - clear old content
+    ssize_t rd = 0;
+    if(1 == canberead(fd)){
+        rd = read(fd, buf + curlen, BUFSIZ-1 - curlen);
+            if(rd <= 0){
+                WARNX("Server disconnected");
+                signals(1);
+            }
+    }
+    curlen += rd;
+    buf[curlen] = 0;
+    if(curlen == 0) return NULL;
+    DBG("cur buffer: ----%s----", buf);
+    char *nl = strchr(buf, '\n');
+    if(!nl) return NULL;
+    *nl++ = 0;
+    strcpy(line, buf);
+    int rest = curlen - (int)(nl-buf);
+    if(rest > 0) memmove(buf, nl, rest+1);
+    else *buf = 0;
+    return line;
+}
+
+// parser of CCD server messages; return TRUE to exit from polling cycle of `getans` (if receive 'FAIL', 'OK' or 'BUSY')
+static int parseans(char *ans){
+    if(!ans) return FALSE;
+    if(0 == strcmp(hresult2str(RESULT_BUSY), ans)) ERRX("Server busy");
+    if(0 == strcmp(hresult2str(RESULT_FAIL), ans)) return TRUE;
+    if(0 == strcmp(hresult2str(RESULT_OK), ans)) return TRUE;
+    char *val = get_keyval(ans); // now `ans` is a key and `val` its value
+    if(0 == strcmp(CMD_EXPSTATE, ans)) expstate = atoi(val);
+    return FALSE;
+}
+
+// read until timeout all messages from server; return FALSE if there was no messages from server
+static int getans(int sock){
     double t0 = dtime();
     char *ans = NULL;
     while(dtime() - t0 < ANSWER_TIMEOUT){
-        if(1 != canberead(sock)) continue;
-        int n = read(sock, buf, BUFSIZ-1);
-        if(n == 0){
-            WARNX("Server disconnected");
-            signals(1);
+        char *s = readmsg(sock);
+        if(!s){ // buffer is empty, return last message or wait for it
+            if(ans) return TRUE;
+            else continue;
         }
-        ans = buf;
-        buf[n] = 0;
-        DBG("Got from server: %s", buf);
-        verbose(1, "%s", buf);
-        if(buf[n-1] == '\n'){
-            buf[n-1] = 0;
-            break;
-        }
+        ans = s;
+        DBG("Got from server: %s", ans);
+        verbose(1, "\t%s", ans);
+        if(parseans(ans)) break;
     }
-    if(0 == strcmp(hresult2str(RESULT_BUSY), buf)){
-        ERRX("Server busy");
-    }
-    return ans;
+    return ((ans) ? TRUE : FALSE);
 }
 
 /**
@@ -156,6 +186,10 @@ static void process_data(int sock){
 }
 
 void client(int sock){
+    if(GP->restart){
+        SENDMSG(CMD_RESTART);
+        return;
+    }
     process_data(sock);
     double t0 = dtime(), tw = t0;
     int Nremain = 0, nframe = 1;
@@ -165,9 +199,12 @@ void client(int sock){
         if(Nremain < 1) Nremain = 0;
         else GP->waitexpend = TRUE; // N>1 - wait for exp ends
         SENDMSG(CMD_EXPSTATE "=%d", CAMERA_CAPTURE);
+    } else {
+        getans(sock);
+        return;
     }
     double timeout = GP->waitexpend ? CLIENT_TIMEOUT : 0.1;
-    verbose(1, "Exposing frame 1");
+    verbose(1, "Exposing frame 1...");
     if(GP->waitexpend) verbose(2, "Wait for exposition end");
     while(dtime() - t0 < timeout){
         if(GP->waitexpend && dtime() - tw > WAIT_TIMEOUT){
@@ -176,39 +213,34 @@ void client(int sock){
             sprintf(sendbuf, "%s", CMD_EXPSTATE);
             sendstrmessage(sock, sendbuf);
         }
-        char *ans = getans(sock);
-        if(ans){
+        if(getans(sock)){ // got next portion of data
             t0 = dtime();
-            char *val = get_keyval(ans);
-            if(val && 0 == strcmp(ans, CMD_EXPSTATE)){
-                int state = atoi(val);
-                if(state == CAMERA_ERROR){
-                    WARNX(_("Can't make exposition"));
-                    return;
-                }
-                if(state != CAMERA_CAPTURE){
-                    verbose(2, "Frame ready!");
-                    SENDMSG(CMD_LASTFNAME);
-                    if(Nremain){
-                        if(GP->pause_len > 0){
-                            double delta, time1 = dtime() + GP->pause_len;
-                            while(1){
-                                SENDMSG(CMD_CAMTEMPER);
-                                if((delta = time1 - dtime()) < __FLT_EPSILON__) break;
-                                // %d секунд до окончания паузы\n
-                                if(delta > 1.) verbose(1, _("%d seconds till pause ends\n"), (int)delta);
-                                if(delta > 6.) sleep(5);
-                                else if(delta > 1.) sleep((int)delta);
-                                else usleep((int)(delta*1e6 + 1));
-                            }
+            if(expstate == CAMERA_ERROR){
+                WARNX(_("Can't make exposition"));
+                return;
+            }
+            if(expstate != CAMERA_CAPTURE){
+                verbose(2, "Frame ready!");
+                if(Nremain){
+                    verbose(1, "\n");
+                    if(GP->pause_len > 0){
+                        double delta, time1 = dtime() + GP->pause_len;
+                        while(1){
+                            SENDMSG(CMD_CAMTEMPER);
+                            if((delta = time1 - dtime()) < __FLT_EPSILON__) break;
+                            // %d секунд до окончания паузы\n
+                            if(delta > 1.) verbose(1, _("%d seconds till pause ends\n"), (int)delta);
+                            if(delta > 6.) sleep(5);
+                            else if(delta > 1.) sleep((int)delta);
+                            else usleep((int)(delta*1e6 + 1));
                         }
-                        verbose(1, "Exposing frame %d", ++nframe);
-                        --Nremain;
-                        SENDMSG(CMD_EXPSTATE "=%d", CAMERA_CAPTURE);
-                    }else{
-                        GP->waitexpend = 0;
-                        timeout = 0.2; // wait for last file name
                     }
+                    verbose(1, "Exposing frame %d...", ++nframe);
+                    --Nremain;
+                    SENDMSG(CMD_EXPSTATE "=%d", CAMERA_CAPTURE);
+                }else{
+                    GP->waitexpend = 0;
+                    timeout = 0.2; // wait for last file name
                 }
             }
         }

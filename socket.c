@@ -18,6 +18,7 @@
 
 #include <ctype.h> // isspace
 #include <netdb.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/ioctl.h>
@@ -28,6 +29,8 @@
 #include "client.h"
 #include "server.h"
 #include "socket.h"
+
+static pthread_mutex_t locmutex = PTHREAD_MUTEX_INITIALIZER; // mutex for wheel/camera/focuser functions
 
 /**
  * @brief start_socket - create socket and run client or server
@@ -152,7 +155,7 @@ static const char *resmessages[] = {
 };
 
 const char *hresult2str(hresult r){
-    if(r >= RESULT_NUM) return "BADRESULT";
+    if(r < 0 || r >= RESULT_NUM) return "BADRESULT";
     return resmessages[r];
 }
 
@@ -188,13 +191,15 @@ static void parsestring(int fd, handleritem *handlers, char *str){
     else LOGDBG("RECEIVE '%s'", str);
     for(handleritem *h = handlers; h->key; ++h){
         if(strcmp(str, h->key) == 0){ // found command
-            if(h->chkfunction && !h->chkfunction(val)) sendstrmessage(fd, resmessages[RESULT_FAIL]);
-            else{
-                if(h->handler){
-                    hresult r = h->handler(fd, str, val);
-                    sendstrmessage(fd, hresult2str(r));
-                }else sendstrmessage(fd, resmessages[RESULT_FAIL]);
+            pthread_mutex_lock(&locmutex);
+            hresult r = RESULT_OK;
+            if(h->chkfunction) r = h->chkfunction(val);
+            if(r == RESULT_OK){ // no test function or it returns TRUE
+                if(h->handler) r = h->handler(fd, str, val);
+                else r = RESULT_FAIL;
             }
+            pthread_mutex_unlock(&locmutex);
+            sendstrmessage(fd, hresult2str(r));
             return;
         }
     }

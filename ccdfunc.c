@@ -748,6 +748,7 @@ void ccds(){
             pthread_create(&mainwin->thread, NULL, &image_thread, (void*)&ima);
     }
 #endif
+    if(GP->nframes < 1) GP->nframes = 1;
     for(int j = 0; j < GP->nframes; ++j){
         // Захват кадра %d\n
         verbose(1, _("Capture frame %d"), j);

@@ -7,7 +7,7 @@
 msgid   ""
 msgstr  "Project-Id-Version: PACKAGE VERSION\n"
         "Report-Msgid-Bugs-To: \n"
-        "POT-Creation-Date: 2022-03-21 18:20+0300\n"
+        "POT-Creation-Date: 2022-03-22 17:17+0300\n"
         "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
         "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
         "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -22,7 +22,7 @@ msgid   "%.1f seconds till exposition ends"
 msgstr  ""
 
 #. %d секунд до окончания паузы\n
-#: ccdfunc.c:802 client.c:199
+#: ccdfunc.c:803 client.c:232
 #, c-format
 msgid   "%d seconds till pause ends\n"
 msgstr  ""
@@ -52,7 +52,7 @@ msgstr  ""
 msgid   "Camera model: %s"
 msgstr  ""
 
-#: ccdfunc.c:759 ccdfunc.c:781 ccdfunc.c:822
+#: ccdfunc.c:760 ccdfunc.c:782 ccdfunc.c:823
 msgid   "Can't capture image"
 msgstr  ""
 
@@ -105,7 +105,7 @@ msgstr  ""
 msgid   "Can't get max wheel position"
 msgstr  ""
 
-#: ccdfunc.c:765 ccdfunc.c:785 ccdfunc.c:826
+#: ccdfunc.c:766 ccdfunc.c:786 ccdfunc.c:827
 msgid   "Can't grab image"
 msgstr  ""
 
@@ -117,7 +117,7 @@ msgstr  ""
 msgid   "Can't init mutex!"
 msgstr  ""
 
-#: client.c:186
+#: client.c:219
 msgid   "Can't make exposition"
 msgstr  ""
 
@@ -162,7 +162,7 @@ msgstr  ""
 msgid   "Can't set active wheel number"
 msgstr  ""
 
-#: ccdfunc.c:703 server.c:209
+#: ccdfunc.c:703 server.c:219
 #, c-format
 msgid   "Can't set binning %dx%d"
 msgstr  ""
@@ -190,7 +190,7 @@ msgstr  ""
 msgid   "Can't set gain to %g"
 msgstr  ""
 
-#: ccdfunc.c:713 server.c:210
+#: ccdfunc.c:713 server.c:220
 msgid   "Can't set given geometry"
 msgstr  ""
 
@@ -213,17 +213,17 @@ msgstr  ""
 msgid   "Can't set wheel position %d"
 msgstr  ""
 
-#: ccdfunc.c:755 server.c:118
+#: ccdfunc.c:756 server.c:120
 msgid   "Can't start exposition"
 msgstr  ""
 
 #. Захват кадра %d\n
-#: ccdfunc.c:753
+#: ccdfunc.c:754
 #, c-format
 msgid   "Capture frame %d"
 msgstr  ""
 
-#: cmdlnopts.c:106
+#: cmdlnopts.c:107
 msgid   "Display image in OpenGL window"
 msgstr  ""
 
@@ -288,7 +288,7 @@ msgstr  ""
 msgid   "Neither filename nor filename prefix pointed!"
 msgstr  ""
 
-#: server.c:156
+#: server.c:161
 msgid   "No camera device"
 msgstr  ""
 
@@ -317,7 +317,7 @@ msgstr  ""
 msgid   "Pixel size: %g x %g"
 msgstr  ""
 
-#: ccdfunc.c:762
+#: ccdfunc.c:763
 msgid   "Read grabbed image"
 msgstr  ""
 
@@ -326,7 +326,7 @@ msgstr  ""
 msgid   "Readout mode: %s"
 msgstr  ""
 
-#: client.c:216
+#: client.c:248
 msgid   "Server timeout"
 msgstr  ""
 
@@ -521,6 +521,10 @@ msgstr  ""
 msgid   "program author"
 msgstr  ""
 
+#: cmdlnopts.c:104
+msgid   "restart image server"
+msgstr  ""
+
 #: cmdlnopts.c:51
 msgid   "rewrite output file if exists"
 msgstr  ""
@@ -566,7 +570,7 @@ msgid   "show this help"
 msgstr  ""
 
 #: cmdlnopts.c:52
-msgid   "verbose level (each -v increase it)"
+msgid   "verbose level (-V - messages, -VV - debug, -VVV - all shit)"
 msgstr  ""
 
 #: cmdlnopts.c:71
