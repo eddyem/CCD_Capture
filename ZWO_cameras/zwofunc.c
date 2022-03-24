@@ -85,18 +85,25 @@ static int asi_checkcam(){
 static int campoll(capture_status *st, float *remain){
     if(!st) return FALSE;
     ASI_EXPOSURE_STATUS s;
-    if(ASI_SUCCESS != ASIGetExpStatus(caminfo.CameraID, &s)) return FALSE;
+    if(ASI_SUCCESS != ASIGetExpStatus(caminfo.CameraID, &s)){
+        DBG("Can't get exp status");
+        return FALSE;
+    }
     switch(s){
         case ASI_EXP_IDLE:
+            DBG("No capture");
             *st = CAPTURE_NO;
         break;
         case ASI_EXP_WORKING:
+            DBG("Capture in progress");
             *st = CAPTURE_PROCESS;
         break;
         case ASI_EXP_SUCCESS:
+            DBG("Capture ready");
             *st = CAPTURE_READY;
         break;
         default: // failed
+            DBG("Failed: %d", s);
             *st = CAPTURE_ABORTED;
     }
     if(remain){
@@ -309,8 +316,8 @@ static int gett(_U_ float *t){
 static int camsetbin(int h, int v){
     DBG("set bin %dx%d", h, v);
     if(h != v){
-        WARNX(_("BinX and BinY should be equal"));
-        return FALSE;
+        WARNX(_("BinX and BinY should be equal, take h"));
+        //return FALSE;
     }
     if(h > extrvalues.maxbin){
         WARNX(_("Maximal binning value is %d"), extrvalues.maxbin);

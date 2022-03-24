@@ -30,7 +30,7 @@
 
 static char sendbuf[BUFSIZ];
 #define SENDMSG(...) do{snprintf(sendbuf, BUFSIZ-1, __VA_ARGS__); verbose(2, "\t> %s", sendbuf); sendstrmessage(sock, sendbuf); getans(sock);}while(0)
-static int expstate = 0;
+static int expstate = CAMERA_CAPTURE;
 
 /**
  * check data from  fd (polling function for client)
@@ -77,7 +77,7 @@ static char *readmsg(int fd){
     curlen += rd;
     buf[curlen] = 0;
     if(curlen == 0) return NULL;
-    DBG("cur buffer: ----%s----", buf);
+    //DBG("cur buffer: ----%s----", buf);
     char *nl = strchr(buf, '\n');
     if(!nl) return NULL;
     *nl++ = 0;
@@ -91,11 +91,15 @@ static char *readmsg(int fd){
 // parser of CCD server messages; return TRUE to exit from polling cycle of `getans` (if receive 'FAIL', 'OK' or 'BUSY')
 static int parseans(char *ans){
     if(!ans) return FALSE;
+    //DBG("Parsing of '%s'", ans);
     if(0 == strcmp(hresult2str(RESULT_BUSY), ans)) ERRX("Server busy");
     if(0 == strcmp(hresult2str(RESULT_FAIL), ans)) return TRUE;
     if(0 == strcmp(hresult2str(RESULT_OK), ans)) return TRUE;
     char *val = get_keyval(ans); // now `ans` is a key and `val` its value
-    if(0 == strcmp(CMD_EXPSTATE, ans)) expstate = atoi(val);
+    if(0 == strcmp(CMD_EXPSTATE, ans)){
+        expstate = atoi(val);
+        DBG("Exposition state: %d", expstate);
+    }
     return FALSE;
 }
 
@@ -109,11 +113,13 @@ static int getans(int sock){
             if(ans) return TRUE;
             else continue;
         }
+        t0 = dtime();
         ans = s;
         DBG("Got from server: %s", ans);
         verbose(1, "\t%s", ans);
         if(parseans(ans)) break;
     }
+    DBG("GETANS: timeout, ans: %s", ans);
     return ((ans) ? TRUE : FALSE);
 }
 
@@ -121,6 +127,8 @@ static int getans(int sock){
  * @brief processData - process here some actions and make messages for server
  */
 static void process_data(int sock){
+    // common information
+    SENDMSG(CMD_INFO);
     // focuser
     if(GP->listdevices) SENDMSG(CMD_FOCLIST);
     if(GP->focdevno > -1) SENDMSG(CMD_FDEVNO "=%d", GP->focdevno);
@@ -181,8 +189,6 @@ static void process_data(int sock){
         }
         SENDMSG(CMD_HEADERFILES "=%s", buf);
     }
-    // common information
-    SENDMSG(CMD_INFO);
 }
 
 void client(int sock){
@@ -200,12 +206,16 @@ void client(int sock){
         else GP->waitexpend = TRUE; // N>1 - wait for exp ends
         SENDMSG(CMD_EXPSTATE "=%d", CAMERA_CAPTURE);
     } else {
-        getans(sock);
+        while(getans(sock));
+        DBG("RETURN: no more data");
         return;
     }
-    double timeout = GP->waitexpend ? CLIENT_TIMEOUT : 0.1;
+    double timeout = GP->waitexpend ? CLIENT_TIMEOUT : WAIT_TIMEOUT;
     verbose(1, "Exposing frame 1...");
-    if(GP->waitexpend) verbose(2, "Wait for exposition end");
+    if(GP->waitexpend){
+        expstate = CAMERA_CAPTURE; // could be changed earlier
+        verbose(2, "Wait for exposition end");
+    }
     while(dtime() - t0 < timeout){
         if(GP->waitexpend && dtime() - tw > WAIT_TIMEOUT){
             SENDMSG(CMD_TREMAIN); // get remained time
@@ -214,6 +224,7 @@ void client(int sock){
             sendstrmessage(sock, sendbuf);
         }
         if(getans(sock)){ // got next portion of data
+            DBG("server message");
             t0 = dtime();
             if(expstate == CAMERA_ERROR){
                 WARNX(_("Can't make exposition"));
@@ -240,7 +251,7 @@ void client(int sock){
                     SENDMSG(CMD_EXPSTATE "=%d", CAMERA_CAPTURE);
                 }else{
                     GP->waitexpend = 0;
-                    timeout = 0.2; // wait for last file name
+                    timeout = WAIT_TIMEOUT; // wait for last file name
                 }
             }
         }

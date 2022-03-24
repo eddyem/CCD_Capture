@@ -18,7 +18,6 @@
 
 #include <ctype.h> // isspace
 #include <netdb.h>
-#include <pthread.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/ioctl.h>
@@ -30,7 +29,7 @@
 #include "server.h"
 #include "socket.h"
 
-static pthread_mutex_t locmutex = PTHREAD_MUTEX_INITIALIZER; // mutex for wheel/camera/focuser functions
+pthread_mutex_t locmutex = PTHREAD_MUTEX_INITIALIZER; // mutex for wheel/camera/focuser functions
 
 /**
  * @brief start_socket - create socket and run client or server
@@ -82,26 +81,28 @@ int start_socket(int isserver, char *path, int isnet){
         if(isserver){
             int reuseaddr = 1;
             if(setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &reuseaddr, sizeof(int)) == -1){
-                LOGWARN("setsockopt()");
                 WARN("setsockopt()");
+                LOGWARN("setsockopt()");
                 close(sock); sock = -1;
                 continue;
             }
             if(bind(sock, p->ai_addr, p->ai_addrlen) == -1){
-                LOGWARN("bind()");
                 WARN("bind()");
+                LOGWARN("bind()");
                 close(sock); sock = -1;
                 continue;
             }
+            /*
             int enable = 1;
             if(ioctl(sock, FIONBIO, (void *)&enable) < 0){ // make socket nonblocking
-                LOGERR("Can't make socket nonblocking");
-                ERRX("ioctl()");
+                WARN("ioctl()");
+                LOGWARN("Can't make socket nonblocking");
             }
+            */
         }else{
             if(connect(sock, p->ai_addr, p->ai_addrlen) == -1){
-                LOGWARN("connect()");
                 WARN("connect()");
+                LOGWARN("connect()");
                 close(sock); sock = -1;
             }
         }
@@ -121,27 +122,34 @@ int start_socket(int isserver, char *path, int isnet){
 }
 
 // simple wrapper over write: add missed newline and log data
-void sendmessage(int fd, const char *msg, int l){
-    if(fd < 1 || !msg || l < 1) return;
+int sendmessage(int fd, const char *msg, int l){
+    if(fd < 1 || !msg || l < 1) return TRUE; // empty message
+    static char *tmpbuf = NULL;
+    static int buflen = 0;
+    if(l + 1 > buflen){
+        buflen += 1024;
+        tmpbuf = realloc(tmpbuf, buflen);
+    }
     DBG("send to fd %d: %s [%d]", fd, msg, l);
-    char *tmpbuf = MALLOC(char, l+1);
     memcpy(tmpbuf, msg, l);
     if(msg[l-1] != '\n') tmpbuf[l++] = '\n';
-    if(l != write(fd, tmpbuf, l)){
-        LOGWARN("write()");
+    if(l != send(fd, tmpbuf, l, MSG_NOSIGNAL)){
         WARN("write()");
+        LOGWARN("write()");
+        return FALSE;
     }else{
+        DBG("success");
         if(globlog){ // logging turned ON
             tmpbuf[l-1] = 0; // remove trailing '\n' for logging
             LOGDBG("SEND '%s'", tmpbuf);
         }
     }
-    FREE(tmpbuf);
+    return TRUE;
 }
-void sendstrmessage(int fd, const char *msg){
-    if(fd < 1 || !msg) return;
+int sendstrmessage(int fd, const char *msg){
+    if(fd < 1 || !msg) return FALSE;
     int l = strlen(msg);
-    sendmessage(fd, msg, l);
+    return sendmessage(fd, msg, l);
 }
 
 // text messages for `hresult`
@@ -165,7 +173,7 @@ const char *hresult2str(hresult r){
  * @return `val`
  */
 char *get_keyval(char *keyval){
-    DBG("Got string %s", keyval);
+    //DBG("Got string %s", keyval);
     // remove starting spaces in key
     while(isspace(*keyval)) ++keyval;
     char *val = strchr(keyval, '=');
@@ -178,32 +186,49 @@ char *get_keyval(char *keyval){
     while(isspace(*e) && e > keyval) --e;
     e[1] = 0;
     // now we have key (`str`) and val (or NULL)
-    DBG("key=%s, val=%s", keyval, val);
+    //DBG("key=%s, val=%s", keyval, val);
     return val;
 }
 
 // parse string of data (command or key=val)
 // the CONTENT of buffer `str` WILL BE BROKEN!
-static void parsestring(int fd, handleritem *handlers, char *str){
-    if(fd < 1 || !handlers || !handlers->key || !str || !*str) return;
+// @return FALSE if client closed (nothing to read)
+static int parsestring(int fd, handleritem *handlers, char *str){
+    if(fd < 1 || !handlers || !handlers->key || !str || !*str) return FALSE;
     char *val = get_keyval(str);
-    if(val) LOGDBG("RECEIVE '%s=%s'", str, val);
-    else LOGDBG("RECEIVE '%s'", str);
+    if(val){
+        DBG("RECEIVE '%s=%s'", str, val);
+        LOGDBG("RECEIVE '%s=%s'", str, val);
+    }else{
+        DBG("RECEIVE '%s'", str);
+        LOGDBG("RECEIVE '%s'", str);
+    }
     for(handleritem *h = handlers; h->key; ++h){
         if(strcmp(str, h->key) == 0){ // found command
-            pthread_mutex_lock(&locmutex);
             hresult r = RESULT_OK;
-            if(h->chkfunction) r = h->chkfunction(val);
+            int l = 1;
+            if(h->chkfunction){
+                double t0 = dtime();
+                do{ l = pthread_mutex_trylock(&locmutex); }while(l && dtime() - t0 > BUSY_TIMEOUT);
+                if(l){
+                    DBG("Can't lock mutex");
+                    return RESULT_BUSY; // long blocking work
+                }
+                r = h->chkfunction(val);
+            } // else NULL instead of chkfuntion -> don't check and don't lock mutex
             if(r == RESULT_OK){ // no test function or it returns TRUE
                 if(h->handler) r = h->handler(fd, str, val);
                 else r = RESULT_FAIL;
             }
-            pthread_mutex_unlock(&locmutex);
-            sendstrmessage(fd, hresult2str(r));
-            return;
+            if(!l) pthread_mutex_unlock(&locmutex);
+            if(r == RESULT_DISCONNECTED){
+                DBG("handler return RESULT_DISCONNECTED");
+                return FALSE;
+            }
+            return sendstrmessage(fd, hresult2str(r));
         }
     }
-    sendstrmessage(fd, resmessages[RESULT_BADKEY]);
+    return sendstrmessage(fd, resmessages[RESULT_BADKEY]);
 }
 
 /**
@@ -218,17 +243,20 @@ int processData(int fd, handleritem *handlers, char *buf, int buflen){
     int curlen = strlen(buf);
     if(curlen == buflen-1) curlen = 0; // buffer overflow - clear old content
     ssize_t rd = read(fd, buf + curlen, buflen-1 - curlen);
-    if(rd <= 0) return FALSE;
-    DBG("got %s[%zd] from %d", buf, rd, fd);
+    if(rd <= 0){
+        //DBG("read %zd bytes from client", rd);
+        return FALSE;
+    }
+    //DBG("got %s[%zd] from %d", buf, rd, fd);
     char *restofdata = buf, *eptr = buf + curlen + rd;
     *eptr = 0;
     do{
         char *nl = strchr(restofdata, '\n');
         if(!nl) break;
         *nl++ = 0;
-        parsestring(fd, handlers, restofdata);
+        if(!parsestring(fd, handlers, restofdata)) return FALSE; // client disconnected
         restofdata = nl;
-        DBG("rest of data: %s", restofdata);
+        //DBG("rest of data: %s", restofdata);
     }while(1);
     if(restofdata != buf) memmove(buf, restofdata, eptr - restofdata + 1);
     return TRUE;

@@ -107,7 +107,7 @@ set(RU_FILE ${LCPATH}/ru.po)
 
 # exe file
 add_executable(${PROJ} ${SOURCES} ${PO_FILE} ${MO_FILE})
-target_link_libraries(${PROJ} ${CFITSIO_LIBRARIES} ${X11_LIBRARIES} ${OPENGL_LIBRARIES} ${GLUT_LIBRARIES} ${${PROJ}_LIBRARIES} -lm)
+target_link_libraries(${PROJ} ${CFITSIO_LIBRARIES} ${X11_LIBRARIES} ${OPENGL_LIBRARIES} ${GLUT_LIBRARIES} ${${PROJ}_LIBRARIES} -lm ${CMAKE_DL_LIBS})
 include_directories(${${PROJ}_INCLUDE_DIRS} .)
 link_directories(${${PROJ}_LIBRARY_DIRS} )
 

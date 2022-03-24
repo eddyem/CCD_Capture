@@ -52,58 +52,59 @@ typedef struct{
 
 // cat | awk '{print "{ " $3 ", \"\" }," }' | sort
 strpair allcommands[] = {
-    { "8bit", "run in 8 bit mode instead of 16 bit" },
-    { "author", "FITS 'AUTHOR' field" },
-    { "brightness", "camera brightness" },
-    { "camdevno", "camera device number" },
-    { "camlist", "list all connected cameras" },
-    { "ccdfanspeed", "fan speed of camera" },
-    { "confio", "camera IO configuration" },
-    { "dark", "don't open shutter @ exposure" },
-    { "expstate", "get exposition state" },
-    { "exptime", "exposition time" },
-    { "fastspeed", "fast readout speed" },
-    { "filename", "save file with this name, like file.fits" },
-    { "filenameprefix", "prefix of files, like ex (will be saved as exXXXX.fits)" },
-    { "focdevno", "focuser device number" },
-    { "foclist", "list all connected focusers" },
-    { "focpos", "focuser position" },
-    { "format", "camera frame format (X0,Y0,X1,Y1)" },
-    { "gain", "camera gain" },
-    { "hbin", "horizontal binning" },
-    { "headerfiles", "add FITS records from these files (comma-separated list)" },
-    { "help", "show this help" },
-    { "info", "connected devices state" },
-    { "instrument", "FITS 'INSTRUME' field" },
-    { "io", "get/set camera IO" },
-    { "lastfilename", "path to last saved file"},
-    { "maxformat", "camera maximal available format" },
-    { "nflushes", "camera number of preflushes" },
-    { "object", "FITS 'OBJECT' field" },
-    { "objtype", "FITS 'IMAGETYP' field" },
-    { "observer", "FITS 'OBSERVER' field" },
-    { "program", "FITS 'PROG-ID' field" },
-    { "rewrite", "rewrite file (if give `filename`, not `filenameprefix`" },
-    { "shutter", "camera shutter's operations" },
-    { "tcold", "camera chip temperature" },
-    { "tremain", "time (in seconds) of exposition remained" },
-    { "vbin", "vertical binning" },
-    { "wdevno", "wheel device number" },
-    { "wlist", "list all connected wheels" },
-    { "wpos", "wheel position" },
+    { CMD_8BIT,         "run in 8 bit mode instead of 16 bit" },
+    { CMD_AUTHOR,       "FITS 'AUTHOR' field" },
+    { CMD_BRIGHTNESS,   "camera brightness" },
+    { CMD_CAMDEVNO,     "camera device number" },
+    { CMD_CAMLIST,      "list all connected cameras" },
+    { CMD_CAMFANSPD,    "fan speed of camera" },
+    { CMD_CONFIO,       "camera IO configuration" },
+    { CMD_DARK,         "don't open shutter @ exposure" },
+    { CMD_EXPSTATE,     "get exposition state" },
+    { CMD_EXPOSITION,   "exposition time" },
+    { CMD_FASTSPD,      "fast readout speed" },
+    { CMD_FILENAME,     "save file with this name, like file.fits" },
+    { CMD_FILENAMEPREFIX,"prefix of files, like ex (will be saved as exXXXX.fits)" },
+    { CMD_FDEVNO,       "focuser device number" },
+    { CMD_FOCLIST,      "list all connected focusers" },
+    { CMD_FGOTO,        "focuser position" },
+    { CMD_FRAMEFORMAT,  "camera frame format (X0,Y0,X1,Y1)" },
+    { CMD_GAIN,         "camera gain" },
+    { CMD_HBIN,         "horizontal binning" },
+    { CMD_HEADERFILES,  "add FITS records from these files (comma-separated list)" },
+    { CMD_HELP,         "show this help" },
+    { CMD_INFO,         "connected devices state" },
+    { CMD_INSTRUMENT,   "FITS 'INSTRUME' field" },
+    { CMD_IO,           "get/set camera IO" },
+    { CMD_LASTFNAME,    "path to last saved file"},
+    { CMD_FRAMEMAX,     "camera maximal available format" },
+    { CMD_NFLUSHES,     "camera number of preflushes" },
+    { CMD_OBJECT,       "FITS 'OBJECT' field" },
+    { CMD_OBJTYPE,      "FITS 'IMAGETYP' field" },
+    { CMD_OBSERVER,     "FITS 'OBSERVER' field" },
+    { CMD_PROGRAM,      "FITS 'PROG-ID' field" },
+    { CMD_RESTART,      "restart server" },
+    { CMD_REWRITE,      "rewrite file (if give `filename`, not `filenameprefix`" },
+    { CMD_SHUTTER,      "camera shutter's operations" },
+    { CMD_CAMTEMPER,    "camera chip temperature" },
+    { CMD_TREMAIN,      "time (in seconds) of exposition remained" },
+    { CMD_VBIN,         "vertical binning" },
+    { CMD_WDEVNO,       "wheel device number" },
+    { CMD_WLIST,        "list all connected wheels" },
+    { CMD_WPOS,         "wheel position" },
     {NULL, NULL},
 };
 
 static IMG ima = {0};
 static void fixima(){
     FNAME();
+    if(!camera) return;
     int raw_width = curformat.w / GP->hbin,  raw_height = curformat.h / GP->vbin;
+    if(!ima.data) ima.data = MALLOC(uint16_t,  camera->array.h * camera->array.w);
     if(ima.data && raw_width == ima.w && raw_height == ima.h) return; // all OK
-    FREE(ima.data);
     DBG("curformat: %dx%d", curformat.w, curformat.h);
     ima.h = raw_height;
     ima.w = raw_width;
-    ima.data = MALLOC(uint16_t, raw_width * raw_height);
     DBG("new image: %dx%d", raw_width, raw_height);
 }
 
@@ -126,6 +127,7 @@ static inline void cameraidlestate(){ // idle - wait for capture commands
 static inline void cameracapturestate(){ // capturing - wait for exposition ends
     if(camflags & FLAG_CANCEL){ // cancel all expositions
         DBG("Cancel exposition");
+        LOGMSG("User canceled exposition");
         camflags &= ~(FLAG_STARTCAPTURE | FLAG_CANCEL);
         camera->cancel();
         camstate = CAMERA_IDLE;
@@ -166,34 +168,38 @@ static void* processCAM(_U_ void *d){
             LOGERR("User asks to restart");
             signals(1);
         }
-        // log
-        if(dtime() - logt > TLOG_PAUSE){
-            logt = dtime();
-            float t;
-            if(camera->getTcold(&t)){
-                LOGMSG("CCDTEMP=%f", t);
+        usleep(100);
+        if(0 == pthread_mutex_trylock(&locmutex)){
+            // log
+            if(dtime() - logt > TLOG_PAUSE){
+                logt = dtime();
+                float t;
+                if(camera->getTcold(&t)){
+                    LOGMSG("CCDTEMP=%.1f", t);
+                }
+                if(camera->getThot(&t)){
+                   LOGMSG("HOTTEMP=%.1f", t);
+                }
+                if(camera->getTbody(&t)){
+                   LOGMSG("BODYTEMP=%.1f", t);
+                }
             }
-            if(camera->getThot(&t)){
-               LOGMSG("HOTTEMP=%f", t);
+            camera_state curstate = camstate;
+            switch(curstate){
+                case CAMERA_IDLE:
+                    cameraidlestate();
+                break;
+                case CAMERA_CAPTURE:
+                    cameracapturestate();
+                break;
+                case CAMERA_FRAMERDY:
+    // do nothing: when `server` got this state it sends "expstate=2" to all clients and changes state to IDLE
+                break;
+                case CAMERA_ERROR:
+    // do nothing: when `server` got this state it sends "expstate=3" to all clients and changes state to IDLE
+                break;
             }
-            if(camera->getTbody(&t)){
-               LOGMSG("BODYTEMP=%f", t);
-            }
-        }
-        camera_state curstate = camstate;
-        switch(curstate){
-            case CAMERA_IDLE:
-                cameraidlestate();
-            break;
-            case CAMERA_CAPTURE:
-                cameracapturestate();
-            break;
-            case CAMERA_FRAMERDY:
-// do nothing: when `server` got this state it sends "expstate=2" to all clients and changes state to IDLE
-            break;
-            case CAMERA_ERROR:
-// do nothing: when `server` got this state it sends "expstate=3" to all clients and changes state to IDLE
-            break;
+            pthread_mutex_unlock(&locmutex);
         }
     }
     return NULL;
@@ -202,10 +208,8 @@ static void* processCAM(_U_ void *d){
 // functions running @ each devno change
 static int camdevini(int n){
     if(!camera) return FALSE;
-    //pthread_mutex_lock(&locmutex);
     if(!camera->setDevNo(n)){
         LOGERR("Can't set active camera number");
-        //pthread_mutex_unlock(&locmutex);
         return FALSE;
     }
     camdevno = n;
@@ -218,36 +222,29 @@ static int camdevini(int n){
     fixima();
     if(!camera->setbin(GP->hbin, GP->vbin)) WARNX(_("Can't set binning %dx%d"), GP->hbin, GP->vbin);
     if(!camera->setgeometry(&curformat)) WARNX(_("Can't set given geometry"));
-    //pthread_mutex_unlock(&locmutex);
     return TRUE;
 }
 static int focdevini(int n){
     if(!focuser) return FALSE;
-    //pthread_mutex_lock(&locmutex);
     if(!focuser->setDevNo(n)){
         LOGERR("Can't set active focuser number");
-        //pthread_mutex_unlock(&locmutex);
         return FALSE;
     }
     focdevno = n;
     LOGMSG("Set focuser device number to %d", focdevno);
     focuser->getMaxPos(&focmaxpos);
     focuser->getMinPos(&focminpos);
-    //pthread_mutex_unlock(&locmutex);
     return TRUE;
 }
 static int wheeldevini(int n){
     if(!wheel) return FALSE;
-    //pthread_mutex_unlock(&locmutex);
     if(!wheel->setDevNo(n)){
         LOGERR("Can't set active wheel number");
-        //pthread_mutex_unlock(&locmutex);
         return FALSE;
     }
     wheeldevno = n;
     LOGMSG("Set wheel device number to %d", wheeldevno);
     wheel->getMaxPos(&wmaxpos);
-    //pthread_mutex_unlock(&locmutex);
     return TRUE;
 }
 
@@ -264,15 +261,13 @@ static hresult restarthandler(_U_ int fd, _U_ const char *key, _U_ const char *v
  ******************************************************************************/
 static hresult camlisthandler(int fd, _U_ const char *key, _U_ const char *val){
     char buf[BUFSIZ], modname[256];
-    //pthread_mutex_lock(&locmutex);
     for(int i = 0; i < camera->Ndevices; ++i){
         if(!camera->setDevNo(i)) continue;
         camera->getModelName(modname, 255);
         snprintf(buf, BUFSIZ-1, CMD_CAMLIST "='%s'", modname);
-        sendstrmessage(fd, buf);
+        if(!sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
     }
     if(camdevno > -1) camera->setDevNo(camdevno);
-    //pthread_mutex_unlock(&locmutex);
     return RESULT_SILENCE;
 }
 static hresult camsetNhandler(_U_ int fd, _U_ const char *key, _U_ const char *val){
@@ -285,61 +280,55 @@ static hresult camsetNhandler(_U_ int fd, _U_ const char *key, _U_ const char *v
         if(!camdevini(num)) return RESULT_FAIL;
     }
     snprintf(buf, 63, CMD_CAMDEVNO "=%d", camdevno);
-    sendstrmessage(fd, buf);
+    if(!sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
     return RESULT_SILENCE;
 }
 // exposition time setter/getter
 static hresult exphandler(int fd, _U_ const char *key, const char *val){
     char buf[64];
     if(val){
+        DBG("setexp to %s", val);
         double v = atof(val);
         if(v < DBL_EPSILON) return RESULT_BADVAL;
-        //pthread_mutex_lock(&locmutex);
         if(camera->setexp(v)){
             GP->exptime = v;
         }else LOGWARN("Can't set exptime to %g", v);
-        //pthread_mutex_unlock(&locmutex);
     }
+    DBG("expt: %g", GP->exptime);
     snprintf(buf, 63, CMD_EXPOSITION "=%g", GP->exptime);
-    sendstrmessage(fd, buf);
+    if(!sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
     return RESULT_SILENCE;
 }
 // show last filename of saved FITS
 static hresult lastfnamehandler(int fd, _U_ const char *key, _U_ const char *val){
     char buf[PATH_MAX+32];
-    //pthread_mutex_lock(&locmutex);
     snprintf(buf, PATH_MAX+31, CMD_LASTFNAME "=%s", lastfile);
-    sendstrmessage(fd, buf);
-    //pthread_mutex_unlock(&locmutex);
+    if(!sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
     return RESULT_SILENCE;
 }
 // filename setter/getter
 static hresult namehandler(int fd, _U_ const char *key, const char *val){
     char buf[PATH_MAX+32];
     if(val){
-        //pthread_mutex_lock(&locmutex);
         char *path = makeabspath(val, FALSE);
         if(!path){
             LOGERR("Can't create file '%s'", val);
-            //pthread_mutex_unlock(&locmutex);
             return RESULT_BADVAL;
         }
         FREE(outfile);
         outfile = strdup(path);
         GP->outfile = outfile;
         GP->outfileprefix = NULL;
-        //pthread_mutex_unlock(&locmutex);
     }
     if(!GP->outfile) return RESULT_FAIL;
     snprintf(buf, PATH_MAX+31, CMD_FILENAME "=%s", GP->outfile);
-    sendstrmessage(fd, buf);
+    if(!sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
     return RESULT_SILENCE;
 }
 // filename prefix
 static hresult nameprefixhandler(_U_ int fd, _U_ const char *key, const char *val){
     char buf[PATH_MAX+32];
     if(val){
-        //pthread_mutex_lock(&locmutex);
         char *path = makeabspath(val, FALSE);
         if(!path){
             LOGERR("Can't create file '%s'", val);
@@ -350,11 +339,10 @@ static hresult nameprefixhandler(_U_ int fd, _U_ const char *key, const char *va
         outfile = strdup(path);
         GP->outfileprefix = outfile;
         GP->outfile = NULL;
-        //pthread_mutex_unlock(&locmutex);
     }
     if(!GP->outfileprefix) return RESULT_FAIL;
     snprintf(buf, PATH_MAX+31, CMD_FILENAMEPREFIX "=%s", GP->outfileprefix);
-    sendstrmessage(fd, buf);
+    if(!sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
     return RESULT_SILENCE;
 }
 // rewrite
@@ -363,12 +351,10 @@ static hresult rewritefilehandler(_U_ int fd, _U_ const char *key, const char *v
     if(val){
         int n = atoi(val);
         if(n < 0 || n > 1) return RESULT_BADVAL;
-        //pthread_mutex_lock(&locmutex);
         GP->rewrite = n;
-        //pthread_mutex_unlock(&locmutex);
     }
     snprintf(buf, 63, CMD_REWRITE "=%d", GP->rewrite);
-    sendstrmessage(fd, buf);
+    if(!sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
     return RESULT_SILENCE;
 }
 static hresult binhandler(_U_ int fd, const char *key, const char *val){
@@ -378,21 +364,16 @@ static hresult binhandler(_U_ int fd, const char *key, const char *val){
         if(b < 1) return RESULT_BADVAL;
         if(0 == strcmp(key, CMD_HBIN)) GP->hbin = b;
         else GP->vbin = b;
-        //pthread_mutex_lock(&locmutex);
         if(!camera->setbin(GP->hbin, GP->vbin)){
-            //pthread_mutex_unlock(&locmutex);
             return RESULT_BADVAL;
         }
-        fixima();
-        //pthread_mutex_unlock(&locmutex);
     }
-    //pthread_mutex_lock(&locmutex);
     int r = camera->getbin(&GP->hbin, &GP->vbin);
-    //pthread_mutex_unlock(&locmutex);
     if(r){
         if(0 == strcmp(key, CMD_HBIN)) snprintf(buf, 63, "%s=%d", key, GP->hbin);
         else snprintf(buf, 63, "%s=%d", key, GP->vbin);
-        sendstrmessage(fd, buf);
+        if(val) fixima();
+        if(!sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
         return RESULT_SILENCE;
     }
     return RESULT_FAIL;
@@ -403,34 +384,26 @@ static hresult temphandler(_U_ int fd, _U_ const char *key, const char *val){
     int r;
     if(val){
         f = atof(val);
-        //pthread_mutex_lock(&locmutex);
         r = camera->setT((float)f);
-        //pthread_mutex_unlock(&locmutex);
         if(!r){
             LOGWARN("Can't set camera T to %.1f", f);
             return RESULT_FAIL;
         }
         LOGMSG("Set camera T to %.1f", f);
     }
-    //pthread_mutex_lock(&locmutex);
     r = camera->getTcold(&f);
-    //pthread_mutex_unlock(&locmutex);
     if(r){
         snprintf(buf, 63, CMD_CAMTEMPER "=%.1f", f);
-        sendstrmessage(fd, buf);
-        //pthread_mutex_lock(&locmutex);
+        if(!sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
         r = camera->getTbody(&f);
-        //pthread_mutex_unlock(&locmutex);
         if(r){
             snprintf(buf, 63, "tbody=%.1f", f);
-            sendstrmessage(fd, buf);
+            if(!sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
         }
-        //pthread_mutex_lock(&locmutex);
         r = camera->getThot(&f);
-        //pthread_mutex_unlock(&locmutex);
         if(r){
             snprintf(buf, 63, "thot=%.1f", f);
-            sendstrmessage(fd, buf);
+            if(!sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
         }
         return RESULT_SILENCE;
     }else return RESULT_FAIL;
@@ -441,14 +414,12 @@ static hresult camfanhandler(_U_ int fd, _U_ const char *key, _U_ const char *va
         int spd = atoi(val);
         if(spd < 0) return RESULT_BADVAL;
         if(spd > FAN_HIGH) spd = FAN_HIGH;
-        //pthread_mutex_lock(&locmutex);
         int r = camera->setfanspeed((fan_speed)spd);
-        //pthread_mutex_unlock(&locmutex);
         if(!r) return RESULT_FAIL;
         camfanspd = spd;
     }
     snprintf(buf, 63, CMD_CAMFANSPD "=%d", camfanspd);
-    sendstrmessage(fd, buf);
+    if(!sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
     return RESULT_SILENCE;
 }
 const char *shutterstr[] = {"open", "close", "expose @high", "expose @low"};
@@ -456,9 +427,7 @@ static hresult shutterhandler(_U_ int fd, _U_ const char *key, const char *val){
     if(val){
         int x = atoi(val);
         if(x < 0 || x >= SHUTTER_AMOUNT) return RESULT_BADVAL;
-        //pthread_mutex_lock(&locmutex);
         int r = camera->shuttercmd((shutter_op)x);
-        //pthread_mutex_unlock(&locmutex);
         if(r){
            LOGMSG("Shutter command '%s'", shutterstr[x]);
         }else{
@@ -472,14 +441,12 @@ static hresult confiohandler(_U_ int fd, _U_ const char *key, _U_ const char *va
     char buf[64];
     if(val){
         int io = atoi(val);
-        //pthread_mutex_lock(&locmutex);
         int r = camera->confio(io);
-        //pthread_mutex_unlock(&locmutex);
         if(!r) return RESULT_FAIL;
         confio = io;
     }
     snprintf(buf, 63, CMD_CONFIO "=%d", confio);
-    sendstrmessage(fd, buf);
+    if(!sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
     return RESULT_SILENCE;
 }
 static hresult iohandler(_U_ int fd, _U_ const char *key, _U_ const char *val){
@@ -487,17 +454,13 @@ static hresult iohandler(_U_ int fd, _U_ const char *key, _U_ const char *val){
     int io;
     if(val){
         io = atoi(val);
-        //pthread_mutex_lock(&locmutex);
         int r = camera->setio(io);
-        //pthread_mutex_unlock(&locmutex);
         if(!r) return RESULT_FAIL;
     }
-    //pthread_mutex_lock(&locmutex);
     int r = camera->getio(&io);
-    //pthread_mutex_unlock(&locmutex);
     if(!r) return RESULT_FAIL;
     snprintf(buf, 63, CMD_IO "=%d", io);
-    sendstrmessage(fd, buf);
+    if(!sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
     return RESULT_SILENCE;
 }
 static hresult gainhandler(_U_ int fd, _U_ const char *key, _U_ const char *val){
@@ -505,17 +468,13 @@ static hresult gainhandler(_U_ int fd, _U_ const char *key, _U_ const char *val)
     float f;
     if(val){
         f = atof(val);
-        //pthread_mutex_lock(&locmutex);
         int r = camera->setgain(f);
-        //pthread_mutex_unlock(&locmutex);
         if(!r) return RESULT_FAIL;
     }
-    //pthread_mutex_lock(&locmutex);
     int r = camera->getgain(&f);
-    //pthread_mutex_unlock(&locmutex);
     if(!r) return RESULT_FAIL;
     snprintf(buf, 63, CMD_GAIN "=%.1f", f);
-    sendstrmessage(fd, buf);
+    if(!sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
     return RESULT_SILENCE;
 }
 static hresult brightnesshandler(_U_ int fd, _U_ const char *key, _U_ const char *val){
@@ -523,17 +482,13 @@ static hresult brightnesshandler(_U_ int fd, _U_ const char *key, _U_ const char
     float b;
     if(val){
         b = atof(val);
-        //pthread_mutex_lock(&locmutex);
         int r = camera->setbrightness(b);
-        //pthread_mutex_unlock(&locmutex);
         if(!r) return RESULT_FAIL;
     }
-    //pthread_mutex_lock(&locmutex);
     int r = camera->getbrightness(&b);
-    //pthread_mutex_unlock(&locmutex);
     if(!r) return RESULT_FAIL;
     snprintf(buf, 63, CMD_BRIGHTNESS "=%.1f", b);
-    sendstrmessage(fd, buf);
+    if(!sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
     return RESULT_SILENCE;
 }
 // set format: `format=X0,X1,Y0,Y1`
@@ -545,9 +500,7 @@ static hresult formathandler(int fd, const char *key, const char *val){
         if(strcmp(key, CMD_FRAMEFORMAT)) return RESULT_BADKEY; // can't set maxformat
         if(4 != sscanf(val, "%d,%d,%d,%d", &fmt.xoff, &fmt.yoff, &fmt.w, &fmt.h)) return RESULT_BADVAL;
         fmt.w -= fmt.xoff; fmt.h -= fmt.yoff;
-        //pthread_mutex_lock(&locmutex);
         int r = camera->setgeometry(&fmt);
-        //pthread_mutex_unlock(&locmutex);
         if(!r) return RESULT_FAIL;
         curformat = fmt;
         fixima();
@@ -556,7 +509,7 @@ static hresult formathandler(int fd, const char *key, const char *val){
         frmformatmax.xoff, frmformatmax.yoff, frmformatmax.xoff+frmformatmax.w, frmformatmax.yoff+frmformatmax.h);
     else snprintf(buf, 63, CMD_FRAMEFORMAT "=%d,%d,%d,%d",
         camera->geometry.xoff, camera->geometry.yoff, camera->geometry.xoff+camera->geometry.w, camera->geometry.yoff+camera->geometry.h);
-    sendstrmessage(fd, buf);
+    if(!sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
     return RESULT_SILENCE;
 }
 static hresult nflusheshandler(_U_ int fd, _U_ const char *key, _U_ const char *val){
@@ -564,16 +517,13 @@ static hresult nflusheshandler(_U_ int fd, _U_ const char *key, _U_ const char *
     if(val){
         int n = atoi(val);
         if(n < 1) return RESULT_BADVAL;
-        //pthread_mutex_lock(&locmutex);
         if(!camera->setnflushes(n)){
-            //pthread_mutex_unlock(&locmutex);
             return RESULT_FAIL;
         }
         nflushes = n;
-        //pthread_mutex_unlock(&locmutex);
     }
     snprintf(buf, 63, CMD_NFLUSHES "=%d", nflushes);
-    sendstrmessage(fd, buf);
+    if(!sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
     return RESULT_SILENCE;
 }
 static hresult expstatehandler(_U_ int fd, _U_ const char *key, _U_ const char *val){
@@ -591,15 +541,15 @@ static hresult expstatehandler(_U_ int fd, _U_ const char *key, _U_ const char *
         else return RESULT_BADVAL;
     }
     snprintf(buf, 63, CMD_EXPSTATE "=%d", camstate);
-    sendstrmessage(fd, buf);
+    if(!sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
     snprintf(buf, 63, "camflags=%d", camflags);
-    sendstrmessage(fd, buf);
+    if(!sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
     return RESULT_SILENCE;
 }
 static hresult tremainhandler(_U_ int fd, _U_ const char *key, _U_ const char *val){
     char buf[64];
     snprintf(buf, 63, CMD_TREMAIN "=%g", tremain);
-    sendstrmessage(fd, buf);
+    if(!sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
     return RESULT_SILENCE;
 }
 static hresult _8bithandler(int fd, _U_ const char *key, const char *val){
@@ -612,7 +562,7 @@ static hresult _8bithandler(int fd, _U_ const char *key, const char *val){
         if(!camera->setbitdepth(s)) return RESULT_FAIL;
     }
     snprintf(buf, 63, CMD_8BIT "=%d", GP->_8bit);
-    sendstrmessage(fd, buf);
+    if(!sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
     return RESULT_SILENCE;
 }
 static hresult fastspdhandler(int fd, _U_ const char *key, const char *val){
@@ -624,7 +574,7 @@ static hresult fastspdhandler(int fd, _U_ const char *key, const char *val){
         if(!camera->setfastspeed(b)) return RESULT_FAIL;
     }
     snprintf(buf, 63, CMD_FASTSPD "=%d", GP->fast);
-    sendstrmessage(fd, buf);
+    if(!sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
     return RESULT_SILENCE;
 }
 static hresult darkhandler(int fd, _U_ const char *key, const char *val){
@@ -637,7 +587,7 @@ static hresult darkhandler(int fd, _U_ const char *key, const char *val){
         if(!camera->setframetype(d)) return RESULT_FAIL;
     }
     snprintf(buf, 63, CMD_DARK "=%d", GP->dark);
-    sendstrmessage(fd, buf);
+    if(!sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
     return RESULT_SILENCE;
 }
 static hresult FITSparhandler(int fd, const char *key, const char *val){
@@ -660,7 +610,7 @@ static hresult FITSparhandler(int fd, const char *key, const char *val){
         *fitskey = strdup(val);
     }
     snprintf(buf, 255, "%s=%s", key, *fitskey);
-    sendstrmessage(fd, buf);
+    if(!sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
     return RESULT_SILENCE;
 }
 static hresult FITSheaderhandler(int fd, _U_ const char *key, const char *val){
@@ -669,7 +619,6 @@ static hresult FITSheaderhandler(int fd, _U_ const char *key, const char *val){
     static int firstrun = 1;
     if(val){
         int sz = 10, amount = 0;
-        //pthread_mutex_lock(&locmutex);
         // first we should check `val`
         char b2[BUFSIZ], *bptr = buf;
         snprintf(b2, BUFSIZ-1, "%s", val);
@@ -715,9 +664,8 @@ static hresult FITSheaderhandler(int fd, _U_ const char *key, const char *val){
         }
         GP->addhdr = list;
         FREE(curhdr);
-        if(*val && *val != ',') curhdr = strdup(buf);
+        if(*val && *val != ',') curhdr = strdup(buf); // command with empty arg will clear curhdr
         DBG("curhdr now: %s", curhdr);
-        //pthread_mutex_unlock(&locmutex);
     }
     if(!curhdr && firstrun){
         firstrun = 0;
@@ -734,7 +682,7 @@ static hresult FITSheaderhandler(int fd, _U_ const char *key, const char *val){
         }
     }
     snprintf(buf, BUFSIZ-1, CMD_HEADERFILES "=%s", curhdr);
-    sendstrmessage(fd, buf);
+    if(!sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
     return RESULT_SILENCE;
 }
 /*
@@ -748,16 +696,14 @@ static hresult handler(_U_ int fd, _U_ const char *key, _U_ const char *val){
  ******************************************************************************/
 static hresult wlisthandler(int fd, _U_ const char *key, _U_ const char *val){
     if(wheel->Ndevices < 1) return RESULT_FAIL;
-    //pthread_mutex_lock(&locmutex);
     for(int i = 0; i < wheel->Ndevices; ++i){
         if(!wheel->setDevNo(i)) continue;
         char modname[256], buf[BUFSIZ];
         wheel->getModelName(modname, 255);
         snprintf(buf, BUFSIZ-1, CMD_WLIST "='%s'", modname);
-        sendstrmessage(fd, buf);
+        if(!sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
     }
     if(wheeldevno > -1) wheel->setDevNo(wheeldevno);
-    //pthread_mutex_unlock(&locmutex);
     return RESULT_SILENCE;
 }
 static hresult wsetNhandler(int fd, _U_ const char *key, const char *val){
@@ -770,7 +716,7 @@ static hresult wsetNhandler(int fd, _U_ const char *key, const char *val){
         if(!wheeldevini(num)) return RESULT_FAIL;
     }
     snprintf(buf, 63, CMD_WDEVNO "=%d", wheeldevno);
-    sendstrmessage(fd, buf);
+    if(!sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
     return RESULT_SILENCE;
 }
 
@@ -779,17 +725,15 @@ static hresult wgotohandler(_U_ int fd, _U_ const char *key, _U_ const char *val
     int pos;
     if(val){
         pos = atoi(val);
-        //pthread_mutex_lock(&locmutex);
+        DBG("USER wants to %d", pos);
         int r = wheel->setPos(pos);
-        //pthread_mutex_unlock(&locmutex);
+        DBG("wheel->setPos(%d)", pos);
         if(!r) return RESULT_BADVAL;
     }
-    //pthread_mutex_lock(&locmutex);
     int r = wheel->getPos(&pos);
-    //pthread_mutex_unlock(&locmutex);
     if(!r) return RESULT_FAIL;
     snprintf(buf, 63, CMD_WPOS "=%d", pos);
-    sendstrmessage(fd, buf);
+    if(!sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
     return RESULT_SILENCE;
 }
 
@@ -799,16 +743,14 @@ static hresult wgotohandler(_U_ int fd, _U_ const char *key, _U_ const char *val
 
 static hresult foclisthandler(int fd, _U_ const char *key, _U_ const char *val){
     if(focuser->Ndevices < 1) return RESULT_FAIL;
-    //pthread_mutex_lock(&locmutex);
     for(int i = 0; i < focuser->Ndevices; ++i){
         char modname[256], buf[BUFSIZ];
         if(!focuser->setDevNo(i)) continue;
         focuser->getModelName(modname, 255);
         snprintf(buf, BUFSIZ-1, CMD_FOCLIST "='%s'", modname);
-        sendstrmessage(fd, buf);
+        if(!sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
     }
     if(focdevno > -1) focuser->setDevNo(focdevno);
-    //pthread_mutex_unlock(&locmutex);
     return RESULT_SILENCE;
 }
 static hresult fsetNhandler(int fd, _U_ const char *key, const char *val){
@@ -821,7 +763,7 @@ static hresult fsetNhandler(int fd, _U_ const char *key, const char *val){
         if(!focdevini(num)) return RESULT_FAIL;
     }
     snprintf(buf, 63, CMD_FDEVNO "=%d", focdevno);
-    sendstrmessage(fd, buf);
+    if(!sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
     return RESULT_SILENCE;
 }
 static hresult fgotohandler(int fd, _U_ const char *key, const char *val){
@@ -831,21 +773,17 @@ static hresult fgotohandler(int fd, _U_ const char *key, const char *val){
     if(val){
         f = atof(val);
         if(f < focminpos || f > focmaxpos) return RESULT_BADVAL;
-        //pthread_mutex_lock(&locmutex);
         if(f - focminpos < __FLT_EPSILON__){
             r = focuser->home(1);
         }else{
             r = focuser->setAbsPos(1, f);
         }
-        //pthread_mutex_unlock(&locmutex);
         if(!r) return RESULT_FAIL;
     }
-    //pthread_mutex_lock(&locmutex);
     r = focuser->getPos(&f);
-    //pthread_mutex_unlock(&locmutex);
     if(!r) return RESULT_FAIL;
     snprintf(buf, 63, CMD_FGOTO "=%g", f);
-    sendstrmessage(fd, buf);
+    if(!sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
     return RESULT_SILENCE;
 }
 
@@ -861,48 +799,52 @@ static hresult infohandler(int fd, _U_ const char *key, _U_ const char *val){
     if(camera){
         if(camera->getModelName(buf1, 255)){
             snprintf(buf, BUFSIZ-1, CMD_CAMLIST "='%s'", buf1);
-            sendstrmessage(fd, buf);
+            if(!sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
         }
-        namehandler(fd, CMD_FILENAME, NULL);
-        binhandler(fd, CMD_HBIN, NULL);
-        binhandler(fd, CMD_VBIN, NULL);
-        temphandler(fd, CMD_CAMTEMPER, NULL);
-        exphandler(fd, CMD_EXPOSITION, NULL);
-        lastfnamehandler(fd, CMD_LASTFNAME, NULL);
-        expstatehandler(fd, CMD_EXPSTATE, NULL);
+#define RUN(f, arg) do{if(RESULT_DISCONNECTED == f(fd, arg, NULL)) return RESULT_DISCONNECTED;}while(0)
+        RUN(namehandler, CMD_FILENAME);
+        RUN(binhandler, CMD_HBIN);
+        RUN(binhandler, CMD_VBIN);
+        RUN(temphandler, CMD_CAMTEMPER);
+        RUN(exphandler, CMD_EXPOSITION);
+        RUN(lastfnamehandler, CMD_LASTFNAME);
+        RUN(expstatehandler, CMD_EXPSTATE);
+#undef RUN
     }
+    DBG("chk wheel");
     if(wheel){
+        DBG("Wname");
         if(wheel->getModelName(buf1, 255)){
             snprintf(buf, BUFSIZ-1, CMD_WLIST "='%s'", buf1);
-            sendstrmessage(fd, buf);
+            if(!sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
         }
         if(wheel->getTbody(&f)){
             snprintf(buf, BUFSIZ-1, "wtemp=%.1f", f);
-            sendstrmessage(fd, buf);
+            if(!sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
         }
         if(wheel->getPos(&i)){
             snprintf(buf, BUFSIZ-1, CMD_WPOS "=%d", i);
-            sendstrmessage(fd, buf);
+            if(!sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
         }
         snprintf(buf, BUFSIZ-1, "wmaxpos=%d", wmaxpos);
-        sendstrmessage(fd, buf);
+        if(!sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
     }
     if(focuser){
         if(focuser->getModelName(buf1, 255)){
             snprintf(buf, BUFSIZ-1, CMD_FOCLIST "='%s'", buf1);
-            sendstrmessage(fd, buf);
+            if(!sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
         }
         if(focuser->getTbody(&f)){
             snprintf(buf, BUFSIZ-1, "foctemp=%.1f", f);
-            sendstrmessage(fd, buf);
+            if(!sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
         }
         snprintf(buf, BUFSIZ-1, "focminpos=%g", focminpos);
-        sendstrmessage(fd, buf);
+        if(!sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
         snprintf(buf, BUFSIZ-1, "focmaxpos=%g", focmaxpos);
-        sendstrmessage(fd, buf);
+        if(!sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
         if(focuser->getPos(&f)){
             snprintf(buf, BUFSIZ-1, CMD_FGOTO "=%g", f);
-            sendstrmessage(fd, buf);
+            if(!sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
         }
     }
     return RESULT_SILENCE;
@@ -913,7 +855,7 @@ static hresult helphandler(int fd, _U_ const char *key, _U_ const char *val){
     strpair *ptr = allcommands;
     while(ptr->key){
         snprintf(buf, 255, "%s - %s", ptr->key, ptr->help);
-        sendstrmessage(fd, buf);
+        if(!sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
         ++ptr;
     }
     return RESULT_SILENCE;
@@ -927,7 +869,10 @@ static int CAMbusy(){
     }
     return FALSE;
 }
-
+// check funtions
+static hresult chktrue(_U_ char *val){ // dummy check for `infohandler` (need to lock mutex anymore)
+    return RESULT_OK;
+}
 static hresult chkcam(char *val){
     if(val && CAMbusy()) return RESULT_BUSY;
     if(camera) return RESULT_OK;
@@ -944,7 +889,7 @@ static hresult chkfoc(char *val){
     return RESULT_FAIL;
 }
 static handleritem items[] = {
-    {NULL,   infohandler, CMD_INFO},
+    {chktrue,infohandler, CMD_INFO},
     {NULL,   helphandler, CMD_HELP},
     {NULL,   restarthandler, CMD_RESTART},
     {chkcam, camlisthandler, CMD_CAMLIST},
@@ -991,12 +936,12 @@ static handleritem items[] = {
 
 void server(int sock){
     // init everything
-    startCCD(&camdev);
-    camdevini(0);
     startFocuser(&focdev);
     focdevini(0);
     startWheel(&wheeldev);
     wheeldevini(0);
+    startCCD(&camdev);
+    camdevini(0);
     if(listen(sock, MAXCLIENTS) == -1){
         WARN("listen");
         LOGWARN("listen");

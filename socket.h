@@ -20,6 +20,8 @@
 #ifndef SERSOCK_H__
 #define SERSOCK_H__
 
+#include <pthread.h>
+
 // max & min TCP socket port number
 #define PORTN_MAX   (65535)
 #define PORTN_MIN   (1024)
@@ -28,6 +30,17 @@
 // Max amount of connections
 #define MAXCLIENTS  (30)
 
+// wait for mutex locking
+#define BUSY_TIMEOUT    (0.3)
+// waiting for answer timeout
+#define ANSWER_TIMEOUT  (1.0)
+// wait for exposition ends (between subsequent check calls)
+#define WAIT_TIMEOUT    (2.0)
+// client will disconnect after this time from last server message
+#define CLIENT_TIMEOUT  (10.0)
+
+extern pthread_mutex_t locmutex;
+
 typedef enum{
     RESULT_OK,      // all OK
     RESULT_BUSY,    // camera busy and no setters can be done
@@ -35,6 +48,7 @@ typedef enum{
     RESULT_BADVAL,  // bad key's value
     RESULT_BADKEY,  // bad key
     RESULT_SILENCE, // send nothing to client
+    RESULT_DISCONNECTED,// client disconnected
     RESULT_NUM
 } hresult;
 
@@ -50,8 +64,8 @@ typedef struct{
 } handleritem;
 
 int start_socket(int server, char *path, int isnet);
-void sendmessage(int fd, const char *msg, int l);
-void sendstrmessage(int fd, const char *msg);
+int sendmessage(int fd, const char *msg, int l);
+int sendstrmessage(int fd, const char *msg);
 char *get_keyval(char *keyval);
 
 int processData(int fd, handleritem *handlers, char *buf, int buflen);

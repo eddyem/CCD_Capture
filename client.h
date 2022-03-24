@@ -20,13 +20,6 @@
 #ifndef CLIENT_H__
 #define CLIENT_H__
 
-// waiting for answer timeout
-#define ANSWER_TIMEOUT  1.0
-// wait for exposition ends (between subsequent check calls)
-#define WAIT_TIMEOUT    2.0
-// client will disconnect after this time from last server message
-#define CLIENT_TIMEOUT  10.0
-
 // client-side functions
 void client(int fd);
 

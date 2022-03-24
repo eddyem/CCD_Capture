@@ -47,7 +47,7 @@ void signals(int signo){
             signal(signo, signals);
             return;
         }
-        DBG("Master killed with sig=%d", signo);
+        WARNX("Master killed with sig=%d", signo);
         LOGERR("Master killed with sig=%d", signo);
         if(!GP->client){
             DBG("Unlink pid file");

@@ -7,7 +7,7 @@
 msgid   ""
 msgstr  "Project-Id-Version: PACKAGE VERSION\n"
         "Report-Msgid-Bugs-To: \n"
-        "POT-Creation-Date: 2022-03-22 17:17+0300\n"
+        "POT-Creation-Date: 2022-03-24 11:10+0300\n"
         "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
         "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
         "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -22,7 +22,7 @@ msgid   "%.1f seconds till exposition ends"
 msgstr  ""
 
 #. %d секунд до окончания паузы\n
-#: ccdfunc.c:803 client.c:232
+#: ccdfunc.c:803 client.c:236
 #, c-format
 msgid   "%d seconds till pause ends\n"
 msgstr  ""
@@ -117,7 +117,7 @@ msgstr  ""
 msgid   "Can't init mutex!"
 msgstr  ""
 
-#: client.c:219
+#: client.c:223
 msgid   "Can't make exposition"
 msgstr  ""
 
@@ -162,7 +162,7 @@ msgstr  ""
 msgid   "Can't set active wheel number"
 msgstr  ""
 
-#: ccdfunc.c:703 server.c:219
+#: ccdfunc.c:703 server.c:225
 #, c-format
 msgid   "Can't set binning %dx%d"
 msgstr  ""
@@ -190,7 +190,7 @@ msgstr  ""
 msgid   "Can't set gain to %g"
 msgstr  ""
 
-#: ccdfunc.c:713 server.c:220
+#: ccdfunc.c:713 server.c:226
 msgid   "Can't set given geometry"
 msgstr  ""
 
@@ -213,7 +213,7 @@ msgstr  ""
 msgid   "Can't set wheel position %d"
 msgstr  ""
 
-#: ccdfunc.c:756 server.c:120
+#: ccdfunc.c:756 server.c:121
 msgid   "Can't start exposition"
 msgstr  ""
 
@@ -288,7 +288,7 @@ msgstr  ""
 msgid   "Neither filename nor filename prefix pointed!"
 msgstr  ""
 
-#: server.c:161
+#: server.c:163
 msgid   "No camera device"
 msgstr  ""
 
@@ -326,7 +326,7 @@ msgstr  ""
 msgid   "Readout mode: %s"
 msgstr  ""
 
-#: client.c:248
+#: client.c:252
 msgid   "Server timeout"
 msgstr  ""
 

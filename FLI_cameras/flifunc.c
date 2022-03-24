@@ -49,7 +49,7 @@ extern Wheel wheel;
 #define FOCSCALE        (10000.)
 
 #define TRYFUNC(f, ...)             \
-do{ if((fli_err = f(__VA_ARGS__)))  \
+do{fli_err = 0; if((fli_err = f(__VA_ARGS__)))  \
         WARNX(#f "() failed");      \
 }while(0)
 
@@ -62,7 +62,7 @@ typedef struct{
 static char camname[BUFSIZ] = {0}, whlname[BUFSIZ], focname[BUFSIZ];
 static long fli_err, tmpl;
 static cam_t *camz = NULL, *whlz = NULL, *focz = NULL;
-static flidev_t camdev, whldev, focdev;
+static flidev_t camdev = -1, whldev = -1, focdev = -1;
 static capture_status capStatus = CAPTURE_NO;
 static int curhbin = 1, curvbin = 1;
 static long filterpos = -1, filtermax = -1;  // filter position
@@ -140,15 +140,20 @@ static int fli_findCCD(){
     return TRUE;
 }
 static int fli_setActiceCam(int n){
+    DBG("SET ACTUIVE #%d", n);
     if(!camz && !fli_findCCD()) return FALSE;
     if(n >= camera.Ndevices){
         return FALSE;
     }
-    FLIClose(camdev);
+    if(camdev > -1){
+        FLIClose(camdev);
+        camdev = -1;
+    }
     TRYFUNC(FLIOpen, &camdev, camz[n].name, camz[n].domain);
     if(fli_err){
         return FALSE;
     }
+    DBG("camera fdno: %ld", camdev);
     TRYFUNC(FLIGetModel, camdev, camname, BUFSIZ);
 #ifdef EBUG
     if(!fli_err) DBG("Model: %s", camname);
@@ -205,12 +210,16 @@ static int fli_findFocuser(){
 static int fli_setActiceFocuser(int n){
     if(!focz && !fli_findFocuser()) return FALSE;
     if(n >= focuser.Ndevices) return FALSE;
-    FLIClose(focdev);
+    if(focdev > -1){
+        FLIClose(focdev);
+        focdev = -1;
+    }
     int OK = FALSE;
     for(int i = 0; i < focuser.Ndevices; ++i){
         DBG("Try %s", focz[i].name);
         TRYFUNC(FLIOpen, &focdev, focz[i].name, focz[i].domain);
         if(fli_err) continue;
+        DBG("focuser fdno: %ld", focdev);
         TRYFUNC(FLIGetModel, focdev, focname, BUFSIZ);
         DBG("MODEL '%s'", focname);
         if(fli_err) continue;
@@ -315,12 +324,16 @@ static int fli_wgetpos(int *p);
 static int fli_setActiceWheel(int n){
     if(!whlz && !fli_findWheel()) return FALSE;
     if(n >= wheel.Ndevices) return FALSE;
-    FLIClose(whldev);
+    if(whldev > -1){
+        FLIClose(whldev);
+        whldev = -1;
+    }
     int OK = FALSE;
-    for(int i = 0; i < focuser.Ndevices; ++i){
+    for(int i = 0; i < wheel.Ndevices; ++i){
         DBG("Try %s", whlz[i].name);
         TRYFUNC(FLIOpen, &whldev, whlz[i].name, whlz[i].domain);
         if(fli_err) continue;
+        DBG("wheel fdno: %ld", whldev);
         TRYFUNC(FLIGetFilterCount, whldev, &filtermax);
         if(fli_err || filtermax < 2){ // not a wheel
             DBG("Not a wheel");
@@ -351,6 +364,7 @@ static int fli_setActiceWheel(int n){
 }
 
 static int fli_wgetname(char *x, int n){
+    if(!x) return FALSE;
     strncpy(x, whlname, n);
     return TRUE;
 }
@@ -381,7 +395,9 @@ static int fli_wgetpos(int *p){
 static int fli_wsetpos(int p){
     if(p == filterpos) return TRUE;
     if(p > filtermax || p < 0) return FALSE;
+    DBG("RUN FLISetFilterPos");
     TRYFUNC(FLISetFilterPos, whldev, (long)p);
+    DBG("end");
     if(fli_err) return FALSE;
     return TRUE;
 }
@@ -427,7 +443,7 @@ static int fli_pollcapt(capture_status *st, float *remain){
             goto retn;
         }
         if(remain) *remain = tmpl/1000.;
-        DBG("remained: %g", tmpl/1000.);
+        //DBG("remained: %g", tmpl/1000.);
         if(tmpl == 0){
             if(st) *st = CAPTURE_READY;
             capStatus = CAPTURE_NO;
@@ -506,15 +522,19 @@ typedef enum{
 } temptype;
 
 static int fli_gettemp(temptype type, float *t){
+    if(!t) return FALSE;
     double d;
     switch(type){
         case T_COLD:
+            DBG("read T_COLD");
             TRYFUNC(FLIGetTemperature, camdev, &d);
         break;
         case T_BODY:
+            DBG("read T_BODY");
             TRYFUNC(FLIReadTemperature, camdev, FLI_TEMPERATURE_EXTERNAL, &d);
         break;
         default:
+            DBG("read T_HOT");
             TRYFUNC(FLIReadTemperature, camdev, FLI_TEMPERATURE_INTERNAL, &d);
     }
     if(fli_err) return FALSE;
@@ -581,8 +601,10 @@ static int fli_setio(int io){
 
 static int fli_setexp(float t){
     long e = (long)(t*1000.); // milliseconds!
+    DBG("Try to set exp to %ldms", e);
     TRYFUNC(FLISetExposureTime, camdev, e);
     if(fli_err) return FALSE;
+    DBG("OK");
     return TRUE;
 }
 
