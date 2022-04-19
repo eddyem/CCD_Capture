@@ -16,6 +16,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <libintl.h>
 #include <omp.h>
 #include <signal.h>
 #include <stdio.h>
@@ -72,6 +73,12 @@ void signals(int signo){
 int main(int argc, char **argv){
     char *self = strdup(argv[0]);
     initial_setup();
+#if defined GETTEXT_PACKAGE && defined LOCALEDIR
+    printf("GETTEXT_PACKAGE=" GETTEXT_PACKAGE ", LOCALEDIR=" LOCALEDIR "\n");
+    bindtextdomain(GETTEXT_PACKAGE, LOCALEDIR);
+    textdomain(GETTEXT_PACKAGE);
+#endif
+
 /*
     int cpunumber = sysconf(_SC_NPROCESSORS_ONLN);
     if(omp_get_max_threads() != cpunumber)

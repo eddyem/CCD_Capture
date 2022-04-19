@@ -184,9 +184,9 @@ static void RedrawWindow(){
         win->image->changed = 0;
     }
     w /= 2.f; h /= 2.f;
-    float lr = 1., ud = 1.; // flipping coefficients
+    float lr = 1., ud = -1.; // flipping coefficients (mirror image around Y by default)
     if(win->flip & WIN_FLIP_LR) lr = -1.;
-    if(win->flip & WIN_FLIP_UD) ud = -1.;
+    if(win->flip & WIN_FLIP_UD) ud = 1.;
     glBegin(GL_QUADS);
         glTexCoord2f(1.0f, 1.0f); glVertex2f( -1.f*lr*w, ud*h ); // top right
         glTexCoord2f(1.0f, 0.0f); glVertex2f( -1.f*lr*w, -1.f*ud*h ); // bottom right
@@ -472,6 +472,20 @@ void change_displayed_image(windowData *win, IMG *img){
             gray2rgb(colorfun(img->data[i] / 65536.), &dst[i*3]);
         }
     }
+    /*
+    // mirror image around Y
+    int w3 = w*3, h1 = h-1, wsz = w3*sizeof(GLubyte);
+#pragma omp parallel
+{
+    GLubyte *b = MALLOC(GLubyte, w3);
+    #pragma omp for nowait
+    for(int y = 0; y < h / 2; ++y){
+        memcpy(b, &im->rawdata[w3*y], wsz);
+        memcpy(&im->rawdata[w3*y], &im->rawdata[w3*(h1-y)], wsz);
+        memcpy(&im->rawdata[w3*(h1-y)], b, wsz);
+    }
+    FREE(b);
+}*/
     win->image->changed = 1;
     pthread_mutex_unlock(&win->mutex);
 }

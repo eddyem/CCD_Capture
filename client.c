@@ -31,6 +31,7 @@
 static char sendbuf[BUFSIZ];
 #define SENDMSG(...) do{snprintf(sendbuf, BUFSIZ-1, __VA_ARGS__); verbose(2, "\t> %s", sendbuf); sendstrmessage(sock, sendbuf); getans(sock);}while(0)
 static int expstate = CAMERA_CAPTURE;
+static int xm0,ym0,xm1,ym1; // max format
 
 /**
  * check data from  fd (polling function for client)
@@ -99,6 +100,9 @@ static int parseans(char *ans){
     if(0 == strcmp(CMD_EXPSTATE, ans)){
         expstate = atoi(val);
         DBG("Exposition state: %d", expstate);
+    }else if(0 == strcmp(CMD_FRAMEMAX, ans)){
+        sscanf(val, "%d,%d,%d,%d", &xm0, &ym0, &xm1, &ym1);
+        DBG("Got maxformat: %d,%d,%d,%d", xm0, ym0, xm1, ym1);
     }
     return FALSE;
 }
@@ -139,7 +143,20 @@ static void process_data(int sock){
     if(GP->listdevices) SENDMSG(CMD_WLIST);
     if(GP->whldevno > -1) SENDMSG(CMD_WDEVNO "=%d", GP->whldevno);
     if(GP->setwheel > -1) SENDMSG(CMD_WPOS "=%d", GP->setwheel);
+    DBG("nxt");
     // CCD/CMOS
+    if(GP->X0 > -1 || GP->Y0 > -1 || GP->X1 > -1 || GP->Y1 > -1){ // set format
+        SENDMSG(CMD_FRAMEMAX);
+        DBG("max format: (%d,%d)x(%d,%d)", xm0,ym0,xm1,ym1);
+        if(GP->X0 < 0) GP->X0 = xm0; // default values
+        else if(GP->X0 > xm1-1) GP->X0 = xm1-1;
+        if(GP->Y0 < 0) GP->Y0 = ym0;
+        else if(GP->Y0 > ym1-1) GP->Y0 = ym1-1;
+        if(GP->X1 < GP->X0+1 || GP->X1 > xm1) GP->X1 = xm1;
+        if(GP->Y1 < GP->Y0+1 || GP->Y1 > ym1) GP->Y1 = ym1;
+        DBG("set format: (%d,%d)x(%d,%d)", GP->X0,GP->X1,GP->Y0,GP->Y1);
+        SENDMSG(CMD_FRAMEFORMAT "=%d,%d,%d,%d", GP->X0, GP->Y0, GP->X1, GP->Y1);
+    }
     if(GP->cancelexpose) SENDMSG(CMD_EXPSTATE "=%d", CAMERA_IDLE);
     if(GP->listdevices) SENDMSG(CMD_CAMLIST);
     if(GP->camdevno > -1) SENDMSG(CMD_CAMDEVNO "=%d", GP->camdevno);

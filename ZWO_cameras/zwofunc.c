@@ -91,15 +91,12 @@ static int campoll(capture_status *st, float *remain){
     }
     switch(s){
         case ASI_EXP_IDLE:
-            DBG("No capture");
             *st = CAPTURE_NO;
         break;
         case ASI_EXP_WORKING:
-            DBG("Capture in progress");
             *st = CAPTURE_PROCESS;
         break;
         case ASI_EXP_SUCCESS:
-            DBG("Capture ready");
             *st = CAPTURE_READY;
         break;
         default: // failed
@@ -119,7 +116,7 @@ static int camcapt(IMG *ima){
     unsigned char *d = (unsigned char *)ima->data;
     long image_size = ima->h * ima->w * 2;
     if(ASI_SUCCESS != ASIGetDataAfterExp(caminfo.CameraID, d, image_size)){
-        printf("Couldn't read exposure data\n");
+        WARNX("Couldn't read exposure data\n");
         return FALSE;
     }
     return TRUE;
@@ -220,6 +217,9 @@ static int setdevno(int n){
 #endif
             }
         }
+        //red("Bit: %d\n", caminfo.BitDepth);
+        //caminfo.BitDepth = 10;
+        //red("Bit: %d\n", caminfo.BitDepth);
     }
     return TRUE;
 }
@@ -506,7 +506,7 @@ __attribute__ ((visibility("default"))) Camera camera = {
     .confio = istub,
     .setio = istub,
     .setframetype = setframetype,
-    .setbitdepth = istub,
+    .setbitdepth = istub, // there's no ways in documentation to SET bit depth
     .setfastspeed = setfspd,
     .setgeometry = camsetgeom,
     .setfanspeed = camfan,

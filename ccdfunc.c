@@ -403,9 +403,10 @@ int startFocuser(void **dlh){
 }
 
 void focclose(void *dlh){
+    if(!dlh || !focuser) return;
     focuser->close();
-    dlclose(dlh);
     focuser = NULL;
+    //dlclose(dlh);
 }
 
 /*
@@ -494,9 +495,10 @@ int startWheel(void **dlh){
 }
 
 void closewheel(void *dlh){
+    if(!dlh || !wheel) return;
     wheel->close();
-    dlclose(dlh);
     wheel = NULL;
+    //dlclose(dlh);
 }
 
 /*
@@ -594,12 +596,12 @@ int startCCD(void **dlh){
 }
 
 void closecam(void *dlh){
-    if(!dlh) return;
+    if(!dlh || !camera) return;
     DBG("Close cam");
     camera->close();
-    DBG("close dlh");
-    dlclose(dlh);
     camera = NULL;
+    DBG("close dlh");
+    //dlclose(dlh);
 }
 
 /*
@@ -702,11 +704,11 @@ void ccds(){
     if(!camera->setbin(GP->hbin, GP->vbin))
         WARNX(_("Can't set binning %dx%d"), GP->hbin, GP->vbin);
     if(GP->X0 < 0) GP->X0 = x0; // default values
+    else if(GP->X0 > x1-1) GP->X0 = x1-1;
     if(GP->Y0 < 0) GP->Y0 = y0;
-    if(GP->X1 < 0) GP->X1 = x1;
-    else if(GP->X1 > x1) GP->X1 = x1;
-    if(GP->Y1 < 0) GP->Y1 = y1;
-    else if(GP->Y1 > y1) GP->Y1 = y1;
+    else if(GP->Y0 > y1-1) GP->Y0 = y1-1;
+    if(GP->X1 < GP->X0+1 || GP->X1 > x1) GP->X1 = x1;
+    if(GP->Y1 < GP->Y0+1 || GP->Y1 > y1) GP->Y1 = y1;
     frameformat fmt = {.w = GP->X1 - GP->X0, .h = GP->Y1 - GP->Y0, .xoff = GP->X0, .yoff = GP->Y0};
     int raw_width = fmt.w / GP->hbin,  raw_height = fmt.h / GP->vbin;
     if(!camera->setgeometry(&fmt))
@@ -841,6 +843,7 @@ void ccds(){
     FREE(img);
 retn:
     closecam(dlh);
+    DBG("closed -> out");
 }
 
 void cancel(){

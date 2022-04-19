@@ -12,6 +12,20 @@ message("VER: ${VERSION}")
 # default flags
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -W -Wextra -std=gnu99")
 
+# change wrong behaviour with install prefix
+if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT AND CMAKE_INSTALL_PREFIX MATCHES "/usr/local")
+    message("Change default install path to /usr")
+    set(CMAKE_INSTALL_PREFIX "/usr")
+endif()
+message("Install dir prefix: ${CMAKE_INSTALL_PREFIX}")
+if(NOT DEFINED LOCALEDIR)
+    if(DEFINED DEBUG AND DEBUG STREQUAL "yes")
+        set(LOCALEDIR ${CMAKE_CURRENT_SOURCE_DIR}/locale)
+    else()
+        set(LOCALEDIR ${CMAKE_INSTALL_PREFIX}/share/locale)
+    endif()
+endif()
+
 add_definitions(-D_XOPEN_SOURCE=1234 -D_DEFAULT_SOURCE -D_GNU_SOURCE -DLOCALEDIR=\"${LOCALEDIR}\"
         -DPACKAGE_VERSION=\"${VERSION}\" -DGETTEXT_PACKAGE=\"${PROJ}\"
         -DMINOR_VERSION=\"${MINOR_VERSION}\" -DMID_VERSION=\"${MID_VERSION}\"
@@ -66,39 +80,16 @@ add_subdirectory(Dummy_cameras)
 # additional modules with CCD/CMOS support
 if(DEFINED ZWO AND ZWO STREQUAL "yes")
     add_subdirectory(ZWO_cameras)
-#    list(APPEND ${PROJ}_INCLUDE_DIRS ZWO_cameras)
-#    add_definitions(-DUSEZWO)
-#    list(APPEND ${PROJ}_LIBRARIES ${ZWOLIB})
-#    include_directories(ZWO_cameras)
 endif()
 
 # additional modules with CCD/CMOS support
 if(DEFINED FLI AND FLI STREQUAL "yes")
     add_subdirectory(FLI_cameras)
-#    list(APPEND ${PROJ}_INCLUDE_DIRS FLI_cameras)
-#    add_definitions(-DUSEFLI)
-#    list(APPEND ${PROJ}_LIBRARIES ${FLILIB})
-#    include_directories(FLI_cameras)
 endif()
 
-
-# change wrong behaviour with install prefix
-if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT AND CMAKE_INSTALL_PREFIX MATCHES "/usr/local")
-    message("Change default install path to /usr")
-    set(CMAKE_INSTALL_PREFIX "/usr")
-endif()
-message("Install dir prefix: ${CMAKE_INSTALL_PREFIX}")
 
 # directory should contain dir locale/ru for gettext translations
 set(LCPATH ${CMAKE_SOURCE_DIR}/locale/ru)
-
-if(NOT DEFINED LOCALEDIR)
-    if(DEFINED DEBUG AND DEBUG STREQUAL "yes")
-        set(LOCALEDIR ${CMAKE_CURRENT_SOURCE_DIR}/locale)
-    else()
-        set(LOCALEDIR ${CMAKE_INSTALL_PREFIX}/share/locale)
-    endif()
-endif()
 
 # gettext files
 set(PO_FILE ${LCPATH}/messages.po)
@@ -128,21 +119,19 @@ add_custom_command(
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMAND ${GETTEXT_XGETTEXT_EXECUTABLE} --from-code=koi8-r ${SOURCES} -c -k_ -kN_ -o ${PO_FILE}
     COMMAND sed -i 's/charset=.*\\\\n/charset=koi8-r\\\\n/' ${PO_FILE}
-#    COMMAND enconv ${PO_FILE}
     DEPENDS ${SOURCES}
 )
 # we need this to prewent ru.po & .mo from deleting by make clean
 add_custom_command(
     OUTPUT ${MO_FILE}
     COMMAND ${GETTEXT_MSGFMT_EXECUTABLE} ${RU_FILE} -o ${MO_FILE}
-    DEPENDS ${RU_FILE} ru_file_updated
+    DEPENDS ru_file_updated
 )
 
 add_custom_command(
     OUTPUT ru_file_updated
     COMMAND [ -f ${RU_FILE} ] && ${GETTEXT_MSGMERGE_EXECUTABLE} -Uis ${RU_FILE} ${PO_FILE} || cp ${PO_FILE} ${RU_FILE}
     COMMAND ${CMAKE_COMMAND} -E touch ru_file_updated
-    BYPRODUCTS ${RU_FILE}
     DEPENDS ${PO_FILE}
 )
 
