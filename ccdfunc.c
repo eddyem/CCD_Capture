@@ -48,7 +48,7 @@ do{ int status = 0;                         \
 }while(0)
 #define WRITEKEY(...)                           \
 do{ int status = 0;                             \
-    fits_write_key(__VA_ARGS__, &status);       \
+    fits_update_key(__VA_ARGS__, &status);       \
     if(status) fits_report_error(stderr, status);\
 }while(0)
 
@@ -118,31 +118,59 @@ static int check_filenameprefix(char *buff, int buflen){
     return FALSE;
 }
 
+// get next record from external text file, newlines==1 if every record ends with '\n'
+static char *getnextrec(char *buf, char *record, int newlines){
+    char *nextline = NULL;
+    int l = FLEN_CARD - 1;
+    if(newlines){
+        char *e = strchr(buf, '\n');
+        if(e){
+            if(e - buf < FLEN_CARD) l = e - buf;
+            nextline = e + 1;
+        }
+    }else nextline = buf + (FLEN_CARD - 1);
+    strncpy(record, buf, l);
+    record[l] = 0;
+    return nextline;
+}
+
 /**
  * @brief addrec - add FITS records from file
  * @param f (i)        - FITS filename
  * @param filename (i) - name of file
  */
 static void addrec(fitsfile *f, char *filename){
-    FILE *fp = fopen(filename, "r");
-    if(!fp) return;
-    char buf[2*FLEN_CARD];
-    while(fgets(buf, 2*FLEN_CARD, fp)){
-        //DBG("check record _%s_", buf);
+    mmapbuf *buf = My_mmap(filename);
+    char rec[FLEN_CARD];
+    if(!buf || buf->len < 1){
+        WARNX("Empty header file %s", filename);
+        return;
+    }
+    char *data = buf->data, *x = strchr(data, '\n'), *eodata = buf->data + buf->len;
+    int newlines = 0;
+    if(x && (x - data) < FLEN_CARD){ // we found newline -> this is a format with newlines
+        newlines = 1;
+    }
+    do{
+        data = getnextrec(data, rec, newlines);
+        verbose(4, "check record _%s_", rec);
         int keytype, status = 0;
         char newcard[FLEN_CARD], keyname[FLEN_CARD];
-        fits_parse_template(buf, newcard, &keytype, &status);
+        fits_parse_template(rec, newcard, &keytype, &status);
         if(status){
             fits_report_error(stderr, status);
             continue;
         }
-        //DBG("reformatted to _%s_", newcard);
+        verbose(4, "reformatted to _%s_", newcard);
         strncpy(keyname, newcard, FLEN_CARD);
         char *eq = strchr(keyname, '='); if(eq) *eq = 0;
         eq = strchr(keyname, ' '); if(eq) *eq = 0;
         //DBG("keyname: %s", keyname);
         fits_update_card(f, keyname, newcard, &status);
-    }
+        if(status) fits_report_error(stderr, status);
+        if(data > eodata) break;
+    }while(data && *data);
+    My_munmap(buf);
 }
 
 // save FITS file `img` into GP->outfile or GP->outfileprefix_XXXX.fits
@@ -196,24 +224,11 @@ int saveFITS(IMG *img, char **outp){
     if(fitserror) goto cloerr;
     TRYFITS(fits_create_img, fp, USHORT_IMG, 2, naxes);
     if(fitserror) goto cloerr;
-    // FILE / Input file original name
-    WRITEKEY(fp, TSTRING, "FILE", fnam, "Input file original name");
     // ORIGIN / organization responsible for the data
     WRITEKEY(fp, TSTRING, "ORIGIN", "SAO RAS", "organization responsible for the data");
     // OBSERVAT / Observatory name
     WRITEKEY(fp, TSTRING, "OBSERVAT", "Special Astrophysical Observatory, Russia", "Observatory name");
-    // DETECTOR / detector
-    if(camera->getModelName(buff, PATH_MAX)){
-        WRITEKEY(fp, TSTRING, "DETECTOR", buff, "Detector model");
-    }
-    // INSTRUME / Instrument
-    if(GP->instrument){
-        WRITEKEY(fp, TSTRING, "INSTRUME", GP->instrument, "Instrument");
-    }else
-        WRITEKEY(fp, TSTRING, "INSTRUME", "direct imaging", "Instrument");
-    snprintf(bufc, FLEN_VALUE, "%g x %g", camera->pixX, camera->pixY);
-    // PXSIZE / pixel size
-    WRITEKEY(fp, TSTRING, "PXSIZE", bufc, "Pixel size in m");
+    WRITEKEY(fp, TSTRING, "INSTRUME", "direct imaging", "Instrument");
     snprintf(bufc, FLEN_VALUE, "(%d, %d)(%d, %d)", camera->field.xoff, camera->field.yoff,
              camera->field.xoff + camera->field.w, camera->field.yoff + camera->field.h);
     WRITEKEY(fp, TSTRING, "VIEWFLD", bufc, "Camera maximal field of view");
@@ -272,10 +287,6 @@ int saveFITS(IMG *img, char **outp){
     WRITEKEY(fp, TSTRING, "DATE-OBS", bufc, "DATE OF OBS. (YYYY/MM/DD, local)");
     strftime(bufc, 80, "%H:%M:%S", tm_time);
     WRITEKEY(fp, TSTRING, "TIME", bufc, "Creation time (hh:mm:ss, local)");
-    // OBJECT  / Object name
-    if(GP->objname){
-        WRITEKEY(fp, TSTRING, "OBJECT", GP->objname, "Object name");
-    }
     // BINNING / Binning
     if(GP->hbin != 1 || GP->vbin != 1){
         snprintf(bufc, 80, "%d x %d", GP->hbin, GP->vbin);
@@ -284,18 +295,6 @@ int saveFITS(IMG *img, char **outp){
         WRITEKEY(fp, TINT, "XBINNING", &tmpi, "binning factor used on X axis");
         tmpi = GP->vbin;
         WRITEKEY(fp, TINT, "YBINNING", &tmpi, "binning factor used on Y axis");
-    }
-    // OBSERVER / Observers
-    if(GP->observers){
-        WRITEKEY(fp, TSTRING, "OBSERVER", GP->observers, "Observers");
-    }
-    // PROG-ID / Observation program identifier
-    if(GP->prog_id){
-        WRITEKEY(fp, TSTRING, "PROG-ID", GP->prog_id, "Observation program identifier");
-    }
-    // AUTHOR / Author of the program
-    if(GP->author){
-        WRITEKEY(fp, TSTRING, "AUTHOR", GP->author, "Author of the program");
     }
     if(focuser){ // there is a focuser device - add info
         if(focuser->getModelName(buff, PATH_MAX))
@@ -325,6 +324,30 @@ int saveFITS(IMG *img, char **outp){
             addrec(fp, *nxtfile++);
         }
     }
+    // add these keywords after all to change things in files with static records
+    // OBSERVER / Observers
+    if(GP->observers)
+        WRITEKEY(fp, TSTRING, "OBSERVER", GP->observers, "Observers");
+    // PROG-ID / Observation program identifier
+    if(GP->prog_id)
+        WRITEKEY(fp, TSTRING, "PROG-ID", GP->prog_id, "Observation program identifier");
+    // AUTHOR / Author of the program
+    if(GP->author)
+        WRITEKEY(fp, TSTRING, "AUTHOR", GP->author, "Author of the program");
+    // OBJECT  / Object name
+    if(GP->objname){
+        WRITEKEY(fp, TSTRING, "OBJECT", GP->objname, "Object name");
+    }
+    // FILE / Input file original name
+    char *n = fnam;
+    if(*n == '!') ++n;
+    WRITEKEY(fp, TSTRING, "FILE", n, "Input file original name");
+    // DETECTOR / detector
+    if(camera->getModelName(buff, PATH_MAX))
+        WRITEKEY(fp, TSTRING, "DETECTOR", buff, "Detector model");
+    // INSTRUME / Instrument
+    if(GP->instrument)
+        WRITEKEY(fp, TSTRING, "INSTRUME", GP->instrument, "Instrument");
     TRYFITS(fits_write_img, fp, TUSHORT, 1, width * height, data);
     if(fitserror) goto cloerr;
     TRYFITS(fits_close_file, fp);
