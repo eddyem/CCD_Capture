@@ -34,7 +34,6 @@
 #ifdef IMAGEVIEW
 #include "imageview.h"
 #endif
-#include "omp.h"
 #include "socket.h"
 
 static int isserver = FALSE;

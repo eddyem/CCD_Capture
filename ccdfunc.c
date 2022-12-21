@@ -760,6 +760,7 @@ void ccds(){
 
 
     uint16_t *img = MALLOC(uint16_t, raw_width * raw_height);
+    DBG("\n\nAllocated image 2x%dx%d=%d", raw_width, raw_height, 2 * raw_width * raw_height);
     IMG ima = {.data = img, .w = raw_width, .h = raw_height};
 #ifdef IMAGEVIEW
     windowData *mainwin = NULL;

@@ -20,7 +20,6 @@
 #ifndef CMDLNOPTS_H__
 #define CMDLNOPTS_H__
 
-#include "ccdfunc.h"
 #include <usefull_macros.h>
 
 /*

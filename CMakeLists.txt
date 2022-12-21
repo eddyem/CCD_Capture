@@ -70,21 +70,18 @@ if(DEFINED IMAGEVIEW AND IMAGEVIEW STREQUAL "yes")
 endif()
 
 add_subdirectory(Dummy_cameras)
-#list(APPEND ${PROJ}_INCLUDE_DIRS Dummy_cameras)
-#list(APPEND ${PROJ}_LIBRARIES ${DUMMYLIB})
-#include_directories(Dummy_cameras)
-
-#add_custom_target(plugins)
-#add_dependencies(plugins devdummy)
 
 # additional modules with CCD/CMOS support
 if(DEFINED ZWO AND ZWO STREQUAL "yes")
     add_subdirectory(ZWO_cameras)
 endif()
 
-# additional modules with CCD/CMOS support
 if(DEFINED FLI AND FLI STREQUAL "yes")
     add_subdirectory(FLI_cameras)
+endif()
+
+if(DEFINED HIKROBOT AND HIKROBOT STREQUAL "yes")
+    add_subdirectory(HIKROBOT_cameras)
 endif()
 
 

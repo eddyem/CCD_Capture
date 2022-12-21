@@ -8,6 +8,7 @@
 #include <usefull_macros.h>
 
 #include "cmdlnopts.h"
+#include "basestructs.h"
 
 #define DEFAULT_PID_FILE    "/tmp/CCD_Capture.pid"
 
