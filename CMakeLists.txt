@@ -100,8 +100,8 @@ include_directories(${${PROJ}_INCLUDE_DIRS} .)
 link_directories(${${PROJ}_LIBRARY_DIRS} )
 
 # Installation of the program
-INSTALL(FILES ${MO_FILE} DESTINATION "share/locale/ru/LC_MESSAGES")
-INSTALL(TARGETS ${PROJ} DESTINATION "bin")
+install(FILES ${MO_FILE} DESTINATION "share/locale/ru/LC_MESSAGES")
+install(TARGETS ${PROJ} DESTINATION "bin")
 
 find_package(Gettext REQUIRED)
 find_program(GETTEXT_XGETTEXT_EXECUTABLE xgettext)

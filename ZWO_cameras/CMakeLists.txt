@@ -10,3 +10,4 @@ link_directories(${${CCDLIB}_LIBRARY_DIRS})
 
 add_library(${CCDLIB} SHARED ${SRC})
 target_link_libraries(${CCDLIB} ${${CCDLIB}_LIBRARIES} -lASICamera2 -fPIC)
+install(TARGETS ${CCDLIB} LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})

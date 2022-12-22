@@ -39,8 +39,9 @@ static int curhbin = 1, curvbin = 1;
 static double starttime = 0.;   // time when exposure started
 static float exptime = 0.;      // exposition time (in seconds)
 static MV_FRAME_OUT_INFO_EX stImageInfo = {0}; // last image info
-static uint16_t *pdata = NULL;
+static uint8_t *pdata = NULL;
 static int pdatasz = 0;
+static int lastecode = MV_OK;
 
 static struct{
     float maxgain;
@@ -52,15 +53,46 @@ static struct{
     int maxbin;
 } extrvalues = {0}; // extremal values
 
+static void printErr(){
+    const char *errcode = "unknown error";
+    switch(lastecode){
+        case MV_E_HANDLE:           errcode = "Error or invalid handle ";                                         break;
+        case MV_E_SUPPORT:          errcode = "Not supported function ";                                          break;
+        case MV_E_BUFOVER:          errcode = "Cache is full ";                                                   break;
+        case MV_E_CALLORDER:        errcode = "Function calling order error ";                                    break;
+        case MV_E_PARAMETER:        errcode = "Incorrect parameter ";                                             break;
+        case MV_E_RESOURCE:         errcode = "Applying resource failed ";                                        break;
+        case MV_E_NODATA:           errcode = "No data ";                                                         break;
+        case MV_E_PRECONDITION:     errcode = "Precondition error, or running environment changed ";              break;
+        case MV_E_VERSION:          errcode = "Version mismatches ";                                              break;
+        case MV_E_NOENOUGH_BUF:     errcode = "Insufficient memory ";                                             break;
+        case MV_E_ABNORMAL_IMAGE:   errcode = "Abnormal image, maybe incomplete image because of lost packet ";   break;
+        case MV_E_UNKNOW:           errcode = "Unknown error ";                                                   break;
+        case MV_E_GC_GENERIC:       errcode = "General error ";                                                   break;
+        case MV_E_GC_ACCESS:        errcode = "Node accessing condition error ";                                  break;
+        case MV_E_ACCESS_DENIED:	errcode = "No permission ";                                                   break;
+        case MV_E_BUSY:             errcode = "Device is busy, or network disconnected ";                         break;
+        case MV_E_NETER:            errcode = "Network error ";
+    }
+    WARNX("CMOS error: %s", errcode);
+}
+
+#define TRY(fn, ...)    do{lastecode = MV_CC_ ## fn(handle __VA_OPT__(,) __VA_ARGS__); if(lastecode != MV_OK) printErr(); }while(0)
+#define ONERR()         if(MV_OK != lastecode)
+#define ONOK()          if(MV_OK == lastecode)
+
 static int changeenum(const char *key, uint32_t val){
     if(!handle) return FALSE;
     MVCC_ENUMVALUE e;
-    if(MV_OK != MV_CC_GetEnumValue(handle, key, &e)){
+    TRY(GetEnumValue, key, &e);
+    ONERR(){
         WARNX("Enum '%s' is absent", key);
         return FALSE;
     }
+    DBG("Try to change '%s' to %u, cur=%u", key, val, e.nCurValue);
     if(e.nCurValue == val) return TRUE;
-    if(MV_OK != MV_CC_SetEnumValue(handle, key, val)){
+    TRY(SetEnumValue, key, val);
+    ONERR(){
         WARNX("Cant change %s to %d, supported values are:", key, val);
         for(int i = 0; i < (int)e.nSupportedNum; ++i){
             fprintf(stderr, "%s%u", i ? ", " : "", e.nSupportValue[i]);
@@ -68,7 +100,8 @@ static int changeenum(const char *key, uint32_t val){
         fprintf(stderr, "\n");
         return FALSE;
     }
-    if(MV_OK != MV_CC_GetEnumValue(handle, key, &e)) return FALSE;
+    TRY(GetEnumValue, key, &e);
+    ONERR() return FALSE;
     if(e.nCurValue == val) return TRUE;
     WARNX("New value of '%s' changed to %d, not to %d", key, e.nCurValue, val);
     return FALSE;
@@ -77,16 +110,19 @@ static int changeenum(const char *key, uint32_t val){
 static int changeint(const char *key, uint32_t val){
     if(!handle) return FALSE;
     MVCC_INTVALUE i;
-    if(MV_OK != MV_CC_GetIntValue(handle, key, &i)){
+    TRY(GetIntValue, key, &i);
+    ONERR(){
         WARNX("Int '%s' is absent", key);
         return FALSE;
     }
     if(i.nCurValue == val) return TRUE;
-    if(MV_OK != MV_CC_SetIntValue(handle, key, val)){
+    TRY(SetIntValue, key, val);
+    ONERR(){
         WARNX("Cant change %s to %u; available range is %u..%u", key, val, i.nMin, i.nMax);
         return FALSE;
     }
-    if(MV_OK != MV_CC_GetIntValue(handle, key, &i)) return FALSE;
+    TRY(GetIntValue, key, &i);
+    ONERR() return FALSE;
     if(i.nCurValue == val) return TRUE;
     WARNX("New value of '%s' changed to %d, not to %d", key, i.nCurValue, val);
     return FALSE;
@@ -95,16 +131,19 @@ static int changeint(const char *key, uint32_t val){
 static int changefloat(const char *key, float val){
     if(!handle) return FALSE;
     MVCC_FLOATVALUE f;
-    if(MV_OK != MV_CC_GetFloatValue(handle, key, &f)){
+    TRY(GetFloatValue, key, &f);
+    ONERR(){
         WARNX("Float '%s' is absent", key);
         return FALSE;
     }
-    if(fabs(f.fCurValue - val) < FLT_EPSILON) return TRUE;
-    if(MV_OK != MV_CC_SetFloatValue(handle, key, val)){
+    if(f.fCurValue == val) return TRUE;
+    TRY(SetFloatValue, key, val);
+    ONERR(){
         WARNX("Cant change %s to %g; available range is %g..%g", key, val, f.fMin, f.fMax);
         return FALSE;
     }
-    if(MV_OK != MV_CC_GetFloatValue(handle, key, &f)) return FALSE;
+    TRY(GetFloatValue, key, &f);
+    ONERR() return FALSE;
     if(fabs(f.fCurValue - val) < FLT_EPSILON) return TRUE;
     WARNX("New value of '%s' changed to %g, not to %g", key, f.fCurValue, val);
     return FALSE;
@@ -122,11 +161,13 @@ static int cam_setbin(int binh, int binv){
 
 static int cam_getbin(int *h, int *v){
     MVCC_ENUMVALUE e;
-    if(MV_OK != MV_CC_GetEnumValue(handle, "BinningHorizontal", &e)) return FALSE;
+    TRY(GetEnumValue, "BinningHorizontal", &e);
+    ONERR() return FALSE;
     curhbin = e.nCurValue;
     //printf("Hbin supported = %d", e.nSupportedNum);
     //for(int i = 0; i < (int)e.nSupportedNum; ++i) printf("\t%d", e.nSupportValue[i]);
-    if(MV_OK != MV_CC_GetEnumValue(handle, "BinningVertical", &e)) return FALSE;
+    TRY(GetEnumValue, "BinningVertical", &e);
+    ONERR() return FALSE;
     curvbin = e.nCurValue;
     //printf("Vbin supported = %d", e.nSupportedNum);
     //for(int i = 0; i < (int)e.nSupportedNum; ++i) printf("\t%d", e.nSupportValue[i]);
@@ -138,7 +179,8 @@ static int cam_getbin(int *h, int *v){
 static int cam_getgain(float *g){
     if(!handle) return FALSE;
     MVCC_FLOATVALUE gain;
-    if(MV_OK != MV_CC_GetFloatValue(handle, "Gain", &gain)) return FALSE;
+    TRY(GetFloatValue, "Gain", &gain);
+    ONERR() return FALSE;
     if(g) *g = gain.fCurValue;
     extrvalues.maxgain = gain.fMax;
     extrvalues.mingain = gain.fMin;
@@ -159,10 +201,10 @@ static int cam_setgain(float g){
 
 static int cam_getbright(float *b){
     if(!handle) return FALSE;
+    DBG("Get brightness");
     MVCC_INTVALUE bright;
-    if(MV_OK != MV_CC_GetIntValue(handle, "Brightness", &bright)){
-        return FALSE;
-    }
+    TRY(GetIntValue, "Brightness", &bright);
+    ONERR() return FALSE;
     if(b) *b = bright.nCurValue;
     extrvalues.maxgain = bright.nMax;
     extrvalues.mingain = bright.nMin;
@@ -199,8 +241,10 @@ static void cam_closecam(){
     DBG("CAMERA CLOSE");
     if(handle){
         MV_CC_StopGrabbing(handle);
-        if(MV_OK != MV_CC_CloseDevice(handle)) WARNX("Can't close opened camera");
-        if(MV_OK != MV_CC_DestroyHandle(handle)) WARNX("Can't destroy camera handle");
+        TRY(CloseDevice);
+        ONERR() WARNX("Can't close opened camera");
+        TRY(DestroyHandle);
+        ONERR() WARNX("Can't destroy camera handle");
         handle = NULL;
     }
     FREE(pdata);
@@ -236,11 +280,14 @@ static int cam_setActiceCam(int n){
         return FALSE;
     }
     cam_closecam();
-    if(MV_OK != MV_CC_CreateHandleWithoutLog(&handle, stDeviceList.pDeviceInfo[n])){
+    lastecode = MV_CC_CreateHandleWithoutLog(&handle, stDeviceList.pDeviceInfo[n]);
+    ONERR(){
         WARNX("Can't create camera handle");
+        printErr();
         return FALSE;
     }
-    if(MV_OK != MV_CC_OpenDevice(handle, MV_ACCESS_Exclusive, 0)){
+    TRY(OpenDevice, MV_ACCESS_Exclusive, 0);
+    ONERR(){
         WARNX("Can't open camera file");
         return FALSE;
     }
@@ -281,13 +328,15 @@ static int cam_setActiceCam(int n){
         return FALSE;
     }
     MVCC_ENUMVALUE EnumValue;
-    if(MV_OK == MV_CC_GetEnumValue(handle, "PixelFormat", &EnumValue)){
+    TRY(GetEnumValue, "PixelFormat", &EnumValue);
+    ONOK(){
         DBG("PixelFormat=%x", EnumValue.nCurValue);
 #ifdef EBUG
         for(int i = 0; i < (int)EnumValue.nSupportedNum; ++i) fprintf(stderr, "\t\t%x\n", EnumValue.nSupportValue[i]);
 #endif
     }
-    if(MV_OK == MV_CC_GetEnumValue(handle, "PixelSize", &EnumValue)){
+    TRY(GetEnumValue, "PixelSize", &EnumValue);
+    ONOK(){
         DBG("PixelSize=%d", EnumValue.nCurValue);
 #ifdef EBUG
         for(int i = 0; i < (int)EnumValue.nSupportedNum; ++i) fprintf(stderr, "\t\t%d\n", EnumValue.nSupportValue[i]);
@@ -298,20 +347,21 @@ static int cam_setActiceCam(int n){
     cam_getbin(NULL, NULL); // get current binning
     MVCC_FLOATVALUE FloatValue;
     // get extremal exptime values
-    if(MV_OK != MV_CC_GetFloatValue(handle, "ExposureTime", &FloatValue)) WARNX("Can't get min/max exp");
-    else{
+    TRY(GetFloatValue, "ExposureTime", &FloatValue);
+    ONOK(){
         extrvalues.maxexp = FloatValue.fMax / 1e6;
         extrvalues.minexp = FloatValue.fMin / 1e6;
         exptime = FloatValue.fCurValue / 1e6;
+        printf("Min exp: %g s, max exp: %g s\n", extrvalues.minexp, extrvalues.maxexp);
     }
-    printf("Min exp: %g s, max exp: %g s\n", extrvalues.minexp, extrvalues.maxexp);
     camera.pixX = camera.pixY = 0.; // unknown
     MVCC_INTVALUE IntValue;
     camera.array.xoff = camera.array.yoff = 0;
     int *values[6] = {&camera.array.w, &camera.array.h, &camera.geometry.w, &camera.geometry.h, &camera.geometry.xoff, &camera.geometry.yoff};
     const char *names[2] = {"WidthMax", "HeightMax"};//, "Width", "Height", "OffsetX", "OffsetY"};
     for(int i = 0; i < 2; ++i){
-        if(MV_OK != MV_CC_GetIntValue(handle, names[i], &IntValue)){
+        TRY(GetIntValue, names[i], &IntValue);
+        ONERR(){
             WARNX("Can't get %s", names[i]); return FALSE;
         }
         *values[i] = IntValue.nCurValue;
@@ -321,9 +371,14 @@ static int cam_setActiceCam(int n){
     camera.array.w *= curhbin;
     camera.geometry = camera.array;
     camera.field = camera.array;
-    pdatasz = camera.array.h * camera.array.w;
-    DBG("\t\t2*w*h = %d", pdatasz*2);
-    pdata = MALLOC(uint16_t, pdatasz); // allocate max available buffer
+    pdatasz = camera.array.h * camera.array.w * 2;
+    DBG("\t\t2*w*h = %d", pdatasz);
+#ifdef EBUG
+    MVCC_INTVALUE stParam = {0};
+    TRY(GetIntValue, "PayloadSize", &stParam);
+    ONOK(){DBG("PAYLOAD: %u", stParam.nCurValue);}
+#endif
+    pdata = MALLOC(uint8_t, pdatasz); // allocate max available buffer
     return TRUE;
 }
 
@@ -337,7 +392,8 @@ static int cam_startexp(){
     if(!handle || !pdata) return FALSE;
     DBG("Start exposition");
     MV_CC_StopGrabbing(handle);
-    if(MV_OK != MV_CC_StartGrabbing(handle)) return FALSE;
+    TRY(StartGrabbing);
+    ONERR() return FALSE;
     starttime = dtime();
     capStatus = CAPTURE_PROCESS;
     return TRUE;
@@ -354,7 +410,9 @@ static int cam_pollcapt(capture_status *st, float *remain){
         goto retn;
     }
     if(capStatus == CAPTURE_PROCESS){
-        if(MV_OK == MV_CC_GetOneFrameTimeout(handle, (uint8_t*)pdata, pdatasz, &stImageInfo, 50)){
+        DBG("PDATASZ=%d", pdatasz);
+        TRY(GetOneFrameTimeout, pdata, pdatasz, &stImageInfo, 50);
+        ONOK(){
             DBG("OK, ready");
             if(remain) *remain = 0.f;
             if(st) *st = CAPTURE_READY;
@@ -387,14 +445,19 @@ static int cam_capt(IMG *ima){
     if(!handle || !pdata) return FALSE;
     if(!ima || !ima->data) return FALSE;
     ;
-    int bytes = ima->h*ima->w*2, stbytes = stImageInfo.nWidth * stImageInfo.nHeight * 2;
+    int bytes = ima->h*ima->w * 2, stbytes = stImageInfo.nWidth * stImageInfo.nHeight * 2;
+    if(bytes > pdatasz) bytes = pdatasz;
     if(bytes != stbytes) WARNX("Different sizes of image buffer & grabbed image");
     if(stbytes > bytes) bytes = stbytes;
     DBG("Copy %d bytes (stbytes=%d)", bytes, stbytes);
     MVCC_ENUMVALUE EnumValue;
-    if(MV_OK == MV_CC_GetEnumValue(handle, "PixelSize", &EnumValue)){
+    TRY(GetEnumValue, "PixelSize", &EnumValue);
+    DBG("PixelSize = %u", EnumValue.nCurValue);
+    ONOK(){
+//green("pixsize=%d\n", EnumValue.nCurValue);
         if(EnumValue.nCurValue == 16){
             memcpy(ima->data, pdata, bytes);
+            return TRUE;
         }else if(EnumValue.nCurValue != 8){
             WARNX("Unsupported pixel size");
             return FALSE;
@@ -438,7 +501,8 @@ static int cam_settemp(float t){
 
 static int cam_gettemp(float *t){
     MVCC_FLOATVALUE fl;
-    if(MV_OK != MV_CC_GetFloatValue(handle, "DeviceTemperature", &fl)) return FALSE;
+    TRY(GetFloatValue, "DeviceTemperature", &fl);
+    ONERR() return FALSE;
     if(t) *t = fl.fCurValue;
     return TRUE;
 }
@@ -457,7 +521,7 @@ static int cam_gettbody(_U_ float *t){
 
 static void cam_cancel(){
     if(!handle) return;
-     MV_CC_StopGrabbing(handle);
+    TRY(StopGrabbing);
 }
 
 static int cam_shutter(_U_ shutter_op cmd){
@@ -468,7 +532,8 @@ static int cam_shutter(_U_ shutter_op cmd){
 static int cam_confio(int io){
     if(!handle) return FALSE;
     MVCC_ENUMVALUE e;
-    if(MV_OK != MV_CC_GetEnumValue(handle, "LineSelector", &e)) return FALSE;
+    TRY(GetEnumValue, "LineSelector", &e);
+    ONERR() return FALSE;
     int bit = 1;
     for(int i = 0; i < (int)e.nSupportedNum; ++i, bit <<= 1){
         green("line %d: %d\n", e.nSupportValue[i]);
@@ -487,10 +552,16 @@ static int cam_setexp(float t){ // t is in seconds!!
 
 static int cam_setbitdepth(int i){
     if(!handle) return FALSE;
-    int d = i ? 16 : 8;
-    if(!changeenum("PixelSize", d)) return FALSE;
-    d = i ? PixelType_Gvsp_Mono16  : PixelType_Gvsp_Mono8;
-    if(!changeenum("PixelFormat", d)) return FALSE;
+    int d = i ? PixelType_Gvsp_Mono12  : PixelType_Gvsp_Mono8;
+    if(!changeenum("PixelFormat", d)){
+        WARNX("pixformat");
+        return FALSE;
+    }
+    d = i ? 16 : 8;
+    if(!changeenum("PixelSize", d)){
+        WARNX("pixsz");
+        return FALSE;
+    }
     return TRUE;
 }
 
