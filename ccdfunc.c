@@ -674,6 +674,9 @@ void ccds(){
     snprintf(buf, BUFSIZ, "(%d, %d)(%d, %d)", camera->field.xoff, camera->field.yoff,
                 camera->field.xoff + camera->field.w, camera->field.yoff + camera->field.h);
     verbose(2, _("Field of view: %s"), buf);
+    snprintf(buf, BUFSIZ, "(%d, %d)(%d, %d)", camera->geometry.xoff, camera->geometry.yoff,
+                camera->geometry.xoff + camera->geometry.w, camera->geometry.yoff + camera->geometry.h);
+    verbose(2, _("Current format: %s"), buf);
     if(!isnan(GP->temperature)){
         if(!camera->setT((float)GP->temperature))
             WARNX(_("Can't set T to %g degC"), GP->temperature);
@@ -724,16 +727,18 @@ void ccds(){
     camera->cancel();
     if(GP->hbin < 1) GP->hbin = 1;
     if(GP->vbin < 1) GP->vbin = 1;
-    if(!camera->setbin(GP->hbin, GP->vbin))
+    if(!camera->setbin(GP->hbin, GP->vbin)){
         WARNX(_("Can't set binning %dx%d"), GP->hbin, GP->vbin);
+        camera->getbin(&GP->hbin, &GP->vbin);
+    }
     if(GP->X0 < 0) GP->X0 = x0; // default values
     else if(GP->X0 > x1-1) GP->X0 = x1-1;
     if(GP->Y0 < 0) GP->Y0 = y0;
     else if(GP->Y0 > y1-1) GP->Y0 = y1-1;
     if(GP->X1 < GP->X0+1 || GP->X1 > x1) GP->X1 = x1;
     if(GP->Y1 < GP->Y0+1 || GP->Y1 > y1) GP->Y1 = y1;
+    DBG("x1/x0: %d/%d", GP->X1, GP->X0);
     frameformat fmt = {.w = GP->X1 - GP->X0, .h = GP->Y1 - GP->Y0, .xoff = GP->X0, .yoff = GP->Y0};
-    int raw_width = fmt.w / GP->hbin,  raw_height = fmt.h / GP->vbin;
     if(!camera->setgeometry(&fmt))
         WARNX(_("Can't set given geometry"));
     verbose(3, "Geometry: off=%d/%d, wh=%d/%d", fmt.xoff, fmt.yoff, fmt.w, fmt.h);
@@ -757,7 +762,7 @@ void ccds(){
     if(!camera->getbin(&GP->hbin, &GP->vbin)) // GET binning should be AFTER setgeometry!
         WARNX(_("Can't get current binning"));
     verbose(2, "Binning: %d x %d", GP->hbin, GP->vbin);
-
+    int raw_width = fmt.w / GP->hbin,  raw_height = fmt.h / GP->vbin;
 
     uint16_t *img = MALLOC(uint16_t, raw_width * raw_height);
     DBG("\n\nAllocated image 2x%dx%d=%d", raw_width, raw_height, 2 * raw_width * raw_height);
@@ -793,8 +798,12 @@ void ccds(){
             break;
         }
         calculate_stat(&ima);
-        saveFITS(&ima, NULL);
 #ifdef IMAGEVIEW
+        if(!GP->showimage){ // don't save all FITS files in imagev view mode
+#endif
+            saveFITS(&ima, NULL);
+#ifdef IMAGEVIEW
+        }
         if(GP->showimage){ // display image
             if((mainwin = getWin())){
                 DBG("change image");

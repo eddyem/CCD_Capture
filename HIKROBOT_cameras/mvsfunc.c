@@ -23,6 +23,7 @@
 #include <usefull_macros.h>
 
 #include "basestructs.h"
+#include "omp.h"
 
 #ifndef FLT_EPSILON
 #define FLT_EPSILON 1.19209290E-07F
@@ -467,6 +468,7 @@ static int cam_capt(IMG *ima){
     DBG("TRANSFORM 8 bit to 16");
     bytes /= 2;
     uint8_t *ptr = (uint8_t*) pdata;
+    OMP_FOR()
     for(int i = 0; i < bytes; ++i){
         ima->data[i] = (uint16_t) *ptr++;
     }

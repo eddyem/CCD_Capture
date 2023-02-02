@@ -663,7 +663,7 @@ static int fli_fpfalse(_U_ float *f){ return FALSE; }
 /*
  * Global objects: camera, focuser and wheel
  */
-Camera camera = {
+__attribute__ ((visibility("default"))) Camera camera = {
     .check = fli_findCCD,
     .close = fli_closecam,
     .pollcapture = fli_pollcapt,
@@ -699,7 +699,7 @@ Camera camera = {
     .getio = fli_getio,
 };
 
-Focuser focuser = {
+__attribute__ ((visibility("default"))) Focuser focuser = {
     .check = fli_findFocuser,
     .setDevNo = fli_setActiceFocuser,
     .close = fli_closefocuser,
@@ -712,7 +712,7 @@ Focuser focuser = {
     .setAbsPos = fli_fgoto,
 };
 
-Wheel wheel = {
+__attribute__ ((visibility("default"))) Wheel wheel = {
     .check = fli_findWheel,
     .setDevNo = fli_setActiceWheel,
     .close = fli_closewheel,

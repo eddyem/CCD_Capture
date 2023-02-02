@@ -84,7 +84,7 @@ static void processKeybrd(unsigned char key, int mod, _U_ int x, _U_ int y){
  *	Process keyboard
  */
 void keyPressed(unsigned char key, int x, int y){
-    int mod = glutGetModifiers();
+    int mod = glutGetModifiers() & 7;
     //mod: GLUT_ACTIVE_SHIFT, GLUT_ACTIVE_CTRL, GLUT_ACTIVE_ALT; result is their sum
     DBG("Key pressed. mod=%d, keycode=%d (%c), point=(%d,%d)\n", mod, key, key, x,y);
     processKeybrd(key, mod, x, y);
@@ -101,7 +101,7 @@ static int movingwin = 0; // ==1 when user moves image by middle button
 void mousePressed(int key, int state, int x, int y){
 // key: GLUT_LEFT_BUTTON, GLUT_MIDDLE_BUTTON, GLUT_RIGHT_BUTTON
 // state: GLUT_UP, GLUT_DOWN
-    int mod = glutGetModifiers();
+    int mod = glutGetModifiers() & 7;
     windowData *win = getWin();
     if(!win) return;
     if(state == GLUT_DOWN){

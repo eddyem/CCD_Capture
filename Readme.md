@@ -1,7 +1,7 @@
 CCD/CMOS imaging server
 =======================
 
-Supports FLI cameras/focusers/wheels and ZWO cameras.
+Supports FLI cameras/focusers/wheels and cameras: ZWO, Basler, HikRobot.
 Allows to run as standalone application or imaging server/client.
 
 To restart server (e.g. if hardware was off) kill it with SIGUSR1
@@ -10,11 +10,12 @@ To restart server (e.g. if hardware was off) kill it with SIGUSR1
 
 cmake options:
 
-- `-DDEBUG=yes` -- make with a lot debugging info 
-- `-DIMAGEVIEW=yes -- compile with image viewer support (only for standalone) (OpenGL!!!)
-- `-DZWO=yes` -- compile ZWO support plugin
-- `-DFLI=yes` -- compile FLI support plugin
-
+- `-DDEBUG=ON` - make with a lot debugging info
+- `-DIMAGEVIEW=ON` - compile with image viewer support (only for standalone) (OpenGL!!!)
+- `-DBASLER=ON` - compile Basler support plugin
+- `-DFLI=ON` - compile FLI support plugin
+- `-DHIKROBOT=ON` - compile HikRobot support plugin
+- `-DZWO=ON` - compile ZWO support plugin
 
 
 ```
@@ -78,4 +79,27 @@ Usage: ccd_capture [args] [output file prefix]
   --wait                      wait while exposition ends
   --wheeldevno=arg            filter wheel device number (if many: 0, 1, 2 etc)
 ```
+
+## Image viewer
+In image view mode you can display menu by clicking of right mouse key or use shortcuts:
+
+- '0' - restore zoom;
+- 'c' - capture new image in pause mode (works only with `-n` flag);
+- 'e' - switch on/off histogram equalization;
+- 'l' - flip image right-left;
+- 'p' - pause or resume capturing (works only with `-n` flag);
+- 'u' - flip image up-down;
+- 'Z' - zoom+;
+- 'z' - zoom-;
+- 'Ctrl+r' - roll histogram conversion function (LOG, SQRT, POW, LINEAR);
+- 'Ctrl+s' - save displayed image (works only if you pointed output file name or prefix);
+- 'Ctrl+q' - exit.
+
+Mouse functions:
+
+- Left button - center selected point.
+- Middle button - move image.
+- Right button - show menu.
+- Wheel up - scroll up, or scroll left (with Shift), or zoom+ (with Ctrl).
+- Wheel down - scroll down, or scroll right (with Shift), or zoom- (with Ctrl).
 

@@ -1,13 +1,21 @@
 cmake_minimum_required(VERSION 3.20)
 set(PROJ ccd_capture)
 set(MINOR_VERSION "0")
-set(MID_VERSION "0")
+set(MID_VERSION "1")
 set(MAJOR_VERSION "1")
 set(VERSION "${MAJOR_VERSION}.${MID_VERSION}.${MINOR_VERSION}")
 
 project(${PROJ} VERSION ${VERSION} LANGUAGES C)
 
 message("VER: ${VERSION}")
+
+# list of options
+option(DEBUG "Compile in debug mode" OFF)
+option(IMAGEVIEW "Build with imageview module" OFF)
+option(ZWO "Add support of ZWO cameras" OFF)
+option(FLI "Add support of FLI cameras" OFF)
+option(BASLER "Add support of BASLER cameras" OFF)
+option(HIKROBOT "Add support of HIKROBOT cameras" OFF)
 
 # default flags
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -W -Wextra -std=gnu99")
@@ -36,14 +44,14 @@ set(CMAKE_COLOR_MAKEFILE ON)
 set(SOURCES main.c cmdlnopts.c ccdfunc.c socket.c server.c client.c)
 
 # cmake -DDEBUG=yes -> debugging
-if(DEFINED DEBUG AND DEBUG STREQUAL "yes")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Og -ggdb -fno-builtin-strlen -Werror")
+if(DEBUG)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Og -g3 -ggdb -fno-builtin-strlen -Werror")
     add_definitions(-DEBUG)
     set(CMAKE_BUILD_TYPE DEBUG)
     set(CMAKE_VERBOSE_MAKEFILE "ON")
 else()
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -march=native -fdata-sections -ffunction-sections")
-    SET(CMAKE_EXE_LINKER_FLAGS "-Wl,--gc-sections")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -march=native -fdata-sections -ffunction-sections -flto")
+    SET(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--gc-sections -flto")
     set(CMAKE_BUILD_TYPE RELEASE)
 endif()
 
@@ -59,7 +67,7 @@ if(OPENMP_FOUND)
     add_definitions(-DOMP_FOUND)
 endif()
 
-if(DEFINED IMAGEVIEW AND IMAGEVIEW STREQUAL "yes")
+if(IMAGEVIEW)
     list(APPEND SOURCES events.c imageview.c)
     find_package(OpenGL REQUIRED)
     find_package(GLUT REQUIRED)
@@ -72,16 +80,17 @@ endif()
 add_subdirectory(Dummy_cameras)
 
 # additional modules with CCD/CMOS support
-if(DEFINED ZWO AND ZWO STREQUAL "yes")
+if(ZWO)
     add_subdirectory(ZWO_cameras)
 endif()
-
-if(DEFINED FLI AND FLI STREQUAL "yes")
+if(FLI)
     add_subdirectory(FLI_cameras)
 endif()
-
-if(DEFINED HIKROBOT AND HIKROBOT STREQUAL "yes")
+if(HIKROBOT)
     add_subdirectory(HIKROBOT_cameras)
+endif()
+if(BASLER)
+    add_subdirectory(BASLER_cameras)
 endif()
 
 
