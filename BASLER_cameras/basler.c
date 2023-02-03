@@ -36,28 +36,6 @@ static uint32_t expostime = 0.; // current exposition time (in microseconds)
 static PYLON_DEVICECALLBACK_HANDLE hCb;
 static int curhbin = 1, curvbin = 1;
 
-#if 0
-static void *handle = NULL;
-static char camname[BUFSIZ] = {0};
-//static long cam_err, tmpl;
-static capture_status capStatus = CAPTURE_NO;
-static int curhbin = 1, curvbin = 1;
-static double starttime = 0.;   // time when exposure started
-static float exptime = 0.;      // exposition time (in seconds)
-static uint8_t *pdata = NULL;
-static int pdatasz = 0;
-
-static struct{
-    float maxgain;
-    float mingain;
-    float maxbright;
-    float minbright;
-    float minexp;
-    float maxexp;
-    int maxbin;
-} extrvalues = {0}; // extremal values
-#endif
-
 typedef struct{
     int64_t min;
     int64_t max;
@@ -298,7 +276,6 @@ static int setdevno(int N){
         PYLONFN(PylonDeviceFeatureToString, hDev, "DeviceModelName", camname, &l);
         DBG("Using camera %s\n", camname);
     }else strcpy(camname, "Unknown camera");
-    if(!getbin(NULL, NULL)) WARNX("Can't get current binning");
     if(!getgeom()) WARNX("Can't get current frame format");
 
     PylonDeviceRegisterRemovalCallback(hDev, removalCallbackFunction, &hCb);
@@ -390,6 +367,7 @@ static int capture(IMG *ima){
             }
         }
     }
+    ima->bitpix = (is16bit) ? 16 : 8;
     return TRUE;
 }
 
@@ -404,7 +382,6 @@ static int setexp(float e){
     if(!isopened) return FALSE;
     e *= 1e6f;
     if(!setFloat("ExposureTime", e)){
-       LOGWARN("Can't set expose time %g", e);
        WARNX("Can't set expose time %g", e);
        return FALSE;
     }
@@ -419,7 +396,6 @@ static int setgain(float e){
     FNAME();
     if(!isopened) return FALSE;
     if(!setFloat("Gain", e)){
-       LOGWARN("Can't set gain %g", e);
        WARNX("Can't set gain %g", e);
        return FALSE;
     }
@@ -500,21 +476,6 @@ static int ifalse(_U_ int i){ return FALSE; }
 static int vtrue(){ return TRUE; }
 static int ipfalse(_U_ int *i){ return FALSE; }
 static void vstub(){ return ;}
-
-#if 0
-// exported object
-camera Basler = {
-    .disconnect = disconnect,
-    .connect = connect,
-    .capture = capture,
-    .setbrightness = setbrightness,
-    .setexp = setexp,
-    .setgain = setgain,
-    .setgeometry = changeformat,
-    .getgeomlimits = geometrylimits,
-    .getmaxgain = gainmax,
-};
-#endif
 
 /*
  * Global objects: camera, focuser and wheel

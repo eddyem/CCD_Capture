@@ -458,6 +458,7 @@ static int cam_capt(IMG *ima){
 //green("pixsize=%d\n", EnumValue.nCurValue);
         if(EnumValue.nCurValue == 16){
             memcpy(ima->data, pdata, bytes);
+            ima->bitpix = 12;
             return TRUE;
         }else if(EnumValue.nCurValue != 8){
             WARNX("Unsupported pixel size");
@@ -472,6 +473,7 @@ static int cam_capt(IMG *ima){
     for(int i = 0; i < bytes; ++i){
         ima->data[i] = (uint16_t) *ptr++;
     }
+    ima->bitpix = 8;
     return TRUE;
 }
 

@@ -248,8 +248,7 @@ int saveFITS(IMG *img, char **outp){
     // DATAMAX, DATAMIN / Max, min pixel value
     tmpi = 0;
     WRITEKEY(fp, TINT, "DATAMIN", &tmpi, "Min pixel value");
-    //itmp = GP->fast ? 255 : 65535;
-    tmpi = 65535;
+    tmpi = (1<<img->bitpix) - 1;
     WRITEKEY(fp, TINT, "DATAMAX", &tmpi, "Max pixel value");
     tmpi = img->min;
     WRITEKEY(fp, TUSHORT, "STATMIN", &tmpi, "Min data value");

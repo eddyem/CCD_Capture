@@ -74,6 +74,7 @@ static int camcapt(IMG *ima){
             *d++ = (uint16_t)((1 + sin((n+x) * M_PI/50)*sin((n+y) * M_PI/100))*32767.);
         }
     ++n;
+    ima->bitpix = 16;
     return TRUE;
 }
 

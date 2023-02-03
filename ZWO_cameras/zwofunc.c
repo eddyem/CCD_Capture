@@ -119,6 +119,7 @@ static int camcapt(IMG *ima){
         WARNX("Couldn't read exposure data\n");
         return FALSE;
     }
+    ima->bitpix = 16;
     return TRUE;
 }
 

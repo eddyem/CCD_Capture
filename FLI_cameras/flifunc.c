@@ -67,6 +67,7 @@ static capture_status capStatus = CAPTURE_NO;
 static int curhbin = 1, curvbin = 1;
 static long filterpos = -1, filtermax = -1;  // filter position
 static long focuserpos = -1, focmaxpos = -1; // focuser position
+static int is16bit = TRUE;
 
 static int fli_init(){
     char libver[LIBVERSIZ]; // FLI library version
@@ -465,6 +466,7 @@ static int fli_capt(IMG *ima){
         TRYFUNC(FLIGrabRow, camdev, &ima->data[row * ima->w], ima->w);
         if(fli_err) return FALSE;
     }
+    ima->bitpix = is16bit ? 16 : 8;
     return TRUE;
 }
 
@@ -619,6 +621,7 @@ static int fli_setbitdepth(int i){
     flibitdepth_t depth = i ? FLI_MODE_16BIT : FLI_MODE_8BIT;
     TRYFUNC(FLISetBitDepth, camdev, depth);
     if(fli_err) return FALSE;
+    is16bit = (i) ? TRUE : FALSE;
     return TRUE;
 }
 

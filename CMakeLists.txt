@@ -16,6 +16,7 @@ option(ZWO "Add support of ZWO cameras" OFF)
 option(FLI "Add support of FLI cameras" OFF)
 option(BASLER "Add support of BASLER cameras" OFF)
 option(HIKROBOT "Add support of HIKROBOT cameras" OFF)
+option(FLYCAP "Add support of Grasshopper FlyCap cameras" OFF)
 
 # default flags
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -W -Wextra -std=gnu99")
@@ -91,6 +92,9 @@ if(HIKROBOT)
 endif()
 if(BASLER)
     add_subdirectory(BASLER_cameras)
+endif()
+if(FLYCAP)
+    add_subdirectory(GRH_cameras)
 endif()
 
 

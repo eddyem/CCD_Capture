@@ -24,6 +24,7 @@
 
 typedef struct{
     uint16_t *data;             // image data
+    uint8_t bitpix;             // bits per pixel (8 or 16)
     int w, h;                   // image size
     uint16_t max, min;          // min/max values
     float avr, std;             // statistics
