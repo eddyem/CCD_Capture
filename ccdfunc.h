@@ -30,14 +30,16 @@ void calculate_stat(IMG *image);
 int saveFITS(IMG *img, char **outp); // for imageview module
 void focusers();
 void wheels();
+int prepare_ccds();
 void ccds();
 void cancel();
 
 int startCCD(void **dlh);
 int startWheel(void **dlh);
 int startFocuser(void **dlh);
-void focclose(void *dlh);
-void closewheel(void *dlh);
-void closecam(void *dlh);
+void focclose();
+void closewheel();
+void closecam();
+int ccdcaptured(IMG **img);
 
 #endif // CCDFUNC_H__

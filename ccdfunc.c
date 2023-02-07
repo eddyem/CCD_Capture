@@ -19,6 +19,7 @@
 #include <dlfcn.h>  // dlopen/close
 #include <fitsio.h>
 #include <math.h>
+#include <signal.h> // pthread_kill
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -424,11 +425,10 @@ int startFocuser(void **dlh){
     return TRUE;
 }
 
-void focclose(void *dlh){
-    if(!dlh || !focuser) return;
+void focclose(){
+    if(!focuser) return;
     focuser->close();
     focuser = NULL;
-    //dlclose(dlh);
 }
 
 /*
@@ -497,7 +497,7 @@ void focusers(){
         if(!focuser->setAbsPos(GP->async, tagpos)) WARNX(_("Can't set position %g"), tagpos);
     }
 retn:
-    focclose(dlh);
+    focclose();
 }
 
 int startWheel(void **dlh){
@@ -516,11 +516,10 @@ int startWheel(void **dlh){
     return TRUE;
 }
 
-void closewheel(void *dlh){
-    if(!dlh || !wheel) return;
+void closewheel(){
+    if(!wheel) return;
     wheel->close();
     wheel = NULL;
-    //dlclose(dlh);
 }
 
 /*
@@ -574,7 +573,7 @@ void wheels(){
     if(!wheel->setPos(pos))
         WARNX(_("Can't set wheel position %d"), pos);
 retn:
-    closewheel(dlh);
+    closewheel();
 }
 /*
 static void closeall(){
@@ -617,24 +616,19 @@ int startCCD(void **dlh){
     return TRUE;
 }
 
-void closecam(void *dlh){
-    if(!dlh || !camera) return;
+void closecam(){
+    if(!camera) return;
     DBG("Close cam");
     camera->close();
     camera = NULL;
-    DBG("close dlh");
-    //dlclose(dlh);
 }
 
-/*
- * Find CCDs and work with each of them
- */
-void ccds(){
+// make base settings; return TRUE if all OK
+int prepare_ccds(){
     FNAME();
-    float tmpf;
-    int tmpi;
+    int rtn = FALSE;
     void *dlh = NULL;
-    if(!startCCD(&dlh)) return;
+    if(!startCCD(&dlh)) return FALSE;
     if(GP->listdevices){
         for(int i = 0; i < camera->Ndevices; ++i){
             if(!camera->setDevNo(i)) continue;
@@ -681,6 +675,7 @@ void ccds(){
             WARNX(_("Can't set T to %g degC"), GP->temperature);
         verbose(3, "SetT=%.1f", GP->temperature);
     }
+    float tmpf;
     if(camera->getTcold(&tmpf)) verbose(1, "CCDTEMP=%.1f", tmpf);
     if(camera->getTbody(&tmpf)) verbose(1, "BODYTEMP=%.1f", tmpf);
     if(GP->shtr_cmd > -1 && GP->shtr_cmd < SHUTTER_AMOUNT){
@@ -695,6 +690,7 @@ void ccds(){
         if(!camera->confio(GP->confio))
             WARNX(_("Can't configure (unsupported?)"));
     }
+    int tmpi;
     if(GP->getio){
         if(camera->getio(&tmpi))
             verbose(0, "CCDIOPORT=0x%02X\n", tmpi);
@@ -761,23 +757,23 @@ void ccds(){
     if(!camera->getbin(&GP->hbin, &GP->vbin)) // GET binning should be AFTER setgeometry!
         WARNX(_("Can't get current binning"));
     verbose(2, "Binning: %d x %d", GP->hbin, GP->vbin);
-    int raw_width = fmt.w / GP->hbin,  raw_height = fmt.h / GP->vbin;
+    rtn = TRUE;
+retn:
+    if(!rtn) closecam();
+    return rtn;
+}
 
+/*
+ * Main CCD process in standalone mode without viewer: get N images and save them
+ */
+void ccds(){
+    FNAME();
+    frameformat fmt = camera->geometry;
+    int raw_width = fmt.w / GP->hbin,  raw_height = fmt.h / GP->vbin;
+DBG("w=%d, h=%d", raw_width, raw_height);
     uint16_t *img = MALLOC(uint16_t, raw_width * raw_height);
     DBG("\n\nAllocated image 2x%dx%d=%d", raw_width, raw_height, 2 * raw_width * raw_height);
     IMG ima = {.data = img, .w = raw_width, .h = raw_height};
-#ifdef IMAGEVIEW
-    windowData *mainwin = NULL;
-    if(GP->showimage){
-        imageview_init();
-        DBG("Create new win");
-        mainwin = createGLwin("Sample window", raw_width, raw_height, NULL);
-        if(!mainwin){
-            WARNX(_("Can't open OpenGL window, image preview will be inaccessible"));
-        }else
-            pthread_create(&mainwin->thread, NULL, &image_thread, (void*)&ima);
-    }
-#endif
     if(GP->nframes < 1) GP->nframes = 1;
     for(int j = 0; j < GP->nframes; ++j){
         // Захват кадра %d\n
@@ -797,44 +793,13 @@ void ccds(){
             break;
         }
         calculate_stat(&ima);
-#ifdef IMAGEVIEW
-        if(!GP->showimage){ // don't save all FITS files in imagev view mode
-#endif
-            saveFITS(&ima, NULL);
-#ifdef IMAGEVIEW
-        }
-        if(GP->showimage){ // display image
-            if((mainwin = getWin())){
-                DBG("change image");
-                change_displayed_image(mainwin, &ima);
-                while((mainwin = getWin())){ // test paused state & grabbing custom frames
-                    if((mainwin->winevt & WINEVT_PAUSE) == 0) break;
-                    if(mainwin->winevt & WINEVT_GETIMAGE){
-                        mainwin->winevt &= ~WINEVT_GETIMAGE;
-                        //if(!camera) return;
-                        if(capt() != CAPTURE_READY){
-                            WARNX(_("Can't capture image"));
-                        }else{
-                            //if(!camera) return;
-                            if(!camera->capture(&ima)){
-                                WARNX(_("Can't grab image"));
-                            }
-                            else{
-                                calculate_stat(&ima);
-                                change_displayed_image(mainwin, &ima);
-                            }
-                        }
-                    }
-                    usleep(10000);
-                }
-            }else break; // stop capturing when window closed
-        }
-#endif
+        saveFITS(&ima, NULL);
         if(GP->pause_len && j != (GP->nframes - 1)){
             double delta, time1 = dtime() + GP->pause_len;
             while((delta = time1 - dtime()) > 0.){
                 // %d секунд до окончания паузы\n
                 verbose(1, _("%d seconds till pause ends\n"), (int)delta);
+                float tmpf;
                 if(camera->getTcold(&tmpf)) verbose(1, "CCDTEMP=%.1f\n", tmpf);
                 if(camera->getTbody(&tmpf)) verbose(1, "BODYTEMP=%.1f\n", tmpf);
                 if(delta > 6.) sleep(5);
@@ -843,43 +808,89 @@ void ccds(){
             }
         }
     }
-#ifdef IMAGEVIEW
-    if(GP->showimage){
-        if((mainwin = getWin())) mainwin->winevt |= WINEVT_PAUSE;
-        DBG("Waiting");
-        while((mainwin = getWin())){
-            //if(mainwin->killthread) break;
-            if(mainwin->winevt & WINEVT_GETIMAGE){
-                DBG("GRAB");
-                mainwin->winevt &= ~WINEVT_GETIMAGE;
-                //if(!camera) return;
-                if(capt() != CAPTURE_READY){
-                    WARNX(_("Can't capture image"));
-                }else{
-                    //if(!camera) return;
-                    if(!camera->capture(&ima)){
-                        WARNX(_("Can't grab image"));
-                    }
-                    else{
-                        calculate_stat(&ima);
-                        change_displayed_image(mainwin, &ima);
-                    }
-                }
-            }
-        }
-        DBG("Close window");
-        usleep(10000);
-    }
-#endif
     DBG("FREE img");
     FREE(img);
-retn:
-    closecam(dlh);
-    DBG("closed -> out");
+    closecam();
 }
 
 void cancel(){
     if(camera){
         camera->cancel();
     }
+}
+
+static volatile int grabends = 1;
+static void *grabnext(void *arg){
+    FNAME();
+    grabends = 0;
+    static int retval = FALSE;
+    IMG *ima = (IMG*) arg;
+    DBG("nxt");
+    if(!ima || !camera) goto eof;
+    if(!camera->startexposition()){ WARNX(_("Can't start exposition")); goto eof; }
+    capture_status cs;
+    DBG("Poll");
+    while(!camera->pollcapture(&cs, NULL)){
+        usleep(10000);
+        if(!camera) goto eof;
+    }
+    DBG("get");
+    if(!camera->capture(ima)){ WARNX(_("Can't grab image")); goto eof; }
+    calculate_stat(ima);
+    retval = TRUE;
+    DBG("OK");
+eof:
+    grabends = 1;
+    pthread_exit((void*)&retval);
+    DBG("EXIT");
+}
+
+/**
+ * @brief ccdcaptured - get new image data for viewer
+ * @param img - pointer to IMG* (if IMG* is NULL, will be allocated here)
+ * @return TRUE if new image available
+ */
+int ccdcaptured(IMG **imgptr){
+    if(!imgptr) return FALSE;
+    static pthread_t grabthread = 0;
+    if(imgptr == (void*)-1){ // kill `grabnext`
+        DBG("Kill grabbing thread");
+        if(grabthread){
+            pthread_cancel(grabthread);
+            pthread_join(grabthread, NULL);
+            grabthread = 0;
+        }
+        DBG("Killed");
+        return FALSE;
+    }
+    frameformat fmt = camera->geometry;
+    int raw_width = fmt.w / GP->hbin,  raw_height = fmt.h / GP->vbin;
+    IMG *ima = NULL;
+    if(!*imgptr){
+        uint16_t *img = MALLOC(uint16_t, raw_width * raw_height);
+        DBG("\n\nAllocated image 2x%dx%d=%d", raw_width, raw_height, 2 * raw_width * raw_height);
+        ima = MALLOC(IMG, 1);
+        ima->data = img;
+        ima->w = raw_width;
+        ima->h = raw_height;
+        *imgptr = ima;
+    }else ima = *imgptr;
+    if(!grabthread){ // start new grab
+        DBG("\n\n\nStart new grab");
+        if(pthread_create(&grabthread, NULL, &grabnext, (void*)ima)){
+            WARN("Can't create grabbing thread");
+            grabthread = 0;
+       }
+    }else{ // grab in process
+        if(grabends){ // thread is dead
+            DBG("Thread is dead");
+            void *vr;
+            pthread_join(grabthread, &vr);
+            int retcode = *(int*)vr;
+            DBG("retcode = %d", retcode);
+            grabthread = 0;
+            if(retcode) return TRUE;
+        }
+    }
+    return FALSE;
 }

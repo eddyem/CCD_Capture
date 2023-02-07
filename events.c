@@ -21,11 +21,12 @@
 #include "events.h"
 #include "imageview.h"
 
+extern windowData *win;
+
 /**
  * manage pressed keys & menu items
  */
 static void processKeybrd(unsigned char key, int mod, _U_ int x, _U_ int y){
-    windowData *win = getWin();
     if(!win) return;
     DBG("key=%d (%c), mod=%d", key, key, mod);
     if(mod == GLUT_ACTIVE_CTRL){ // 'a' == 1, 'b' == 2...
@@ -102,7 +103,6 @@ void mousePressed(int key, int state, int x, int y){
 // key: GLUT_LEFT_BUTTON, GLUT_MIDDLE_BUTTON, GLUT_RIGHT_BUTTON
 // state: GLUT_UP, GLUT_DOWN
     int mod = glutGetModifiers() & 7;
-    windowData *win = getWin();
     if(!win) return;
     if(state == GLUT_DOWN){
         oldx = x; oldy = y;
@@ -130,7 +130,6 @@ void mousePressed(int key, int state, int x, int y){
 }
 
 void mouseMove(int x, int y){
-    windowData *win = getWin();
     if(!win) return;
     if(movingwin){
         float X, Y, nx, ny, w2, h2;
@@ -183,7 +182,6 @@ static const menuentry entries[] = {
 
 void createMenu(){
     FNAME();
-    windowData *win = getWin();
     if(!win) return;
     DBG("menu for win ID %d", win->ID);
     glutSetWindow(win->ID);

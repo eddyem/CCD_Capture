@@ -28,7 +28,7 @@
 #include "imageview.h"
 #include "omp.h"
 
-static windowData *win = NULL; // main window
+windowData *win = NULL; // main window (common variable for events.c)
 static pthread_t GLUTthread = 0; // main GLUT thread
 static int imequalize = TRUE;
 static int initialized = 0; // ==1 if GLUT is initialized; ==0 after clear_GL_context
@@ -37,6 +37,24 @@ static void *Redraw(_U_ void *p);
 static void createWindow();
 static void RedrawWindow();
 static void Resize(int width, int height);
+
+/**
+ * Init freeGLUT
+ */
+static void imageview_init(){
+    FNAME();
+    char *v[] = {"Image view window", NULL};
+    int c = 1;
+    if(initialized){
+        WARNX(_("Already initialized!"));
+        return;
+    }
+    XInitThreads(); // we need it for threaded windows
+    glutInit(&c, v);
+    glutInitDisplayMode(GLUT_RGB | GLUT_DOUBLE | GLUT_DEPTH);
+    glutSetOption(GLUT_ACTION_ON_WINDOW_CLOSE, GLUT_ACTION_CONTINUE_EXECUTION);
+    initialized = 1;
+}
 
 /**
  * calculate window properties on creating & resizing
@@ -109,7 +127,7 @@ static void createWindow(){
     DBG("Window opened");
 }
 
-int killwindow(){
+static int killwindow(){
     if(!win) return 0;
     if(!win->killthread){
         // say threads to die
@@ -140,7 +158,8 @@ int killwindow(){
     return 1;
 }
 
-void renderBitmapString(float x, float y, void *font, char *string, GLubyte *color){
+/*
+static void renderBitmapString(float x, float y, void *font, char *string, GLubyte *color){
     if(!initialized) return;
     char *c;
     int x1=x, W=0;
@@ -159,7 +178,7 @@ void renderBitmapString(float x, float y, void *font, char *string, GLubyte *col
         //glutStrokeCharacter(GLUT_STROKE_ROMAN, *c);
         x1 = x1 + glutBitmapWidth(font,*c);// + 1;
     }
-}
+}*/
 
 static void RedrawWindow(){
     //DBG("ini=%d, win=%s", initialized, win ? "yes" : "no");
@@ -213,6 +232,7 @@ static void *Redraw(_U_ void *arg){
 
 static void Resize(int width, int height){
     FNAME();
+    if(!initialized) return;
     if(!initialized || !win || win->killthread) return;
     glutReshapeWindow(width, height);
     win->w = width;
@@ -236,7 +256,7 @@ static void Resize(int width, int height){
  * @param rawdata - NULL (then the memory will be allocated here with size w x h)
  *            or allocated outside data
  */
-windowData *createGLwin(char *title, int w, int h, rawimage *rawdata){
+static void createGLwin(char *title, int w, int h, rawimage *rawdata){
     FNAME();
     if(!initialized) imageview_init();
     if(win) killwindow();
@@ -255,57 +275,21 @@ windowData *createGLwin(char *title, int w, int h, rawimage *rawdata){
         }
     }
     if(!raw || !raw->rawdata){
-        free(raw);
-        return NULL;
+        FREE(raw);
+        FREE(win);
+        return;
     }
     win->title = strdup(title);
     win->image = raw;
     if(pthread_mutex_init(&win->mutex, NULL)){
         WARN(_("Can't init mutex!"));
         killwindow();
-        return NULL;
+        return;
     }
     win->w = w;
     win->h = h;
     pthread_create(&GLUTthread, NULL, &Redraw, NULL);
-    return win;
 }
-
-/**
- * Init freeGLUT
- */
-void imageview_init(){
-    FNAME();
-    char *v[] = {"Image view window", NULL};
-    int c = 1;
-    if(initialized){
-        WARNX(_("Already initialized!"));
-        return;
-    }
-    XInitThreads(); // we need it for threaded windows
-    glutInit(&c, v);
-    glutInitDisplayMode(GLUT_RGB | GLUT_DOUBLE | GLUT_DEPTH);
-    glutSetOption(GLUT_ACTION_ON_WINDOW_CLOSE, GLUT_ACTION_CONTINUE_EXECUTION);
-    initialized = 1;
-}
-
-/**
- * Close all opened windows and terminate main GLUT thread
- */
-void clear_GL_context(){
-    FNAME();
-    if(!initialized) return;
-    initialized = 0;
-    cancel(); // cancel expositions
-    DBG("kill");
-    killwindow();
-    DBG("join");
-    DBG("Leave mainloop");
-    glutLeaveMainLoop();
-    if(GLUTthread) pthread_join(GLUTthread, NULL); // wait while main thread exits
-    DBG("main GL thread cancelled");
-}
-
 
 /*
  * Coordinates transformation from CS of drawingArea into CS of picture
@@ -326,11 +310,6 @@ void conv_image_to_mouse_coords(float X, float Y,
     float a = window->zoom / window->Daspect;
     *x = (int)roundf((X + window->x0) * a);
     *y = (int)roundf((window->y0 - Y) * a);
-}
-
-
-windowData *getWin(){
-    return win;
 }
 
 /**
@@ -451,12 +430,21 @@ static uint8_t *equalize(uint16_t *ori, int w, int h){
     return retn;
 }
 
-void change_displayed_image(windowData *win, IMG *img){
+static void change_displayed_image(IMG *img){
     if(!win || !win->image) return;
-    rawimage *im = win->image;
-    DBG("imh=%d, imw=%d, ch=%u, cw=%u", im->h, im->w, img->w, img->h);
     pthread_mutex_lock(&win->mutex);
+    rawimage *im = win->image;
+    DBG("imh=%d, imw=%d, ch=%u, cw=%u", im->h, im->w, img->h, img->w);
     int w = img->w, h = img->h, s = w*h;
+    if(!im || (im->h != h) || (im->w != w)){ // realloc image to new size
+        DBG("\n\nRealloc rawdata");
+        if(im) FREE(im->rawdata);
+        else im = MALLOC(rawimage, 1);
+        im->rawdata = MALLOC(GLubyte, w*h*3);
+        im->h = h; im->w = w;
+        win->image = im;
+        DBG("win->image changed");
+    }
     if(imequalize){
         uint8_t *newima = equalize(img->data, w, h);
         GLubyte *dst = im->rawdata;
@@ -490,11 +478,13 @@ void change_displayed_image(windowData *win, IMG *img){
     pthread_mutex_unlock(&win->mutex);
 }
 
-void* image_thread(_U_ void *data){
+#if 0
+// thread for checking
+static void* image_thread(void *data){
     FNAME();
-    IMG *img = (IMG*) data;
+    IMG *(*newimage)(const char *) = (IMG*(*)(const char*)) data;
+    IMG *img = NULL;
     while(1){
-        windowData *win = getWin();
         if(!win || win->killthread){
             DBG("got killthread");
             clear_GL_context();
@@ -520,9 +510,77 @@ void* image_thread(_U_ void *data){
         usleep(10000);
     }
 }
+#endif
 
 void closeGL(){
-    windowData *win = getWin();
     if(win) win->killthread = 1;
-    while(getWin()) usleep(1000);
+    usleep(1000);
+    if(!initialized) return;
+    initialized = 0;
+    cancel(); // cancel expositions
+    DBG("kill");
+    killwindow();
+    DBG("Leave mainloop");
+    glutLeaveMainLoop();
+    DBG("join");
+    if(GLUTthread) pthread_join(GLUTthread, NULL); // wait while main thread exits
+    DBG("main GL thread cancelled");
+    usleep(1000);
 }
+
+/**
+ * @brief viewer - main viewer process
+ * @param newimage - image refresh function
+ * @return 0 if all OK
+ */
+int viewer(imagefunc newimage){
+    if(!newimage){
+        WARNX("No image changing function defined");
+        return 1;
+    }
+    imageview_init();
+    DBG("Create new win");
+    createGLwin("Sample window", 1024, 1024, NULL);
+    if(!win){
+        WARNX(_("Can't open OpenGL window, image preview will be inaccessible"));
+        return 1;
+    }
+    IMG *img = NULL;
+    while(1){
+        if(!win || win->killthread){
+            DBG("got killthread");
+            newimage((void*)-1);
+            signals(0); // just run common cleaner
+            return 0;
+        }
+        if((win->winevt & WINEVT_GETIMAGE) || !(win->winevt & WINEVT_PAUSE)){
+            if(newimage(&img)){
+                win->winevt &= ~WINEVT_GETIMAGE;
+                change_displayed_image(img); // change image if refreshed
+            }
+        }
+        if(!win->winevt){
+            usleep(10000);
+            continue;
+        }
+        if(win->winevt & WINEVT_SAVEIMAGE){ // save image
+            verbose(2, "Make screenshot\n");
+            saveFITS(img, NULL);
+            win->winevt &= ~WINEVT_SAVEIMAGE;
+        }
+        if(win->winevt & WINEVT_ROLLCOLORFUN){
+            roll_colorfun();
+            win->winevt &= ~WINEVT_ROLLCOLORFUN;
+            change_displayed_image(img);
+        }
+        if(win->winevt & WINEVT_EQUALIZE){
+            win->winevt &= ~WINEVT_EQUALIZE;
+            imequalize = !imequalize;
+            verbose(1, _("Equalization of histogram: %s"), imequalize ? N_("on") : N_("off"));
+            change_displayed_image(img);
+        }
+    }
+}
+
+// getter for events.c
+windowData* getWin(){ return win;}

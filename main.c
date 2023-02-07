@@ -40,7 +40,7 @@ static int isserver = FALSE;
 static pid_t childpid = 0;
 
 void signals(int signo){
-    signal(signo, SIG_IGN);
+    if(signo) signal(signo, SIG_IGN);
     if(childpid){ // master process
         if(signo == SIGUSR1){ // kill child
             kill(childpid, signo);
@@ -56,7 +56,7 @@ void signals(int signo){
         exit(signo);
     }
     // slave: cancel exposition
-    WARNX("Get signal %d - exit", signo);
+    if(signo) WARNX("Get signal %d - exit", signo);
     if(!GP->client){
         DBG("Cancel capturing");
         cancel();
@@ -64,8 +64,11 @@ void signals(int signo){
 #ifdef IMAGEVIEW
     DBG("KILL GL");
     closeGL();
-    usleep(100000);
+    usleep(10000);
 #endif
+    closewheel();
+    focclose();
+    closecam();
     exit(signo);
 }
 
@@ -102,6 +105,8 @@ int main(int argc, char **argv){
         if(!GP->client) isserver = TRUE;
     }
     if(GP->path && !GP->client) isserver = TRUE;
+    if(GP->client && (GP->commondev || GP->focuserdev || GP->cameradev || GP->wheeldev))
+       ERRX("Can't be client and standalone in same time!");
     if(GP->logfile){
         int lvl = LOGLEVEL_WARN + GP->verbose;
         DBG("level = %d", lvl);
@@ -119,31 +124,48 @@ int main(int argc, char **argv){
     signal(SIGUSR1, signals); // restart server
     // check for another running process in server and standalone mode
     if(!GP->client) check4running(self, GP->pidfile);
-    if(!isserver && !GP->client){ // standalone mode
-        focusers();
-        wheels();
-        ccds();
+    if(!isserver){ // run in standalone or client mode
+        int camerainit = FALSE;
+        if(!GP->client){ // standalone mode
+            focusers(); // run focusers and wheels before showimage
+            wheels();
+            camerainit = prepare_ccds();
+        }else{ // client mode
+#ifdef IMAGEVIEW
+            if(GP->showimage) return viewer(NULL); // TODO
+#endif
+            if(GP->path) return start_socket(isserver, GP->path, FALSE);
+            if(GP->port) return start_socket(isserver, GP->port, TRUE);
+
+        }
+#ifdef IMAGEVIEW
+        if(GP->showimage){ // activate image vindow in capture or simple viewer mode
+            imagefunc imfn = NULL;
+            if(GP->cameradev || GP->commondev){if(camerainit) imfn = ccdcaptured;} // capture mode
+            else imfn = NULL; // TODO - simple file viewer
+            return viewer(imfn);
+        }
+#endif
+        if(camerainit) ccds();
         return 0;
     }
     LOGMSG("Started");
 #ifndef EBUG
-    if(isserver){
-        unsigned int pause = 5;
-        while(1){
-            childpid = fork();
-            if(childpid){ // master
-                double t0 = dtime();
-                LOGMSG("Created child with pid %d", childpid);
-                wait(NULL);
-                LOGERR("Child %d died", childpid);
-                if(dtime() - t0 < 1.) pause += 5;
-                else pause = 1;
-                if(pause > 900) pause = 900;
-                sleep(pause); // wait a little before respawn
-            }else{ // slave
-                prctl(PR_SET_PDEATHSIG, SIGTERM); // send SIGTERM to child when parent dies
-                break;
-            }
+    unsigned int pause = 5;
+    while(1){
+        childpid = fork();
+        if(childpid){ // master
+            double t0 = dtime();
+            LOGMSG("Created child with pid %d", childpid);
+            wait(NULL);
+            LOGERR("Child %d died", childpid);
+            if(dtime() - t0 < 1.) pause += 5;
+            else pause = 1;
+            if(pause > 900) pause = 900;
+            sleep(pause); // wait a little before respawn
+        }else{ // slave
+            prctl(PR_SET_PDEATHSIG, SIGTERM); // send SIGTERM to child when parent dies
+            break;
         }
     }
 #endif

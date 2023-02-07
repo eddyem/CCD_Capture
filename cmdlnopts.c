@@ -121,7 +121,7 @@ myoption cmdlnopts[] = {
  */
 glob_pars *parse_args(int argc, char **argv){
     // format of help: "Usage: progname [args]\n"
-    change_helpstring("Usage: %s [args] [output file prefix]\nTo restart server kill it with SIGUSR1\n\tArgs are:\n");
+    change_helpstring("Usage: %s [args] [output file prefix or file/dir name to view]\nTo restart server kill it with SIGUSR1\n\tArgs are:\n");
     // parse arguments
     parseargs(&argc, &argv, cmdlnopts);
     if(help) showhelp(-1, cmdlnopts);

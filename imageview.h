@@ -28,13 +28,6 @@
 #include "ccdfunc.h"
 #include "events.h"
 
-typedef struct{
-    GLubyte *rawdata;  // raw image data
-    int w;             // size of image
-    int h;
-    int changed;       // == 1 if data was changed outside (to redraw)
-} rawimage;
-
 // events from menu:
 // temporaly stop capture of regular sequence
 #define WINEVT_PAUSE        (1<<0)
@@ -50,6 +43,14 @@ typedef struct{
 // flip image
 #define WIN_FLIP_LR         (1<<0)
 #define WIN_FLIP_UD         (1<<1)
+
+// common structs with events.c
+typedef struct{
+    GLubyte *rawdata;  // raw image data
+    int w;             // size of image
+    int h;
+    int changed;       // == 1 if data was changed outside (to redraw)
+} rawimage;
 
 typedef struct{
     int ID;             // identificator of OpenGL window
@@ -69,25 +70,22 @@ typedef struct{
     int killthread;     // flag for killing data changing thread & also signal that there's no threads
 } windowData;
 
+/*
 typedef enum{
     INNER,
     OPENGL
 } winIdType;
-
-void imageview_init();
+*/
 void closeGL();
-windowData *createGLwin(char *title, int w, int h, rawimage *rawdata);
-windowData *getWin();
-int  killwindow();
-void renderBitmapString(float x, float y, void *font, char *string, GLubyte *color);
-void clear_GL_context();
 
 void calc_win_props(GLfloat *Wortho, GLfloat *Hortho);
 
 void conv_mouse_to_image_coords(int x, int y, float *X, float *Y, windowData *window);
 void conv_image_to_mouse_coords(float X, float Y, int *x, int *y, windowData *window);
+windowData* getWin();
 
-void* image_thread(void *data);
-void change_displayed_image(windowData *win, IMG *img);
+typedef int (*imagefunc)(IMG**);
+
+int viewer(imagefunc);
 
 #endif // IMAGEVIEW_H__

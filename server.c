@@ -1009,7 +1009,7 @@ void server(int sock){
     }
     focclose(focdev);
     closewheel(wheeldev);
-    closecam(camdev);
+    closecam();
 }
 
 /**
