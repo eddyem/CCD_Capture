@@ -17,16 +17,14 @@
  */
 
 #pragma once
-#ifndef IMAGEVIEW_H__
-#define IMAGEVIEW_H__
 
+#include <GL/gl.h>
 #include <math.h>
 #include <pthread.h>
 #include <stdbool.h>
 #include <string.h>
 
 #include "ccdfunc.h"
-#include "events.h"
 
 // events from menu:
 // temporaly stop capture of regular sequence
@@ -87,5 +85,3 @@ windowData* getWin();
 typedef int (*imagefunc)(IMG**);
 
 int viewer(imagefunc);
-
-#endif // IMAGEVIEW_H__

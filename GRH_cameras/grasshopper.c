@@ -212,8 +212,8 @@ static int geometrylimits(frameformat *max, frameformat *step){
     if(!isopened || !max || !step) return FALSE;
     fc2Format7Info f = {.mode = FC2_MODE_0};
     BOOL b;
-    fc2Format7Info i = {0};
-    FC2FN(fc2GetFormat7Info, &i, &b);
+    //fc2Format7Info i = {0};
+    FC2FN(fc2GetFormat7Info, &f, &b);
     if(!b) return FALSE;
     max->h = f.maxHeight; max->w = f.maxWidth;
     max->xoff = f.maxWidth - f.offsetHStepSize;
@@ -222,6 +222,7 @@ static int geometrylimits(frameformat *max, frameformat *step){
     step->h = f.imageVStepSize;
     step->xoff = f.offsetHStepSize;
     step->yoff = f.offsetVStepSize;
+    DBG("Got max w/h: %d/%d", f.maxWidth, f.maxHeight);
     return TRUE;
 }
 
@@ -320,6 +321,7 @@ static int capture(IMG *ima){
             uint16_t *Out = &ima->data[y*width];
             const uint8_t *In = &convertedImage.pData[y*stride];
             memcpy(Out, In, w2);
+            //DBG("Row %d copied. First byte: %d", y, *((uint16_t*)In));
         }
     }else{
         OMP_FOR()
@@ -329,6 +331,7 @@ static int capture(IMG *ima){
             for(int x = 0; x < width; ++x){
                 *Out++ = *In++;
             }
+            //DBG("Row %d copied. Last byte: %d", y, *((uint16_t*)In));
         }
     }
     ima->bitpix = is16bit ? 16 : 8;

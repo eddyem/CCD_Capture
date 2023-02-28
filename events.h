@@ -17,8 +17,6 @@
  */
 
 #pragma once
-#ifndef EVENTS_H__
-#define EVENTS_H__
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -26,14 +24,10 @@
 #include <GL/glext.h>
 #include <GL/freeglut.h>
 
-extern float Z; // координата Z (zoom)
+extern float Z; // Z coordinate (zoom)
 
 void keyPressed(unsigned char key, int x, int y);
-//void keySpPressed(int key, int x, int y);
 void mousePressed(int key, int state, int x, int y);
 void mouseMove(int x, int y);
 void createMenu();
 void menuEvents(int opt);
-//void mouseWheel(int button, int dir, int x, int y);
-
-#endif // EVENTS_H__

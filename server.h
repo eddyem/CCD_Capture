@@ -17,8 +17,6 @@
  */
 
 #pragma once
-#ifndef SERVER_H__
-#define SERVER_H__
 
 typedef enum{
     CAMERA_IDLE,        // idle state, client send this to cancel capture
@@ -39,6 +37,11 @@ char *makeabspath(const char *path, int shouldbe);
 #define CMD_HELP        "help"
 // restart server
 #define CMD_RESTART     "restartTheServer"
+// get last exposed image
+#define CMD_GETIMAGE    "getimage"
+// get image size in pixels
+#define CMD_IMWIDTH     "imheight"
+#define CMD_IMHEIGHT    "imwidth"
 
 // CCD/CMOS
 #define CMD_CAMLIST     "camlist"
@@ -85,5 +88,3 @@ char *makeabspath(const char *path, int shouldbe);
 #define CMD_WLIST       "wlist"
 #define CMD_WDEVNO      "wdevno"
 #define CMD_WPOS        "wpos"
-
-#endif // SERVER_H__

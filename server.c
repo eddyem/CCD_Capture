@@ -70,9 +70,12 @@ strpair allcommands[] = {
     { CMD_FGOTO,        "focuser position" },
     { CMD_FRAMEFORMAT,  "camera frame format (X0,Y0,X1,Y1)" },
     { CMD_GAIN,         "camera gain" },
+    { CMD_GETIMAGE,     "get image (binary data 2*w*h bytes)" },
     { CMD_HBIN,         "horizontal binning" },
     { CMD_HEADERFILES,  "add FITS records from these files (comma-separated list)" },
     { CMD_HELP,         "show this help" },
+    { CMD_IMHEIGHT,     "last image height" },
+    { CMD_IMWIDTH,      "last image width" },
     { CMD_INFO,         "connected devices state" },
     { CMD_INSTRUMENT,   "FITS 'INSTRUME' field" },
     { CMD_IO,           "get/set camera IO" },
@@ -141,17 +144,18 @@ static inline void cameracapturestate(){ // capturing - wait for exposition ends
             // now save frame
             if(!ima.data) LOGERR("Can't save image: not initialized");
             else{
-                if(!camera->capture(&ima)) LOGERR("Can't capture image");
-                else{
+                if(!camera->capture(&ima)){
+                    LOGERR("Can't capture image");
+                    camstate = CAMERA_ERROR;
+                    return;
+                }else{
                     calculate_stat(&ima);
                     if(saveFITS(&ima, &lastfile)){
                         DBG("LAST file name changed");
-                        camstate = CAMERA_FRAMERDY;
-                        return;
                     }
                 }
             }
-            camstate = CAMERA_ERROR;
+            camstate = CAMERA_FRAMERDY;
         }
     }
 }
@@ -217,6 +221,8 @@ static int camdevini(int n){
     frameformat step;
     camera->getgeomlimits(&frmformatmax, &step);
     curformat = frmformatmax;
+    DBG("\n\nGeometry format (offx/offy) w/h: (%d/%d) %d/%d", curformat.xoff, curformat.yoff,
+        curformat.w, curformat.h);
     if(GP->hbin < 1) GP->hbin = 1;
     if(GP->vbin < 1) GP->vbin = 1;
     fixima();
@@ -302,14 +308,17 @@ static hresult exphandler(int fd, _U_ const char *key, const char *val){
 // show last filename of saved FITS
 static hresult lastfnamehandler(int fd, _U_ const char *key, _U_ const char *val){
     char buf[PATH_MAX+32];
-    snprintf(buf, PATH_MAX+31, CMD_LASTFNAME "=%s", lastfile);
+    if(lastfile && *lastfile) snprintf(buf, PATH_MAX+31, CMD_LASTFNAME "=%s", lastfile);
+    else snprintf(buf, PATH_MAX+31, CMD_LASTFNAME "=");
     if(!sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
     return RESULT_SILENCE;
 }
 // filename setter/getter
 static hresult namehandler(int fd, _U_ const char *key, const char *val){
     char buf[PATH_MAX+32];
-    if(val){
+    DBG("filename=%s", val);
+    if(val && *val){
+        DBG("Make abs path");
         char *path = makeabspath(val, FALSE);
         if(!path){
             LOGERR("Can't create file '%s'", val);
@@ -319,6 +328,11 @@ static hresult namehandler(int fd, _U_ const char *key, const char *val){
         outfile = strdup(path);
         GP->outfile = outfile;
         GP->outfileprefix = NULL;
+    }else{ // clear names
+        DBG("Clear names");
+        GP->outfileprefix = NULL;
+        GP->outfile = NULL;
+        return RESULT_OK;
     }
     if(!GP->outfile) return RESULT_FAIL;
     snprintf(buf, PATH_MAX+31, CMD_FILENAME "=%s", GP->outfile);
@@ -328,6 +342,7 @@ static hresult namehandler(int fd, _U_ const char *key, const char *val){
 // filename prefix
 static hresult nameprefixhandler(_U_ int fd, _U_ const char *key, const char *val){
     char buf[PATH_MAX+32];
+    DBG("filename prefix=%s", val);
     if(val){
         char *path = makeabspath(val, FALSE);
         if(!path){
@@ -339,6 +354,10 @@ static hresult nameprefixhandler(_U_ int fd, _U_ const char *key, const char *va
         outfile = strdup(path);
         GP->outfileprefix = outfile;
         GP->outfile = NULL;
+    }else{ // clear names
+        GP->outfileprefix = NULL;
+        GP->outfile = NULL;
+        return RESULT_OK;
     }
     if(!GP->outfileprefix) return RESULT_FAIL;
     snprintf(buf, PATH_MAX+31, CMD_FILENAMEPREFIX "=%s", GP->outfileprefix);
@@ -378,7 +397,7 @@ static hresult binhandler(_U_ int fd, const char *key, const char *val){
     }
     return RESULT_FAIL;
 }
-static hresult temphandler(_U_ int fd, _U_ const char *key, const char *val){
+static hresult temphandler(int fd, _U_ const char *key, const char *val){
     float f;
     char buf[64];
     int r;
@@ -408,7 +427,7 @@ static hresult temphandler(_U_ int fd, _U_ const char *key, const char *val){
         return RESULT_SILENCE;
     }else return RESULT_FAIL;
 }
-static hresult camfanhandler(_U_ int fd, _U_ const char *key, _U_ const char *val){
+static hresult camfanhandler(int fd, _U_ const char *key, _U_ const char *val){
     char buf[64];
     if(val){
         int spd = atoi(val);
@@ -497,7 +516,7 @@ static hresult formathandler(int fd, const char *key, const char *val){
     char buf[64];
     frameformat fmt;
     if(val){
-        if(strcmp(key, CMD_FRAMEFORMAT)) return RESULT_BADKEY; // can't set maxformat
+        if(strcmp(key, CMD_FRAMEMAX)) return RESULT_BADKEY; // can't set maxformat
         if(4 != sscanf(val, "%d,%d,%d,%d", &fmt.xoff, &fmt.yoff, &fmt.w, &fmt.h)) return RESULT_BADVAL;
         fmt.w -= fmt.xoff; fmt.h -= fmt.yoff;
         int r = camera->setgeometry(&fmt);
@@ -861,6 +880,23 @@ static hresult helphandler(int fd, _U_ const char *key, _U_ const char *val){
     return RESULT_SILENCE;
 }
 
+// sent to client last image
+static hresult imsendhandler(int fd, _U_ const char *key, _U_ const char *val){
+    if(!ima.data || !ima.h || !ima.w) return RESULT_FAIL;
+    // send image as raw data w*h*2
+    if(!sendimage(fd, ima.data, 2*ima.h*ima.w)) return RESULT_DISCONNECTED;
+    return RESULT_OK;
+}
+
+static hresult imsizehandler(int fd, const char *key, _U_ const char *val){
+    char buf[64];
+    // send image width/height in pixels
+    if(0 == strcmp(key, CMD_IMHEIGHT)) snprintf(buf, 63, CMD_IMHEIGHT "=%d", ima.h);
+    else snprintf(buf, 63, CMD_IMWIDTH "=%d", ima.w);
+    if(!sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
+    return RESULT_OK;
+}
+
 // for setters: do nothing when camera not in idle state
 static int CAMbusy(){
     if(camera && camstate != CAMERA_IDLE){
@@ -909,6 +945,9 @@ static handleritem items[] = {
     {chkcam, formathandler, CMD_FRAMEMAX},
     {chkcam, nflusheshandler, CMD_NFLUSHES},
     {NULL,   expstatehandler, CMD_EXPSTATE},
+    {NULL,   imsendhandler, CMD_GETIMAGE},
+    {NULL,   imsizehandler, CMD_IMWIDTH},
+    {NULL,   imsizehandler, CMD_IMHEIGHT},
     {chkcam, nameprefixhandler, CMD_FILENAMEPREFIX},
     {chkcam, rewritefilehandler, CMD_REWRITE},
     {chkcam, _8bithandler, CMD_8BIT},

@@ -17,8 +17,6 @@
  */
 
 #pragma once
-#ifndef OMP_H__
-#define OMP_H__
 
 #ifdef OMP_FOUND
 #include <omp.h>
@@ -34,4 +32,3 @@
 
 #endif
 
-#endif // OMP_H__

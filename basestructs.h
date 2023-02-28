@@ -17,9 +17,6 @@
  */
 
 #pragma once
-#ifndef BASESTRUCTS_H__
-#define BASESTRUCTS_H__
-
 #include <stdint.h>
 
 typedef struct{
@@ -136,4 +133,3 @@ typedef struct{
     int (*getMaxPos)(int *p);   // amount of positions
 } Wheel;
 
-#endif // BASESTRUCTS_H__

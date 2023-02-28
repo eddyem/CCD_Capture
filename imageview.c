@@ -26,6 +26,7 @@
 #include "ccdfunc.h"
 #include "cmdlnopts.h"
 #include "imageview.h"
+#include "events.h"
 #include "omp.h"
 
 windowData *win = NULL; // main window (common variable for events.c)
@@ -531,6 +532,7 @@ void closeGL(){
 /**
  * @brief viewer - main viewer process
  * @param newimage - image refresh function
+ *              it shouldn't `free` it's argument!!!
  * @return 0 if all OK
  */
 int viewer(imagefunc newimage){

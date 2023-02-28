@@ -17,10 +17,12 @@
  */
 
 #pragma once
-#ifndef CLIENT_H__
-#define CLIENT_H__
+
+#include "basestructs.h"
 
 // client-side functions
 void client(int fd);
-
-#endif // CLIENT_H__
+#ifdef IMAGEVIEW
+void init_grab_sock(int sock);
+int sockcaptured(IMG **img);
+#endif

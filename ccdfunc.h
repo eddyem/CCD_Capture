@@ -17,9 +17,6 @@
  */
 
 #pragma once
-#ifndef CCDFUNC_H__
-#define CCDFUNC_H__
-
 #include "basestructs.h"
 
 extern Camera *camera;
@@ -40,6 +37,7 @@ int startFocuser(void **dlh);
 void focclose();
 void closewheel();
 void closecam();
+#ifdef IMAGEVIEW
 int ccdcaptured(IMG **img);
+#endif
 
-#endif // CCDFUNC_H__

@@ -131,12 +131,8 @@ int main(int argc, char **argv){
             wheels();
             camerainit = prepare_ccds();
         }else{ // client mode
-#ifdef IMAGEVIEW
-            if(GP->showimage) return viewer(NULL); // TODO
-#endif
             if(GP->path) return start_socket(isserver, GP->path, FALSE);
             if(GP->port) return start_socket(isserver, GP->port, TRUE);
-
         }
 #ifdef IMAGEVIEW
         if(GP->showimage){ // activate image vindow in capture or simple viewer mode

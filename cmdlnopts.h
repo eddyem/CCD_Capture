@@ -17,9 +17,6 @@
  */
 
 #pragma once
-#ifndef CMDLNOPTS_H__
-#define CMDLNOPTS_H__
-
 #include <usefull_macros.h>
 
 /*
@@ -86,4 +83,4 @@ extern glob_pars  *GP;
 
 glob_pars *parse_args(int argc, char **argv);
 void verbose(int levl, const char *fmt, ...);
-#endif // CMDLNOPTS_H__
+

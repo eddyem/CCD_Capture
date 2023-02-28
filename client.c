@@ -17,6 +17,7 @@
  */
 
 // client-side functions
+#include <stdatomic.h>
 #include <math.h>  // isnan
 #include <stdio.h>
 #include <string.h>
@@ -30,8 +31,14 @@
 
 static char sendbuf[BUFSIZ];
 #define SENDMSG(...) do{snprintf(sendbuf, BUFSIZ-1, __VA_ARGS__); verbose(2, "\t> %s", sendbuf); sendstrmessage(sock, sendbuf); getans(sock);}while(0)
-static int expstate = CAMERA_CAPTURE;
+static volatile atomic_int expstate = CAMERA_CAPTURE;
 static int xm0,ym0,xm1,ym1; // max format
+
+#ifdef IMAGEVIEW
+static IMG ima = {0};
+static volatile atomic_int grabends = 0;
+static int imdatalen = 0, imbufsz = 0;
+#endif
 
 /**
  * check data from  fd (polling function for client)
@@ -104,6 +111,17 @@ static int parseans(char *ans){
         sscanf(val, "%d,%d,%d,%d", &xm0, &ym0, &xm1, &ym1);
         DBG("Got maxformat: %d,%d,%d,%d", xm0, ym0, xm1, ym1);
     }
+#ifdef IMAGEVIEW
+    else if(0 == strcmp(CMD_IMWIDTH, ans)){
+        ima.w = atoi(val);
+        DBG("Get width: %d", ima.w);
+        imdatalen = ima.w * ima.h * 2;
+    }else if(0 == strcmp(CMD_IMHEIGHT, ans)){
+        ima.h = atoi(val);
+        DBG("Get height: %d", ima.h);
+        imdatalen = ima.w * ima.h * 2;
+    }
+#endif
     return FALSE;
 }
 
@@ -130,7 +148,7 @@ static int getans(int sock){
 /**
  * @brief processData - process here some actions and make messages for server
  */
-static void process_data(int sock){
+static void send_headers(int sock){
     // common information
     SENDMSG(CMD_INFO);
     // focuser
@@ -178,11 +196,15 @@ static void process_data(int sock){
         else SENDMSG(CMD_DARK "=0");
     }
     if(GP->outfile){
-        SENDMSG(CMD_FILENAME "=%s", makeabspath(GP->outfile, FALSE));
+        if(!*GP->outfile) SENDMSG(CMD_FILENAME "=");
+        else SENDMSG(CMD_FILENAME "=%s", makeabspath(GP->outfile, FALSE));
         if(GP->rewrite) SENDMSG(CMD_REWRITE "=1");
         else SENDMSG(CMD_REWRITE "=0");
     }
-    if(GP->outfileprefix) SENDMSG(CMD_FILENAMEPREFIX "=%s", makeabspath(GP->outfileprefix, FALSE));
+    if(GP->outfileprefix){
+        if(!*GP->outfileprefix) SENDMSG(CMD_FILENAMEPREFIX "=");
+        else SENDMSG(CMD_FILENAMEPREFIX "=%s", makeabspath(GP->outfileprefix, FALSE));
+    }
     if(GP->exptime > -DBL_EPSILON) SENDMSG(CMD_EXPOSITION "=%g", GP->exptime);
     // FITS header keywords:
 #define CHKHDR(x, cmd)   do{if(x) SENDMSG(cmd "=%s", x);}while(0)
@@ -213,16 +235,16 @@ void client(int sock){
         SENDMSG(CMD_RESTART);
         return;
     }
-    process_data(sock);
+    send_headers(sock);
     double t0 = dtime(), tw = t0;
     int Nremain = 0, nframe = 1;
     // if client gives filename/prefix or Nframes, make exposition
-    if(GP->outfile || GP->outfileprefix || GP->nframes > 0){
+    if((GP->outfile && *GP->outfile) || (GP->outfileprefix && *GP->outfileprefix) || GP->nframes > 0){
         Nremain = GP->nframes - 1;
         if(Nremain < 1) Nremain = 0;
         else GP->waitexpend = TRUE; // N>1 - wait for exp ends
         SENDMSG(CMD_EXPSTATE "=%d", CAMERA_CAPTURE);
-    } else {
+    }else{
         while(getans(sock));
         DBG("RETURN: no more data");
         return;
@@ -276,3 +298,93 @@ void client(int sock){
     if(GP->waitexpend) WARNX(_("Server timeout"));
     DBG("Timeout");
 }
+
+#ifdef IMAGEVIEW
+static int grabsockfd = -1;
+void init_grab_sock(int sock){
+    grabsockfd = sock;
+    send_headers(sock);
+}
+
+static void *grabnext(void _U_ *arg){ // daemon grabbing images through the net
+    FNAME();
+    if(grabsockfd < 0) return NULL;
+    int sock = grabsockfd;
+    while(1){
+        while(grabends); // wait until image processed
+        SENDMSG(CMD_IMWIDTH);
+        SENDMSG(CMD_IMHEIGHT);
+        expstate = CAMERA_CAPTURE;
+        SENDMSG(CMD_EXPSTATE "=%d", CAMERA_CAPTURE); // start capture
+        double timeout = GP->exptime + CLIENT_TIMEOUT, t0 = dtime();
+        while(dtime() - t0 < timeout){
+            SENDMSG(CMD_EXPSTATE);
+            if(expstate != CAMERA_CAPTURE) break;
+        }
+        if(dtime() - t0 >= timeout || expstate != CAMERA_FRAMERDY){
+            WARNX("Image wasn't received");
+            continue;
+        }
+        DBG("Frame ready");
+        sendstrmessage(sock, CMD_GETIMAGE);
+        if(imbufsz < imdatalen){
+            DBG("Reallocate memory from %d to %d", imbufsz, imdatalen);
+            ima.data = realloc(ima.data, imdatalen);
+            imbufsz = imdatalen;
+        }
+        t0 = dtime();
+        int got = 0;
+        while(dtime() - t0 < CLIENT_TIMEOUT){
+            if(!canberead(sock)) continue;
+            int rd = read(sock, ((uint8_t*)ima.data)+got, imdatalen - got);
+            if(rd <= 0){
+                WARNX("Server disconnected");
+                signals(1);
+            }
+            got += rd;
+            DBG("Read %d bytes; total read %d from %d", rd, got, imdatalen);
+            if(got == imdatalen){
+                DBG("Got image");
+                grabends = 1;
+                break;
+            }
+        }
+        if(dtime() - t0 > CLIENT_TIMEOUT) WARNX("Timeout, image didn't received");
+    }
+    return NULL;
+}
+
+// try to capture images through socket
+int sockcaptured(IMG **imgptr){
+    if(!imgptr) return FALSE;
+    static pthread_t grabthread = 0;
+    if(grabsockfd < 0) return FALSE;
+    if(imgptr == (void*)-1){ // kill `grabnext`
+        DBG("Kill grabbing thread");
+        if(grabthread){
+            pthread_cancel(grabthread);
+            pthread_join(grabthread, NULL);
+            grabthread = 0;
+        }
+        DBG("Killed");
+        return FALSE;
+    }
+    if(!grabthread){ // start new grab
+        DBG("\n\n\nStart new grab");
+        if(pthread_create(&grabthread, NULL, &grabnext, NULL)){
+            WARN("Can't create grabbing thread");
+            grabthread = 0;
+       }
+    }else{ // grab in process
+        if(grabends){ // image is ready
+            DBG("Image ready");
+            if(*imgptr && (*imgptr != &ima)) free(*imgptr);
+            *imgptr = &ima;
+            grabends = 0;
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+// IMAGEVIEW
+#endif

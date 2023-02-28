@@ -186,8 +186,7 @@ int saveFITS(IMG *img, char **outp){
     }
     char buff[PATH_MAX+1], fnam[PATH_MAX+1];
     if(!GP->outfile && !GP->outfileprefix){
-        LOGERR("Can't save image: neither filename nor filename prefix pointed");
-        WARNX(_("Neither filename nor filename prefix pointed!"));
+        LOGWARN("Image not saved: neither filename nor filename prefix pointed");
         return FALSE;
     }
     if(GP->outfile){ // pointed specific output file name like "file.fits", check it
@@ -819,6 +818,8 @@ void cancel(){
     }
 }
 
+
+#ifdef IMAGEVIEW
 static volatile int grabends = 1;
 static void *grabnext(void *arg){
     FNAME();
@@ -844,6 +845,8 @@ eof:
     pthread_exit((void*)&retval);
     DBG("EXIT");
 }
+
+
 
 /**
  * @brief ccdcaptured - get new image data for viewer
@@ -894,3 +897,4 @@ int ccdcaptured(IMG **imgptr){
     }
     return FALSE;
 }
+#endif

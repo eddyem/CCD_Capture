@@ -17,10 +17,8 @@
  */
 
 #pragma once
-#ifndef SERSOCK_H__
-#define SERSOCK_H__
-
 #include <pthread.h>
+#include <stdint.h>
 
 // max & min TCP socket port number
 #define PORTN_MAX   (65535)
@@ -64,10 +62,9 @@ typedef struct{
 } handleritem;
 
 int start_socket(int server, char *path, int isnet);
+int sendimage(int fd, uint16_t *data, int l);
 int sendmessage(int fd, const char *msg, int l);
 int sendstrmessage(int fd, const char *msg);
 char *get_keyval(char *keyval);
 
 int processData(int fd, handleritem *handlers, char *buf, int buflen);
-
-#endif // SERSOCK_H__

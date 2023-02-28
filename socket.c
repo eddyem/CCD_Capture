@@ -24,8 +24,11 @@
 #include <sys/un.h>  // unix socket
 #include <usefull_macros.h>
 
-#include "cmdlnopts.h"
 #include "client.h"
+#include "cmdlnopts.h"
+#ifdef IMAGEVIEW
+#include "imageview.h"
+#endif
 #include "server.h"
 #include "socket.h"
 
@@ -114,11 +117,32 @@ int start_socket(int isserver, char *path, int isnet){
     }
     if(isnet) freeaddrinfo(res);
     if(isserver) server(sock);
-    else client(sock);
+    else{
+#ifdef IMAGEVIEW
+        if(GP->showimage){
+            init_grab_sock(sock);
+            viewer(sockcaptured); // start viewer with socket client parser
+        }else
+#endif
+            client(sock);
+    }
     DBG("Close socket");
     close(sock);
     if(isserver) signals(0);
     return 0;
+}
+
+int sendimage(int fd, uint16_t *data, int l){
+    if(fd < 1 || !data || l < 1) return TRUE; // empty message
+    DBG("send new image (size=%d) to fd %d", l, fd);
+    if(l != send(fd, data, l, MSG_NOSIGNAL)){
+        WARN("write()");
+        LOGWARN("write()");
+        return FALSE;
+    }
+    DBG("success");
+    if(globlog)  LOGDBG("SEND image (size=%d) to fd %d", l, fd);
+    return TRUE;
 }
 
 // simple wrapper over write: add missed newline and log data
@@ -173,7 +197,7 @@ const char *hresult2str(hresult r){
  * @return `val`
  */
 char *get_keyval(char *keyval){
-    //DBG("Got string %s", keyval);
+    DBG("Got string %s", keyval);
     // remove starting spaces in key
     while(isspace(*keyval)) ++keyval;
     char *val = strchr(keyval, '=');
@@ -181,6 +205,7 @@ char *get_keyval(char *keyval){
         *val++ = 0;
         while(isspace(*val)) ++val;
     }
+    DBG("val = %s (%zd bytes)", val, (val)?strlen(val):0);
     // remove trailing spaces in key
     char *e = keyval + strlen(keyval) - 1; // last key symbol
     while(isspace(*e) && e > keyval) --e;

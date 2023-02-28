@@ -90,11 +90,6 @@ void keyPressed(unsigned char key, int x, int y){
     DBG("Key pressed. mod=%d, keycode=%d (%c), point=(%d,%d)\n", mod, key, key, x,y);
     processKeybrd(key, mod, x, y);
 }
-/*
-void keySpPressed(_U_ int key, _U_ int x, _U_ int y){
-//	int mod = glutGetModifiers();
-    DBG("Sp. key pressed. mod=%d, keycode=%d, point=(%d,%d)\n", glutGetModifiers(), key, x,y);
-}*/
 
 static int oldx, oldy;         // coordinates when mouse was pressed
 static int movingwin = 0; // ==1 when user moves image by middle button
@@ -153,7 +148,7 @@ void menuEvents(int opt){
     DBG("opt: %d, key: %d (%c), mod: %d", opt, opt&0xff, opt&0xff, opt>>8);
     // just work as shortcut pressed
     processKeybrd((unsigned char)(opt&0xff), opt>>8, 0, 0);
-} // GLUT_ACTIVE_CTRL
+}
 
 typedef struct{
     char *name;     // menu entry name
