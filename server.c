@@ -885,7 +885,7 @@ static hresult imsendhandler(int fd, _U_ const char *key, _U_ const char *val){
     if(!ima.data || !ima.h || !ima.w) return RESULT_FAIL;
     // send image as raw data w*h*2
     if(!sendimage(fd, ima.data, 2*ima.h*ima.w)) return RESULT_DISCONNECTED;
-    return RESULT_OK;
+    return RESULT_SILENCE;
 }
 
 static hresult imsizehandler(int fd, const char *key, _U_ const char *val){

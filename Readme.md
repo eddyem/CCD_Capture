@@ -1,7 +1,7 @@
 CCD/CMOS imaging server
 =======================
 
-Supports FLI cameras/focusers/wheels and cameras: ZWO, Basler, HikRobot.
+Supports FLI cameras/focusers/wheels and cameras: ZWO, Basler, HikRobot, PointGrey, Apogee.
 Allows to run as standalone application or imaging server/client.
 
 To restart server (e.g. if hardware was off) kill it with SIGUSR1
@@ -10,10 +10,12 @@ To restart server (e.g. if hardware was off) kill it with SIGUSR1
 
 cmake options:
 
+- `-DAPOGEE=ON` - compile Apogee plugin
 - `-DDEBUG=ON` - make with a lot debugging info
 - `-DIMAGEVIEW=ON` - compile with image viewer support (only for standalone) (OpenGL!!!)
 - `-DBASLER=ON` - compile Basler support plugin
 - `-DFLI=ON` - compile FLI support plugin
+- `-DFLYCAPT=ON` - compile GrassHopper PointGrey plugin
 - `-DHIKROBOT=ON` - compile HikRobot support plugin
 - `-DZWO=ON` - compile ZWO support plugin
 

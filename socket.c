@@ -132,6 +132,7 @@ int start_socket(int isserver, char *path, int isnet){
     return 0;
 }
 
+// send image data to client
 int sendimage(int fd, uint16_t *data, int l){
     if(fd < 1 || !data || l < 1) return TRUE; // empty message
     DBG("send new image (size=%d) to fd %d", l, fd);

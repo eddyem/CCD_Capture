@@ -7,7 +7,7 @@
 msgid   ""
 msgstr  "Project-Id-Version: PACKAGE VERSION\n"
         "Report-Msgid-Bugs-To: \n"
-        "POT-Creation-Date: 2023-02-28 17:05+0300\n"
+        "POT-Creation-Date: 2023-03-01 08:54+0300\n"
         "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
         "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
         "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -162,7 +162,7 @@ msgstr  "Не могу установить номер активного фокусера"
 msgid   "Can't set active wheel number"
 msgstr  "Не могу установить номер активного колеса"
 
-#: ccdfunc.c:725 server.c:230
+#: ccdfunc.c:725 server.c:229
 #, c-format
 msgid   "Can't set binning %dx%d"
 msgstr  "Не могу установить биннинг %dx%d"
@@ -190,7 +190,7 @@ msgstr  "Не могу установить скорость вентиляторов"
 msgid   "Can't set gain to %g"
 msgstr  "Не могу установить Gain в %g"
 
-#: ccdfunc.c:737 server.c:231
+#: ccdfunc.c:737 server.c:230
 msgid   "Can't set given geometry"
 msgstr  "Не могу установить геометрию"
 
@@ -213,7 +213,7 @@ msgstr  "Не могу установить скорость считывания"
 msgid   "Can't set wheel position %d"
 msgstr  "Не могу установить положение колеса %d"
 
-#: ccdfunc.c:781 ccdfunc.c:831 server.c:125
+#: ccdfunc.c:781 ccdfunc.c:831 server.c:124
 msgid   "Can't start exposition"
 msgstr  "Не могу начать экспозицию"
 
@@ -289,7 +289,7 @@ msgstr  "Статистика по изображению: \n"
 msgid   "N flushes before exposing (default: 1)"
 msgstr  "N засвечиваний перед экспозицией (по умолчанию: 1)"
 
-#: server.c:168
+#: server.c:167
 msgid   "No camera device"
 msgstr  "Не указано устройство камеры"
 

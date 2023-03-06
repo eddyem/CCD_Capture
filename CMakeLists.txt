@@ -17,6 +17,7 @@ option(FLI "Add support of FLI cameras" OFF)
 option(BASLER "Add support of BASLER cameras" OFF)
 option(HIKROBOT "Add support of HIKROBOT cameras" OFF)
 option(FLYCAP "Add support of Grasshopper FlyCap cameras" OFF)
+option(APOGEE "Add support of Apogee cameras" OFF)
 
 # default flags
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -W -Wextra -std=gnu99")
@@ -96,7 +97,9 @@ endif()
 if(FLYCAP)
     add_subdirectory(GRH_cameras)
 endif()
-
+if(APOGEE)
+    add_subdirectory(APOGEE_cameras)
+endif()
 
 # directory should contain dir locale/ru for gettext translations
 set(LCPATH ${CMAKE_SOURCE_DIR}/locale/ru)
