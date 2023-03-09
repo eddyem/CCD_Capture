@@ -41,6 +41,10 @@ static pid_t childpid = 0;
 
 void signals(int signo){
     if(signo) signal(signo, SIG_IGN);
+    if(!GP->client){
+        DBG("Unlink pid file");
+        unlink(GP->pidfile);
+    }
     if(childpid){ // master process
         if(signo == SIGUSR1){ // kill child
             kill(childpid, signo);
@@ -49,10 +53,6 @@ void signals(int signo){
         }
         WARNX("Master killed with sig=%d", signo);
         LOGERR("Master killed with sig=%d", signo);
-        if(!GP->client){
-            DBG("Unlink pid file");
-            unlink(GP->pidfile);
-        }
         exit(signo);
     }
     // slave: cancel exposition
@@ -143,7 +143,7 @@ int main(int argc, char **argv){
         }
 #endif
         if(camerainit) ccds();
-        return 0;
+        signals(0);
     }
     LOGMSG("Started");
 #ifndef EBUG

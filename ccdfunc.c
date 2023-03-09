@@ -596,6 +596,7 @@ static capture_status capt(){
         else usleep((int)(1e6*tremain) + 100000);
         if(!camera) return CAPTURE_ABORTED;
     }
+    DBG("Poll ends with %d", cs);
     return cs;
 }
 

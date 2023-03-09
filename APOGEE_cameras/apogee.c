@@ -53,17 +53,23 @@ static int isexposuring = 0;
 static void disconnect(){
     FNAME();
     if(!isopened) return;
-    ApnGlueExpAbort();
+    ApnGlueReset();
+    //ApnGlueExpAbort();
     ApnGlueClose();
     isopened = FALSE;
 }
 
 static void cancel(){
-    //if(!isexposuring) return;
     FNAME();
+    if(isexposuring){
+        isexposuring = 0;
+        DBG("Abort exposition");
+        ApnGlueStopExposure();
+        //ApnGlueExpAbort();
+    }
+    //uint16_t b1;
+    //ApnGlueReadPixels(&b1, 1, NULL);
     ApnGlueReset();
-    //ApnGlueExpAbort();
-    //ApnGlueStopExposure();
     DBG("OK");
 }
 
@@ -119,7 +125,7 @@ static int setdevno(int n){
     FNAME();
     if(n > ncameras - 1) return FALSE;
     if(ApnGlueOpen(n)) return FALSE;
-    ApnGlueExpAbort();
+    //ApnGlueExpAbort();
     ApnGluePowerResume();
     ApnGlueReset();
     char *msg = ApnGlueGetInfo(&pid, &vid);
@@ -139,6 +145,7 @@ static int setdevno(int n){
     camera.pixX = x, camera.pixY = y;
     camera.field.w = camera.array.w - osw;
     camera.field.h = camera.array.h;
+    camera.geometry = camera.array;
     DBG("Pixel size W/H: %g/%g; field w/h: %d/%d", x, y, camera.field.w, camera.field.h);
     ;
     return TRUE;
@@ -195,14 +202,29 @@ static int setfastspeed(int fast){
 
 static int setgeometry(frameformat *f){
     if(!f) return FALSE;
-    int ow = (f->w > camera.field.w) ? camera.array.w - f->w : f->w;
+    if(f->xoff > camera.field.w - 1) f->xoff = camera.field.w - 1;
+    if(f->yoff > camera.field.h - 1) f->yoff = camera.field.h - 1;
+    if(f->w - f->xoff > camera.array.w) f->w = camera.array.w - f->xoff;
+    if(f->h - f->yoff > camera.array.h) f->h = camera.array.h - f->yoff;
+    int ow = (f->w > camera.field.w) ? f->w - camera.field.w: 0;
     if(ow < 0) ow = 0;
-    if(ApnGlueSetExpGeom(f->w * hbin, f->h * vbin, ow, 0, hbin, vbin,
+    if(f->xoff && f->w + f->xoff >= camera.field.w){
+        f->w = camera.field.w - f->xoff;
+        ow = 0;
+    }
+    //f->w -= ow;
+    DBG("f->w=%d, camfw=%d, camaw=%d", f->w, camera.field.w, camera.array.w);
+    DBG("ow=%d", ow);
+    if(ApnGlueSetExpGeom(f->w, f->h, ow, 0, hbin, vbin,
                         f->xoff, f->yoff, &imW, &imH, whynot)){
         WARNX("Can't set geometry: %s", whynot);
+        imW = f->w;
+        imH = f->h;
     }else{
         camera.geometry = *f;
     }
+    DBG("ApnGlueSetExpGeom(%d, %d, %d, %d, %d, %d, %d, %d, %d, %d)",
+        f->w, f->h, ow, 0, hbin, vbin, f->xoff, f->yoff, imW, imH);
     return TRUE;
 }
 
@@ -228,12 +250,14 @@ static int thot(float *t){
 
 static int startexp(){
     tstart = dtime();
-    DBG("Start exposition");
+    DBG("Start exposition %g seconds (isobject=%d)", exptime, isobject);
     CCDerr r = ApnGlueStartExp(&exptime, isobject);
     if(ALTA_OK != r){
         /*reset_usb_port();
         r = ApnGlueStartExp(&exptime, isobject);
         if(ALTA_OK != r){*/
+            //uint16_t b[4096];
+            //ApnGlueReadPixels(b, 4096, NULL);
             ApnGlueReset();
             DBG("Error starting exp: %d", (int)r);
             return FALSE;
@@ -250,7 +274,7 @@ static int frametype(int islight){
 }
 
 static int setexp(float t){
-    DBG("start exp %g, min: %g, max: %g", t, expt[0], expt[1]);
+    DBG("set exp %g, min: %g, max: %g", t, expt[0], expt[1]);
     if(t < expt[0] || t > expt[1]) return FALSE; // too big or too small exptime
     exptime = t;
     return TRUE;
@@ -264,25 +288,34 @@ static int getbin(int *h, int *v){
 }
 
 static int pollcapt(capture_status *st, float *remain){
-    DBG("Poll capture, tremain=%g", dtime() - tstart);
-    if(dtime() - tstart > 5.){ // capture error?
-        ApnGlueExpAbort();
-        if(*st) *st = CAPTURE_ABORTED;
-        return FALSE;
-    }
-    if(remain) *remain = dtime() - tstart;
     if(st) *st = CAPTURE_PROCESS;
     if(ApnGlueExpDone()){
         if(st) *st = CAPTURE_READY;
         isexposuring = 0;
         DBG("Capture ready");
+        if(remain) *remain = 0.f;
+        return TRUE;
+    }else DBG("Capture in process");
+    double d = exptime - (dtime() - tstart);
+    DBG("Poll capture, tremain=%g", d);
+    if(d < -5.){ // capture error?
+        WARNX("Abort capture");
+        ApnGlueExpAbort();
+        //ApnGlueStopExposure();
+        DBG("ABORTED!");
+        if(*st) *st = CAPTURE_ABORTED;
+        return FALSE;
     }
+    if(d < 0.) d = 0.1;
+    DBG("Poll capture, tremain=%g", d);
+    if(remain) *remain = d;
     return TRUE;
 }
 
 static int capture(IMG *ima){
     FNAME();
     if(!ima || !ima->data) return FALSE;
+    DBG("ApnGlueReadPixels(%dx%d=%d)", imW, imH, imW * imH);
     if(ApnGlueReadPixels((uint16_t*)ima->data, imW * imH, whynot)){
         WARNX("Can't read image: %s", whynot);
         return FALSE;
