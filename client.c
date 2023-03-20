@@ -317,8 +317,17 @@ static void *grabnext(void _U_ *arg){ // daemon grabbing images through the net
         expstate = CAMERA_CAPTURE;
         SENDMSG(CMD_EXPSTATE "=%d", CAMERA_CAPTURE); // start capture
         double timeout = GP->exptime + CLIENT_TIMEOUT, t0 = dtime();
+        useconds_t sleept = 500000; // 0.5s
+        if(GP->exptime < 0.5){
+            sleept = (useconds_t)(GP->exptime * 500000.);
+            if(sleept < 1000) sleept = 1000;
+        }
         while(dtime() - t0 < timeout){
-            SENDMSG(CMD_EXPSTATE);
+            DBG("SLEEP!");
+            usleep(sleept);
+            //SENDMSG(CMD_EXPSTATE);
+            getans(sock);
+            DBG("EXPSTATE ===> %d", expstate);
             if(expstate != CAMERA_CAPTURE) break;
         }
         if(dtime() - t0 >= timeout || expstate != CAMERA_FRAMERDY){
@@ -326,7 +335,8 @@ static void *grabnext(void _U_ *arg){ // daemon grabbing images through the net
             continue;
         }
         DBG("Frame ready");
-        sendstrmessage(sock, CMD_GETIMAGE);
+        while(readmsg(sock)); // clear all incoming data
+        sendstrmessage(sock, CMD_GETIMAGE); // ask for image
         if(imbufsz < imdatalen){
             DBG("Reallocate memory from %d to %d", imbufsz, imdatalen);
             ima.data = realloc(ima.data, imdatalen);

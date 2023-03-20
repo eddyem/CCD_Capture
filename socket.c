@@ -136,6 +136,8 @@ int start_socket(int isserver, char *path, int isnet){
 int sendimage(int fd, uint16_t *data, int l){
     if(fd < 1 || !data || l < 1) return TRUE; // empty message
     DBG("send new image (size=%d) to fd %d", l, fd);
+//strncpy((char*)data, "TEST image data\n", 17);
+//l = 16;
     if(l != send(fd, data, l, MSG_NOSIGNAL)){
         WARN("write()");
         LOGWARN("write()");
