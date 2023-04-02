@@ -516,7 +516,7 @@ static hresult formathandler(int fd, const char *key, const char *val){
     char buf[64];
     frameformat fmt;
     if(val){
-        if(strcmp(key, CMD_FRAMEMAX)) return RESULT_BADKEY; // can't set maxformat
+        if(0 == strcmp(key, CMD_FRAMEMAX)) return RESULT_BADKEY; // can't set maxformat
         if(4 != sscanf(val, "%d,%d,%d,%d", &fmt.xoff, &fmt.yoff, &fmt.w, &fmt.h)) return RESULT_BADVAL;
         fmt.w -= fmt.xoff; fmt.h -= fmt.yoff;
         int r = camera->setgeometry(&fmt);

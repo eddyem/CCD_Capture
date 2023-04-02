@@ -40,8 +40,8 @@ char *makeabspath(const char *path, int shouldbe);
 // get last exposed image
 #define CMD_GETIMAGE    "getimage"
 // get image size in pixels
-#define CMD_IMWIDTH     "imheight"
-#define CMD_IMHEIGHT    "imwidth"
+#define CMD_IMWIDTH     "imwidth"
+#define CMD_IMHEIGHT    "imheight"
 
 // CCD/CMOS
 #define CMD_CAMLIST     "camlist"

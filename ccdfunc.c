@@ -211,13 +211,14 @@ int saveFITS(IMG *img, char **outp){
     }
     int width = img->w, height = img->h;
     void *data = (void*) img->data;
-    long naxes[2] = {width, height}, tmpl;
+    long naxes[2] = {width, height};
     double tmpd = 0.0;
     float tmpf = 0.0;
     int tmpi = 0;
     struct tm *tm_time;
     char bufc[FLEN_CARD];
     time_t savetime = time(NULL);
+    double dsavetime = dtime();
     fitsfile *fp;
     fitserror = 0;
     TRYFITS(fits_create_file, &fp, fnam);
@@ -277,10 +278,9 @@ int saveFITS(IMG *img, char **outp){
     // DATE / Creation date (YYYY-MM-DDThh:mm:ss, UTC)
     strftime(bufc, FLEN_VALUE, "%Y-%m-%dT%H:%M:%S", gmtime(&savetime));
     WRITEKEY(fp, TSTRING, "DATE", bufc, "Creation date (YYYY-MM-DDThh:mm:ss, UTC)");
-    tmpl = (long) savetime;
     tm_time = localtime(&savetime);
     strftime(bufc, FLEN_VALUE, "File creation time (UNIX)", tm_time);
-    WRITEKEY(fp, TLONG, "UNIXTIME", &tmpl, bufc);
+    WRITEKEY(fp, TDOUBLE, "UNIXTIME", &dsavetime, bufc);
     strftime(bufc, 80, "%Y/%m/%d", tm_time);
     // DATE-OBS / DATE (YYYY/MM/DD) OF OBS.
     WRITEKEY(fp, TSTRING, "DATE-OBS", bufc, "DATE OF OBS. (YYYY/MM/DD, local)");
