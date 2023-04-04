@@ -18,6 +18,7 @@
 
 #include <C/FlyCapture2_C.h>
 #include <C/FlyCapture2Defs_C.h>
+#include <stdatomic.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -33,6 +34,7 @@ static fc2PGRGuid guid;
 static fc2Error err = FC2_ERROR_OK;
 
 static int isopened = FALSE, is16bit = FALSE;
+static atomic_int canceled = 0;
 static char camname[BUFSIZ] = {0};
 
 #ifndef Stringify
@@ -287,6 +289,7 @@ rtn:
 
 static int capture(IMG *ima){
     FNAME();
+    if(canceled) return FALSE;
     if(!ima || !ima->data || !isopened) return FALSE;
     static int toohot = FALSE;
     float f;
@@ -432,12 +435,17 @@ static int shutter(_U_ shutter_op cmd){
     return FALSE;
 }
 
+static void capcancel(){
+    canceled = 1;
+    DBG("No capturing now");
+}
+
 static int ffalse(_U_ float f){ return FALSE; }
 static int fpfalse(_U_ float *f){ return FALSE; }
 static int ifalse(_U_ int i){ return FALSE; }
 static int vtrue(){ return TRUE; }
 static int ipfalse(_U_ int *i){ return FALSE; }
-static void vstub(){ return ;}
+//static void vstub(){ return ;}
 
 /*
  * Global objects: camera, focuser and wheel
@@ -447,7 +455,7 @@ Camera camera = {
     .close = disconnect,
     .pollcapture = pollcapt,
     .capture = capture,
-    .cancel = vstub,
+    .cancel = capcancel,
     .startexposition = vtrue,
     // setters:
     .setDevNo = setdevno,

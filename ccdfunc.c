@@ -211,14 +211,13 @@ int saveFITS(IMG *img, char **outp){
     }
     int width = img->w, height = img->h;
     void *data = (void*) img->data;
-    long naxes[2] = {width, height};
+    long naxes[2] = {width, height}, tmpl;
     double tmpd = 0.0;
     float tmpf = 0.0;
     int tmpi = 0;
     struct tm *tm_time;
     char bufc[FLEN_CARD];
     time_t savetime = time(NULL);
-    double dsavetime = dtime();
     fitsfile *fp;
     fitserror = 0;
     TRYFITS(fits_create_file, &fp, fnam);
@@ -278,9 +277,10 @@ int saveFITS(IMG *img, char **outp){
     // DATE / Creation date (YYYY-MM-DDThh:mm:ss, UTC)
     strftime(bufc, FLEN_VALUE, "%Y-%m-%dT%H:%M:%S", gmtime(&savetime));
     WRITEKEY(fp, TSTRING, "DATE", bufc, "Creation date (YYYY-MM-DDThh:mm:ss, UTC)");
+    tmpl = (long) savetime;
     tm_time = localtime(&savetime);
     strftime(bufc, FLEN_VALUE, "File creation time (UNIX)", tm_time);
-    WRITEKEY(fp, TDOUBLE, "UNIXTIME", &dsavetime, bufc);
+    WRITEKEY(fp, TLONG, "UNIXTIME", &tmpl, bufc);
     strftime(bufc, 80, "%Y/%m/%d", tm_time);
     // DATE-OBS / DATE (YYYY/MM/DD) OF OBS.
     WRITEKEY(fp, TSTRING, "DATE-OBS", bufc, "DATE OF OBS. (YYYY/MM/DD, local)");
@@ -718,8 +718,6 @@ int prepare_ccds(){
         }else WARNX(_("Can't set brightness to %g"), GP->brightness);
     }
     /*********************** expose control ***********************/
-    // cancel previous exp
-    camera->cancel();
     if(GP->hbin < 1) GP->hbin = 1;
     if(GP->vbin < 1) GP->vbin = 1;
     if(!camera->setbin(GP->hbin, GP->vbin)){
@@ -813,9 +811,11 @@ DBG("w=%d, h=%d", raw_width, raw_height);
     closecam();
 }
 
-void cancel(){
+// cancel expositions and close camera devise
+void camstop(){
     if(camera){
         camera->cancel();
+        camera->close();
     }
 }
 
@@ -855,16 +855,18 @@ eof:
  * @return TRUE if new image available
  */
 int ccdcaptured(IMG **imgptr){
+    static double tlast = 0.;
     if(!imgptr) return FALSE;
     static pthread_t grabthread = 0;
     if(imgptr == (void*)-1){ // kill `grabnext`
-        DBG("Kill grabbing thread");
+        DBG("Wait for grabbing thread ends");
         if(grabthread){
-            pthread_cancel(grabthread);
+            //pthread_cancel(grabthread); - this kills some cameras
+            //pthread_timedjoin_np
             pthread_join(grabthread, NULL);
             grabthread = 0;
         }
-        DBG("Killed");
+        DBG("OK");
         return FALSE;
     }
     frameformat fmt = camera->geometry;
@@ -879,20 +881,27 @@ int ccdcaptured(IMG **imgptr){
         ima->h = raw_height;
         *imgptr = ima;
     }else ima = *imgptr;
+
     if(!grabthread){ // start new grab
         DBG("\n\n\nStart new grab");
         if(pthread_create(&grabthread, NULL, &grabnext, (void*)ima)){
             WARN("Can't create grabbing thread");
             grabthread = 0;
-       }
+        }
+        tlast = dtime();
     }else{ // grab in process
         if(grabends){ // thread is dead
-            DBG("Thread is dead");
+            DBG("Grab ends");
             void *vr;
             pthread_join(grabthread, &vr);
             int retcode = *(int*)vr;
             DBG("retcode = %d", retcode);
             grabthread = 0;
+            if(GP->verbose > 1){
+                double t = dtime();
+                green("Framerate=%.2g\n", 1./(t-tlast));
+                tlast = t;
+            }
             if(retcode) return TRUE;
         }
     }

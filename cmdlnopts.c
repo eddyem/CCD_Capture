@@ -101,6 +101,7 @@ myoption cmdlnopts[] = {
     {"path",    NEED_ARG,   NULL,   0,      arg_string, APTR(&G.path),      N_("UNIX socket name")},
     {"port",    NEED_ARG,   NULL,   0,      arg_string, APTR(&G.port),      N_("local INET socket port")},
     {"client",  NO_ARGS,    &G.client,1,    arg_none,   NULL,               N_("run as client")},
+    {"viewer",  NO_ARGS,    &G.viewer,1,    arg_none,   NULL,               N_("passive viewer (only get last images)")},
     {"pidfile", NEED_ARG,   NULL,   0,      arg_string, APTR(&G.pidfile),   N_("PID file (default: " DEFAULT_PID_FILE ")")},
     {"restart", NO_ARGS,    &G.restart,1,   arg_none,   NULL,               N_("restart image server")},
 

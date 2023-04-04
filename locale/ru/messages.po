@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2023-04-02 12:50+0300\n"
+"POT-Creation-Date: 2023-04-04 18:42+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -234,14 +234,18 @@ msgid "run as client"
 msgstr ""
 
 #: cmdlnopts.c:104
-msgid "PID file (default: "
+msgid "passive viewer (only get last images)"
 msgstr ""
 
 #: cmdlnopts.c:105
+msgid "PID file (default: "
+msgstr ""
+
+#: cmdlnopts.c:106
 msgid "restart image server"
 msgstr ""
 
-#: cmdlnopts.c:108
+#: cmdlnopts.c:109
 msgid "Display image in OpenGL window"
 msgstr ""
 
@@ -474,88 +478,88 @@ msgstr ""
 msgid "Can't set brightness to %g"
 msgstr ""
 
-#: ccdfunc.c:726 server.c:229
+#: ccdfunc.c:724 server.c:228
 #, c-format
 msgid "Can't set binning %dx%d"
 msgstr ""
 
-#: ccdfunc.c:738 server.c:230
+#: ccdfunc.c:736 server.c:229
 msgid "Can't set given geometry"
 msgstr ""
 
-#: ccdfunc.c:742
+#: ccdfunc.c:740
 #, c-format
 msgid "Can't set %d flushes"
 msgstr ""
 
-#: ccdfunc.c:746
+#: ccdfunc.c:744
 #, c-format
 msgid "Can't set exposure time to %f seconds"
 msgstr ""
 
-#: ccdfunc.c:749
+#: ccdfunc.c:747
 msgid "Can't change frame type"
 msgstr ""
 
-#: ccdfunc.c:752
+#: ccdfunc.c:750
 msgid "Can't set bit depth"
 msgstr ""
 
-#: ccdfunc.c:754
+#: ccdfunc.c:752
 msgid "Can't set readout speed"
 msgstr ""
 
-#: ccdfunc.c:755
+#: ccdfunc.c:753
 #, c-format
 msgid "Readout mode: %s"
 msgstr ""
 
-#: ccdfunc.c:756
+#: ccdfunc.c:754
 msgid "Only show statistics"
 msgstr ""
 
 #. GET binning should be AFTER setgeometry!
-#: ccdfunc.c:758
+#: ccdfunc.c:756
 msgid "Can't get current binning"
 msgstr ""
 
 #. Захват кадра %d\n
-#: ccdfunc.c:780
+#: ccdfunc.c:778
 #, c-format
 msgid "Capture frame %d"
 msgstr ""
 
-#: ccdfunc.c:782 ccdfunc.c:832 server.c:124
+#: ccdfunc.c:780 ccdfunc.c:832 server.c:123
 msgid "Can't start exposition"
 msgstr ""
 
-#: ccdfunc.c:786
+#: ccdfunc.c:784
 msgid "Can't capture image"
 msgstr ""
 
-#: ccdfunc.c:789
+#: ccdfunc.c:787
 msgid "Read grabbed image"
 msgstr ""
 
-#: ccdfunc.c:792 ccdfunc.c:840
+#: ccdfunc.c:790 ccdfunc.c:840
 msgid "Can't grab image"
 msgstr ""
 
 #. %d секунд до окончания паузы\n
-#: ccdfunc.c:801 client.c:282
+#: ccdfunc.c:799 client.c:289
 #, c-format
 msgid "%d seconds till pause ends\n"
 msgstr ""
 
-#: server.c:167
+#: server.c:166
 msgid "No camera device"
 msgstr ""
 
-#: client.c:269
+#: client.c:276
 msgid "Can't make exposition"
 msgstr ""
 
-#: client.c:298
+#: client.c:305
 msgid "Server timeout"
 msgstr ""
 

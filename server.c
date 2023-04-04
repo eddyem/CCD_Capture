@@ -117,7 +117,6 @@ static inline void cameraidlestate(){ // idle - wait for capture commands
         DBG("Start exposition");
         camflags &= ~(FLAG_STARTCAPTURE | FLAG_CANCEL);
         camstate = CAMERA_CAPTURE;
-        camera->cancel();
         fixima();
         if(!camera->startexposition()){
             LOGERR("Can't start exposition");
@@ -515,9 +514,16 @@ static hresult brightnesshandler(_U_ int fd, _U_ const char *key, _U_ const char
 static hresult formathandler(int fd, const char *key, const char *val){
     char buf[64];
     frameformat fmt;
+    DBG("key=%s, val=%s", key, val);
     if(val){
-        if(0 == strcmp(key, CMD_FRAMEMAX)) return RESULT_BADKEY; // can't set maxformat
-        if(4 != sscanf(val, "%d,%d,%d,%d", &fmt.xoff, &fmt.yoff, &fmt.w, &fmt.h)) return RESULT_BADVAL;
+        if(0 == strcmp(key, CMD_FRAMEMAX)){
+            DBG("CANT SET MAXFORMAT");
+            return RESULT_BADKEY; // can't set maxformat
+        }
+        if(4 != sscanf(val, "%d,%d,%d,%d", &fmt.xoff, &fmt.yoff, &fmt.w, &fmt.h)){
+            DBG("Wrong format %s", val);
+            return RESULT_BADVAL;
+        }
         fmt.w -= fmt.xoff; fmt.h -= fmt.yoff;
         int r = camera->setgeometry(&fmt);
         if(!r) return RESULT_FAIL;
@@ -894,7 +900,7 @@ static hresult imsizehandler(int fd, const char *key, _U_ const char *val){
     if(0 == strcmp(key, CMD_IMHEIGHT)) snprintf(buf, 63, CMD_IMHEIGHT "=%d", ima.h);
     else snprintf(buf, 63, CMD_IMWIDTH "=%d", ima.w);
     if(!sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
-    return RESULT_OK;
+    return RESULT_SILENCE;
 }
 
 // for setters: do nothing when camera not in idle state

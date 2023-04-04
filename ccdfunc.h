@@ -29,7 +29,7 @@ void focusers();
 void wheels();
 int prepare_ccds();
 void ccds();
-void cancel();
+void camstop();
 
 int startCCD(void **dlh);
 int startWheel(void **dlh);

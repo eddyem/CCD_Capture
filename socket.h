@@ -29,13 +29,13 @@
 #define MAXCLIENTS  (30)
 
 // wait for mutex locking
-#define BUSY_TIMEOUT    (0.3)
+#define BUSY_TIMEOUT    (0.1)
 // waiting for answer timeout
 #define ANSWER_TIMEOUT  (1.0)
 // wait for exposition ends (between subsequent check calls)
 #define WAIT_TIMEOUT    (2.0)
 // client will disconnect after this time from last server message
-#define CLIENT_TIMEOUT  (10.0)
+#define CLIENT_TIMEOUT  (3.0)
 
 extern pthread_mutex_t locmutex;
 

@@ -33,6 +33,7 @@ static char sendbuf[BUFSIZ];
 #define SENDMSG(...) do{snprintf(sendbuf, BUFSIZ-1, __VA_ARGS__); verbose(2, "\t> %s", sendbuf); sendstrmessage(sock, sendbuf); getans(sock);}while(0)
 static volatile atomic_int expstate = CAMERA_CAPTURE;
 static int xm0,ym0,xm1,ym1; // max format
+static int xc0,yc0,xc1,yc1; // current format
 
 #ifdef IMAGEVIEW
 static IMG ima = {0};
@@ -110,6 +111,9 @@ static int parseans(char *ans){
     }else if(0 == strcmp(CMD_FRAMEMAX, ans)){
         sscanf(val, "%d,%d,%d,%d", &xm0, &ym0, &xm1, &ym1);
         DBG("Got maxformat: %d,%d,%d,%d", xm0, ym0, xm1, ym1);
+    }else if(0 == strcmp(CMD_FRAMEFORMAT, ans)){
+        sscanf(val, "%d,%d,%d,%d", &xc0, &yc0, &xc1, &yc1);
+        DBG("Got current format: %d,%d,%d,%d", xc0, yc0, xc1, yc1);
     }
 #ifdef IMAGEVIEW
     else if(0 == strcmp(CMD_IMWIDTH, ans)){
@@ -165,13 +169,15 @@ static void send_headers(int sock){
     // CCD/CMOS
     if(GP->X0 > -1 || GP->Y0 > -1 || GP->X1 > -1 || GP->Y1 > -1){ // set format
         SENDMSG(CMD_FRAMEMAX);
-        DBG("max format: (%d,%d)x(%d,%d)", xm0,ym0,xm1,ym1);
-        if(GP->X0 < 0) GP->X0 = xm0; // default values
+        SENDMSG(CMD_FRAMEFORMAT);
+        if(GP->X0 < 0) GP->X0 = xc0; // default values
         else if(GP->X0 > xm1-1) GP->X0 = xm1-1;
-        if(GP->Y0 < 0) GP->Y0 = ym0;
+        if(GP->Y0 < 0) GP->Y0 = yc0;
         else if(GP->Y0 > ym1-1) GP->Y0 = ym1-1;
-        if(GP->X1 < GP->X0+1 || GP->X1 > xm1) GP->X1 = xm1;
-        if(GP->Y1 < GP->Y0+1 || GP->Y1 > ym1) GP->Y1 = ym1;
+        if(GP->X1 < GP->X0+1) GP->X1 = xc1;
+        else if(GP->X1 > xm1) GP->X1 = xm1;
+        if(GP->Y1 < GP->Y0+1) GP->Y1 = yc1;
+        else if(GP->Y1 > ym1) GP->Y1 = ym1;
         DBG("set format: (%d,%d)x(%d,%d)", GP->X0,GP->X1,GP->Y0,GP->Y1);
         SENDMSG(CMD_FRAMEFORMAT "=%d,%d,%d,%d", GP->X0, GP->Y0, GP->X1, GP->Y1);
     }
@@ -245,7 +251,8 @@ void client(int sock){
         else GP->waitexpend = TRUE; // N>1 - wait for exp ends
         SENDMSG(CMD_EXPSTATE "=%d", CAMERA_CAPTURE);
     }else{
-        while(getans(sock));
+        double t0 = dtime();
+        while(getans(sock) && dtime() - t0 < WAIT_TIMEOUT);
         DBG("RETURN: no more data");
         return;
     }
@@ -306,15 +313,48 @@ void init_grab_sock(int sock){
     send_headers(sock);
 }
 
+static void getimage(){
+    int sock = grabsockfd;
+    SENDMSG(CMD_IMWIDTH);
+    SENDMSG(CMD_IMHEIGHT);
+    while(readmsg(sock)); // clear all incoming data
+    sendstrmessage(sock, CMD_GETIMAGE); // ask for image
+    if(imbufsz < imdatalen){
+        DBG("Reallocate memory from %d to %d", imbufsz, imdatalen);
+        ima.data = realloc(ima.data, imdatalen);
+        imbufsz = imdatalen;
+    }
+    double t0 = dtime();
+    int got = 0;
+    while(dtime() - t0 < CLIENT_TIMEOUT){
+        if(!canberead(sock)) continue;
+        uint8_t *target = ((uint8_t*)ima.data)+got;
+        int rd = read(sock, target, imdatalen - got);
+        if(rd <= 0){
+            WARNX("Server disconnected");
+            signals(1);
+        }
+        got += rd;
+        DBG("Read %d bytes; total read %d from %d; first: %x %x %x %x", rd, got, imdatalen, target[0],
+                target[1], target[2], target[3]);
+        if(got == imdatalen){
+            DBG("Got image");
+            grabends = 1;
+            break;
+        }
+    }
+    if(dtime() - t0 > CLIENT_TIMEOUT) WARNX("Timeout, image didn't received");
+}
+
 static void *grabnext(void _U_ *arg){ // daemon grabbing images through the net
     FNAME();
     if(grabsockfd < 0) return NULL;
     int sock = grabsockfd;
     while(1){
+        DBG("WAIT");
         while(grabends); // wait until image processed
-        SENDMSG(CMD_IMWIDTH);
-        SENDMSG(CMD_IMHEIGHT);
         expstate = CAMERA_CAPTURE;
+        DBG("CAPT");
         SENDMSG(CMD_EXPSTATE "=%d", CAMERA_CAPTURE); // start capture
         double timeout = GP->exptime + CLIENT_TIMEOUT, t0 = dtime();
         useconds_t sleept = 500000; // 0.5s
@@ -335,31 +375,23 @@ static void *grabnext(void _U_ *arg){ // daemon grabbing images through the net
             continue;
         }
         DBG("Frame ready");
-        while(readmsg(sock)); // clear all incoming data
-        sendstrmessage(sock, CMD_GETIMAGE); // ask for image
-        if(imbufsz < imdatalen){
-            DBG("Reallocate memory from %d to %d", imbufsz, imdatalen);
-            ima.data = realloc(ima.data, imdatalen);
-            imbufsz = imdatalen;
+        getimage();
+    }
+    return NULL;
+}
+
+static void *waitimage(void _U_ *arg){ // passive waiting for next image
+    FNAME();
+    if(grabsockfd < 0) return NULL;
+    int sock = grabsockfd;
+    while(1){
+        while(grabends); // wait until image processed
+        getans(sock);
+        if(expstate != CAMERA_FRAMERDY){
+            usleep(1000);
+            continue;
         }
-        t0 = dtime();
-        int got = 0;
-        while(dtime() - t0 < CLIENT_TIMEOUT){
-            if(!canberead(sock)) continue;
-            int rd = read(sock, ((uint8_t*)ima.data)+got, imdatalen - got);
-            if(rd <= 0){
-                WARNX("Server disconnected");
-                signals(1);
-            }
-            got += rd;
-            DBG("Read %d bytes; total read %d from %d", rd, got, imdatalen);
-            if(got == imdatalen){
-                DBG("Got image");
-                grabends = 1;
-                break;
-            }
-        }
-        if(dtime() - t0 > CLIENT_TIMEOUT) WARNX("Timeout, image didn't received");
+        getimage();
     }
     return NULL;
 }
@@ -370,24 +402,33 @@ int sockcaptured(IMG **imgptr){
     static pthread_t grabthread = 0;
     if(grabsockfd < 0) return FALSE;
     if(imgptr == (void*)-1){ // kill `grabnext`
-        DBG("Kill grabbing thread");
+        DBG("Wait for grabbing thread");
         if(grabthread){
             pthread_cancel(grabthread);
             pthread_join(grabthread, NULL);
             grabthread = 0;
         }
-        DBG("Killed");
+        DBG("OK");
         return FALSE;
     }
     if(!grabthread){ // start new grab
-        DBG("\n\n\nStart new grab");
-        if(pthread_create(&grabthread, NULL, &grabnext, NULL)){
-            WARN("Can't create grabbing thread");
-            grabthread = 0;
-       }
+        if(GP->viewer){
+            DBG("\n\n\nStart new waiting");
+            if(pthread_create(&grabthread, NULL, &waitimage, NULL)){
+                WARN("Can't create waiting thread");
+                grabthread = 0;
+           }
+        }else{
+            DBG("\n\n\nStart new grab");
+            if(pthread_create(&grabthread, NULL, &grabnext, NULL)){
+                WARN("Can't create grabbing thread");
+                grabthread = 0;
+           }
+        }
     }else{ // grab in process
         if(grabends){ // image is ready
             DBG("Image ready");
+            grabthread = 0;
             if(*imgptr && (*imgptr != &ima)) free(*imgptr);
             *imgptr = &ima;
             grabends = 0;

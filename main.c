@@ -58,17 +58,16 @@ void signals(int signo){
     // slave: cancel exposition
     if(signo) WARNX("Get signal %d - exit", signo);
     if(!GP->client){
-        DBG("Cancel capturing");
-        cancel();
+        DBG("Cancel capturing and close all");
+        camstop();
+        closewheel();
+        focclose();
     }
 #ifdef IMAGEVIEW
     DBG("KILL GL");
     closeGL();
     usleep(10000);
 #endif
-    closewheel();
-    focclose();
-    closecam();
     exit(signo);
 }
 
@@ -87,6 +86,10 @@ int main(int argc, char **argv){
         omp_set_num_threads(cpunumber);
 */
     parse_args(argc, argv);
+    if(GP->viewer){
+        GP->client = 1;
+        GP->showimage = 1;
+    }
     if(GP->outfile && GP->outfileprefix) ERRX("Can't use outfile name and prefix together");
     if(GP->outfile && !GP->rewrite){
         struct stat filestat;

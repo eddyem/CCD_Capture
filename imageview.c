@@ -518,11 +518,11 @@ void closeGL(){
     usleep(1000);
     if(!initialized) return;
     initialized = 0;
-    cancel(); // cancel expositions
+    camstop(); // cancel expositions
+    //DBG("Leave mainloop");
+    //glutLeaveMainLoop();
     DBG("kill");
     killwindow();
-    DBG("Leave mainloop");
-    glutLeaveMainLoop();
     DBG("join");
     if(GLUTthread) pthread_join(GLUTthread, NULL); // wait while main thread exits
     DBG("main GL thread cancelled");

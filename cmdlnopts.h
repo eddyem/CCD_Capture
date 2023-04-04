@@ -42,8 +42,9 @@ typedef struct{
     char **addhdr;      // list of files from which to add header records
     int restart;        // restart server
     int waitexpend;     // wait while exposition ends
-    int cancelexpose;   // cancel exp
+    int cancelexpose;   // cancel exp (for Grasshopper - forbid forever)
     int client;         // run as client
+    int viewer;         // passive client (only get last images)
     int listdevices;    // list connected devices
     int fanspeed;       // fan speed: 0-2
     int noflush;        // turn off bg flushing

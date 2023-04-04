@@ -120,6 +120,7 @@ int start_socket(int isserver, char *path, int isnet){
     else{
 #ifdef IMAGEVIEW
         if(GP->showimage){
+            if(!GP->viewer && GP->exptime < 0.00001) ERRX("Need exposition time!");
             init_grab_sock(sock);
             viewer(sockcaptured); // start viewer with socket client parser
         }else
@@ -256,6 +257,7 @@ static int parsestring(int fd, handleritem *handlers, char *str){
             return sendstrmessage(fd, hresult2str(r));
         }
     }
+    DBG("Command not found!");
     return sendstrmessage(fd, resmessages[RESULT_BADKEY]);
 }
 
