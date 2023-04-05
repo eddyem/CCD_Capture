@@ -17,11 +17,13 @@
  */
 
 #include <ctype.h> // isspace
+#include <fcntl.h>
 #include <netdb.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/un.h>  // unix socket
+#include <unistd.h>
 #include <usefull_macros.h>
 
 #include "client.h"
@@ -35,13 +37,14 @@
 pthread_mutex_t locmutex = PTHREAD_MUTEX_INITIALIZER; // mutex for wheel/camera/focuser functions
 
 /**
- * @brief start_socket - create socket and run client or server
+ * @brief open_socket - create socket and open it
  * @param isserver  - TRUE for server, FALSE for client
  * @param path      - UNIX-socket path or local INET socket port
  * @param isnet     - TRUE for INET socket, FALSE for UNIX
- * @return 0 if OK
+ * @return socket FD or -1 if failed
  */
-int start_socket(int isserver, char *path, int isnet){
+int open_socket(int isserver, char *path, int isnet){
+    DBG("isserver=%d, path=%s, isnet=%d", isserver, path, isnet);
     if(!path) return 1;
     DBG("path/port: %s", path);
     int sock = -1;
@@ -89,6 +92,7 @@ int start_socket(int isserver, char *path, int isnet){
                 close(sock); sock = -1;
                 continue;
             }
+            //fcntl(sock, F_SETFL, O_NONBLOCK);
             if(bind(sock, p->ai_addr, p->ai_addrlen) == -1){
                 WARN("bind()");
                 LOGWARN("bind()");
@@ -111,13 +115,30 @@ int start_socket(int isserver, char *path, int isnet){
         }
         break;
     }
+    if(isnet) freeaddrinfo(res);
+    return sock;
+}
+
+/**
+ * @brief start_socket - create socket and run client or server
+ * @param isserver  - TRUE for server, FALSE for client
+ * @return 0 if OK
+ */
+int start_socket(int isserver){
+    char *path = NULL;
+    int isnet = FALSE;
+    if(GP->path) path = GP->path;
+    else if(GP->port){ path = GP->port; isnet = TRUE; }
+    else ERRX("Point network port or UNIX-socket path");
+    int sock = open_socket(isserver, path, isnet), imsock = -1;
     if(sock < 0){
         LOGERR("Can't open socket");
-        ERRX("Can't open socket");
+        ERRX("start_socket(): can't open socket");
     }
-    if(isnet) freeaddrinfo(res);
-    if(isserver) server(sock);
-    else{
+    if(isserver){
+        imsock = open_socket(TRUE, GP->imageport, TRUE);
+        server(sock, imsock);
+    }else{
 #ifdef IMAGEVIEW
         if(GP->showimage){
             if(!GP->viewer && GP->exptime < 0.00001) ERRX("Need exposition time!");
@@ -129,12 +150,16 @@ int start_socket(int isserver, char *path, int isnet){
     }
     DBG("Close socket");
     close(sock);
-    if(isserver) signals(0);
+    if(isserver){
+        close(imsock);
+        signals(0);
+    }
     return 0;
 }
 
 // send image data to client
 int sendimage(int fd, uint16_t *data, int l){
+    DBG("fd=%d, l=%d", fd, l);
     if(fd < 1 || !data || l < 1) return TRUE; // empty message
     DBG("send new image (size=%d) to fd %d", l, fd);
 //strncpy((char*)data, "TEST image data\n", 17);
@@ -290,4 +315,34 @@ int processData(int fd, handleritem *handlers, char *buf, int buflen){
     }while(1);
     if(restofdata != buf) memmove(buf, restofdata, eptr - restofdata + 1);
     return TRUE;
+}
+
+/**
+ * check data from  fd (polling function for client)
+ * @param fd - file descriptor
+ * @return 0 in case of timeout, 1 in case of fd have data, -1 if error
+ */
+int canberead(int fd){
+    fd_set fds;
+    struct timeval timeout;
+    timeout.tv_sec = 0;
+    timeout.tv_usec = 100;
+    FD_ZERO(&fds);
+    FD_SET(fd, &fds);
+    do{
+        int rc = select(fd+1, &fds, NULL, NULL, &timeout);
+        if(rc < 0){
+            if(errno != EINTR){
+                LOGWARN("select()");
+                WARN("select()");
+                return -1;
+            }
+            continue;
+        }
+        break;
+    }while(1);
+    if(FD_ISSET(fd, &fds)){
+        return 1;
+    }
+    return 0;
 }

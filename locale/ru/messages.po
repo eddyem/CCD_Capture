@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2023-04-04 18:42+0300\n"
+"POT-Creation-Date: 2023-04-05 18:17+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -230,22 +230,26 @@ msgid "local INET socket port"
 msgstr ""
 
 #: cmdlnopts.c:103
-msgid "run as client"
+msgid "local INET socket port to send/receive images"
 msgstr ""
 
 #: cmdlnopts.c:104
-msgid "passive viewer (only get last images)"
+msgid "run as client"
 msgstr ""
 
 #: cmdlnopts.c:105
-msgid "PID file (default: "
+msgid "passive viewer (only get last images)"
 msgstr ""
 
 #: cmdlnopts.c:106
+msgid "PID file (default: "
+msgstr ""
+
+#: cmdlnopts.c:107
 msgid "restart image server"
 msgstr ""
 
-#: cmdlnopts.c:109
+#: cmdlnopts.c:110
 msgid "Display image in OpenGL window"
 msgstr ""
 
@@ -478,12 +482,12 @@ msgstr ""
 msgid "Can't set brightness to %g"
 msgstr ""
 
-#: ccdfunc.c:724 server.c:228
+#: ccdfunc.c:724 server.c:227
 #, c-format
 msgid "Can't set binning %dx%d"
 msgstr ""
 
-#: ccdfunc.c:736 server.c:229
+#: ccdfunc.c:736 server.c:228
 msgid "Can't set given geometry"
 msgstr ""
 
@@ -529,7 +533,7 @@ msgstr ""
 msgid "Capture frame %d"
 msgstr ""
 
-#: ccdfunc.c:780 ccdfunc.c:832 server.c:123
+#: ccdfunc.c:780 ccdfunc.c:832 server.c:122
 msgid "Can't start exposition"
 msgstr ""
 
@@ -546,20 +550,20 @@ msgid "Can't grab image"
 msgstr ""
 
 #. %d секунд до окончания паузы\n
-#: ccdfunc.c:799 client.c:289
+#: ccdfunc.c:799 client.c:269
 #, c-format
 msgid "%d seconds till pause ends\n"
 msgstr ""
 
-#: server.c:166
+#: server.c:165
 msgid "No camera device"
 msgstr ""
 
-#: client.c:276
+#: client.c:256
 msgid "Can't make exposition"
 msgstr ""
 
-#: client.c:305
+#: client.c:285
 msgid "Server timeout"
 msgstr ""
 

@@ -19,6 +19,7 @@
 // client-side functions
 #include <stdatomic.h>
 #include <math.h>  // isnan
+#include <signal.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/socket.h>
@@ -30,7 +31,10 @@
 #include "socket.h"
 
 static char sendbuf[BUFSIZ];
-#define SENDMSG(...) do{snprintf(sendbuf, BUFSIZ-1, __VA_ARGS__); verbose(2, "\t> %s", sendbuf); sendstrmessage(sock, sendbuf); getans(sock);}while(0)
+// send any message and wait any answer
+#define SENDMSG(...) do{snprintf(sendbuf, BUFSIZ-1, __VA_ARGS__); verbose(2, "\t> %s", sendbuf); sendstrmessage(sock, sendbuf); getans(sock, NULL);}while(0)
+// send command and wait for answer on it
+#define SENDCMDW(cmd) do{strncpy(sendbuf, cmd, BUFSIZ-1); verbose(2, "\t> %s", sendbuf); sendstrmessage(sock, sendbuf); getans(sock, cmd);}while(0)
 static volatile atomic_int expstate = CAMERA_CAPTURE;
 static int xm0,ym0,xm1,ym1; // max format
 static int xc0,yc0,xc1,yc1; // current format
@@ -40,36 +44,6 @@ static IMG ima = {0};
 static volatile atomic_int grabends = 0;
 static int imdatalen = 0, imbufsz = 0;
 #endif
-
-/**
- * check data from  fd (polling function for client)
- * @param fd - file descriptor
- * @return 0 in case of timeout, 1 in case of fd have data, -1 if error
- */
-static int canberead(int fd){
-    fd_set fds;
-    struct timeval timeout;
-    timeout.tv_sec = 0;
-    timeout.tv_usec = 100;
-    FD_ZERO(&fds);
-    FD_SET(fd, &fds);
-    do{
-        int rc = select(fd+1, &fds, NULL, NULL, &timeout);
-        if(rc < 0){
-            if(errno != EINTR){
-                LOGWARN("select()");
-                WARN("select()");
-                return -1;
-            }
-            continue;
-        }
-        break;
-    }while(1);
-    if(FD_ISSET(fd, &fds)){
-        return 1;
-    }
-    return 0;
-}
 
 static char *readmsg(int fd){
     static char buf[BUFSIZ] = {0}, line[BUFSIZ];
@@ -101,7 +75,10 @@ static char *readmsg(int fd){
 static int parseans(char *ans){
     if(!ans) return FALSE;
     //DBG("Parsing of '%s'", ans);
-    if(0 == strcmp(hresult2str(RESULT_BUSY), ans)) ERRX("Server busy");
+    if(0 == strcmp(hresult2str(RESULT_BUSY), ans)){
+        WARNX("Server busy");
+        return FALSE;
+    }
     if(0 == strcmp(hresult2str(RESULT_FAIL), ans)) return TRUE;
     if(0 == strcmp(hresult2str(RESULT_OK), ans)) return TRUE;
     char *val = get_keyval(ans); // now `ans` is a key and `val` its value
@@ -130,7 +107,8 @@ static int parseans(char *ans){
 }
 
 // read until timeout all messages from server; return FALSE if there was no messages from server
-static int getans(int sock){
+// if msg != NULL - wait for it in answer
+static int getans(int sock, const char *msg){
     double t0 = dtime();
     char *ans = NULL;
     while(dtime() - t0 < ANSWER_TIMEOUT){
@@ -143,7 +121,10 @@ static int getans(int sock){
         ans = s;
         DBG("Got from server: %s", ans);
         verbose(1, "\t%s", ans);
-        if(parseans(ans)) break;
+        if(parseans(ans)){
+            if(msg && strncmp(ans, msg, strlen(msg))) continue;
+            break;
+        }
     }
     DBG("GETANS: timeout, ans: %s", ans);
     return ((ans) ? TRUE : FALSE);
@@ -251,8 +232,7 @@ void client(int sock){
         else GP->waitexpend = TRUE; // N>1 - wait for exp ends
         SENDMSG(CMD_EXPSTATE "=%d", CAMERA_CAPTURE);
     }else{
-        double t0 = dtime();
-        while(getans(sock) && dtime() - t0 < WAIT_TIMEOUT);
+        getans(sock, NULL);
         DBG("RETURN: no more data");
         return;
     }
@@ -269,7 +249,7 @@ void client(int sock){
             sprintf(sendbuf, "%s", CMD_EXPSTATE);
             sendstrmessage(sock, sendbuf);
         }
-        if(getans(sock)){ // got next portion of data
+        if(getans(sock, NULL)){ // got next portion of data
             DBG("server message");
             t0 = dtime();
             if(expstate == CAMERA_ERROR){
@@ -307,18 +287,20 @@ void client(int sock){
 }
 
 #ifdef IMAGEVIEW
-static int grabsockfd = -1;
+static int controlfd = -1;
 void init_grab_sock(int sock){
-    grabsockfd = sock;
+    if(sock < 0) ERRX("Can't run without command socket");
+    controlfd = sock;
     send_headers(sock);
 }
 
 static void getimage(){
-    int sock = grabsockfd;
+    FNAME();
+    int sock = controlfd;
     SENDMSG(CMD_IMWIDTH);
     SENDMSG(CMD_IMHEIGHT);
-    while(readmsg(sock)); // clear all incoming data
-    sendstrmessage(sock, CMD_GETIMAGE); // ask for image
+    int imsock = open_socket(FALSE, GP->imageport, TRUE);
+    if(imsock < 0) ERRX("getimage(): can't open image transport socket");
     if(imbufsz < imdatalen){
         DBG("Reallocate memory from %d to %d", imbufsz, imdatalen);
         ima.data = realloc(ima.data, imdatalen);
@@ -327,9 +309,9 @@ static void getimage(){
     double t0 = dtime();
     int got = 0;
     while(dtime() - t0 < CLIENT_TIMEOUT){
-        if(!canberead(sock)) continue;
+        if(!canberead(imsock)) continue;
         uint8_t *target = ((uint8_t*)ima.data)+got;
-        int rd = read(sock, target, imdatalen - got);
+        int rd = read(imsock, target, imdatalen - got);
         if(rd <= 0){
             WARNX("Server disconnected");
             signals(1);
@@ -344,12 +326,13 @@ static void getimage(){
         }
     }
     if(dtime() - t0 > CLIENT_TIMEOUT) WARNX("Timeout, image didn't received");
+    close(imsock);
 }
 
 static void *grabnext(void _U_ *arg){ // daemon grabbing images through the net
     FNAME();
-    if(grabsockfd < 0) return NULL;
-    int sock = grabsockfd;
+    if(controlfd < 0) return NULL;
+    int sock = controlfd;
     while(1){
         DBG("WAIT");
         while(grabends); // wait until image processed
@@ -366,7 +349,7 @@ static void *grabnext(void _U_ *arg){ // daemon grabbing images through the net
             DBG("SLEEP!");
             usleep(sleept);
             //SENDMSG(CMD_EXPSTATE);
-            getans(sock);
+            getans(sock, NULL);
             DBG("EXPSTATE ===> %d", expstate);
             if(expstate != CAMERA_CAPTURE) break;
         }
@@ -382,16 +365,18 @@ static void *grabnext(void _U_ *arg){ // daemon grabbing images through the net
 
 static void *waitimage(void _U_ *arg){ // passive waiting for next image
     FNAME();
-    if(grabsockfd < 0) return NULL;
-    int sock = grabsockfd;
+    if(controlfd < 0) return NULL;
+    int sock = controlfd;
     while(1){
         while(grabends); // wait until image processed
-        getans(sock);
+        getans(sock, NULL);
         if(expstate != CAMERA_FRAMERDY){
             usleep(1000);
             continue;
         }
+        DBG("Image can be downloaded");
         getimage();
+        expstate = CAMERA_IDLE;
     }
     return NULL;
 }
@@ -400,7 +385,7 @@ static void *waitimage(void _U_ *arg){ // passive waiting for next image
 int sockcaptured(IMG **imgptr){
     if(!imgptr) return FALSE;
     static pthread_t grabthread = 0;
-    if(grabsockfd < 0) return FALSE;
+    if(controlfd < 0) return FALSE;
     if(imgptr == (void*)-1){ // kill `grabnext`
         DBG("Wait for grabbing thread");
         if(grabthread){
@@ -411,7 +396,7 @@ int sockcaptured(IMG **imgptr){
         DBG("OK");
         return FALSE;
     }
-    if(!grabthread){ // start new grab
+    if(!grabthread || pthread_kill(grabthread, 0)){ // start new grab
         if(GP->viewer){
             DBG("\n\n\nStart new waiting");
             if(pthread_create(&grabthread, NULL, &waitimage, NULL)){
@@ -428,7 +413,6 @@ int sockcaptured(IMG **imgptr){
     }else{ // grab in process
         if(grabends){ // image is ready
             DBG("Image ready");
-            grabthread = 0;
             if(*imgptr && (*imgptr != &ima)) free(*imgptr);
             *imgptr = &ima;
             grabends = 0;

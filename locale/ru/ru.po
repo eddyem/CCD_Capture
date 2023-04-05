@@ -7,7 +7,7 @@
 msgid   ""
 msgstr  "Project-Id-Version: PACKAGE VERSION\n"
         "Report-Msgid-Bugs-To: \n"
-        "POT-Creation-Date: 2023-04-04 18:23+0300\n"
+        "POT-Creation-Date: 2023-04-05 18:17+0300\n"
         "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
         "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
         "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -22,7 +22,7 @@ msgid   "%.1f seconds till exposition ends"
 msgstr  "%.1f секунд до окончания экспозиции"
 
 #. %d я│п╣п╨я┐п╫п╢ п╢п╬ п╬п╨п╬п╫я┤п╟п╫п╦я▐ п©п╟я┐п╥я▀\n
-#: ccdfunc.c:799 client.c:289
+#: ccdfunc.c:799 client.c:269
 #, c-format
 msgid   "%d seconds till pause ends\n"
 msgstr  "%d секунд до окончания паузы\n"
@@ -117,7 +117,7 @@ msgstr  "Не могу установить фокусер в нуль"
 msgid   "Can't init mutex!"
 msgstr  "Не могу инициализировать мьютекс!"
 
-#: client.c:276
+#: client.c:256
 msgid   "Can't make exposition"
 msgstr  "Не могу выполнить экспозицию"
 
@@ -162,7 +162,7 @@ msgstr  "Не могу установить номер активного фокусера"
 msgid   "Can't set active wheel number"
 msgstr  "Не могу установить номер активного колеса"
 
-#: ccdfunc.c:724 server.c:228
+#: ccdfunc.c:724 server.c:227
 #, c-format
 msgid   "Can't set binning %dx%d"
 msgstr  "Не могу установить биннинг %dx%d"
@@ -190,7 +190,7 @@ msgstr  "Не могу установить скорость вентиляторов"
 msgid   "Can't set gain to %g"
 msgstr  "Не могу установить Gain в %g"
 
-#: ccdfunc.c:736 server.c:229
+#: ccdfunc.c:736 server.c:228
 msgid   "Can't set given geometry"
 msgstr  "Не могу установить геометрию"
 
@@ -213,7 +213,7 @@ msgstr  "Не могу установить скорость считывания"
 msgid   "Can't set wheel position %d"
 msgstr  "Не могу установить положение колеса %d"
 
-#: ccdfunc.c:780 ccdfunc.c:832 server.c:123
+#: ccdfunc.c:780 ccdfunc.c:832 server.c:122
 msgid   "Can't start exposition"
 msgstr  "Не могу начать экспозицию"
 
@@ -228,7 +228,7 @@ msgstr  "Захват кадра %d"
 msgid   "Current format: %s"
 msgstr  ""
 
-#: cmdlnopts.c:109
+#: cmdlnopts.c:110
 msgid   "Display image in OpenGL window"
 msgstr  "Отображение изображения в окне OpenGL"
 
@@ -289,7 +289,7 @@ msgstr  "Статистика по изображению: \n"
 msgid   "N flushes before exposing (default: 1)"
 msgstr  "N засвечиваний перед экспозицией (по умолчанию: 1)"
 
-#: server.c:166
+#: server.c:165
 msgid   "No camera device"
 msgstr  "Не указано устройство камеры"
 
@@ -309,7 +309,7 @@ msgstr  "Турелей не обнаружено"
 msgid   "Only show statistics"
 msgstr  "Только отобразить статистику"
 
-#: cmdlnopts.c:105
+#: cmdlnopts.c:106
 msgid   "PID file (default: "
 msgstr  "PID-файл (по умолчанию: "
 
@@ -327,7 +327,7 @@ msgstr  "Считывание изображения"
 msgid   "Readout mode: %s"
 msgstr  "Режим считывания: %s"
 
-#: client.c:305
+#: client.c:285
 msgid   "Server timeout"
 msgstr  "Таймаут сервера"
 
@@ -460,6 +460,11 @@ msgstr  "список подключенных устройств"
 msgid   "local INET socket port"
 msgstr  "порт локального сетевого сокета"
 
+#: cmdlnopts.c:103
+#, fuzzy
+msgid   "local INET socket port to send/receive images"
+msgstr  "порт локального сетевого сокета"
+
 #: cmdlnopts.c:100
 msgid   "logging file name (if run as server)"
 msgstr  "имя файла логгирования (если запущен сервер)"
@@ -521,7 +526,7 @@ msgstr  "открыть затвор"
 msgid   "output file name"
 msgstr  "имя файла"
 
-#: cmdlnopts.c:104
+#: cmdlnopts.c:105
 msgid   "passive viewer (only get last images)"
 msgstr  ""
 
@@ -529,7 +534,7 @@ msgstr  ""
 msgid   "program author"
 msgstr  "автор программы"
 
-#: cmdlnopts.c:106
+#: cmdlnopts.c:107
 msgid   "restart image server"
 msgstr  "перезапуск сервера"
 
@@ -537,7 +542,7 @@ msgstr  "перезапуск сервера"
 msgid   "rewrite output file if exists"
 msgstr  "перезапись выходного файла"
 
-#: cmdlnopts.c:103
+#: cmdlnopts.c:104
 msgid   "run as client"
 msgstr  "запустить клиент"
 

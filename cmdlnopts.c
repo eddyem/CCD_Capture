@@ -100,6 +100,7 @@ myoption cmdlnopts[] = {
     {"logfile", NEED_ARG,   NULL,   0,      arg_string, APTR(&G.logfile),   N_("logging file name (if run as server)")},
     {"path",    NEED_ARG,   NULL,   0,      arg_string, APTR(&G.path),      N_("UNIX socket name")},
     {"port",    NEED_ARG,   NULL,   0,      arg_string, APTR(&G.port),      N_("local INET socket port")},
+    {"imageport",NEED_ARG,  NULL,   0,      arg_string, APTR(&G.imageport), N_("local INET socket port to send/receive images")},
     {"client",  NO_ARGS,    &G.client,1,    arg_none,   NULL,               N_("run as client")},
     {"viewer",  NO_ARGS,    &G.viewer,1,    arg_none,   NULL,               N_("passive viewer (only get last images)")},
     {"pidfile", NEED_ARG,   NULL,   0,      arg_string, APTR(&G.pidfile),   N_("PID file (default: " DEFAULT_PID_FILE ")")},

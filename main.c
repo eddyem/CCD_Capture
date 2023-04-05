@@ -108,6 +108,12 @@ int main(int argc, char **argv){
         if(!GP->client) isserver = TRUE;
     }
     if(GP->path && !GP->client) isserver = TRUE;
+    if((isserver || GP->client) && !GP->imageport){
+        GP->imageport = MALLOC(char, 32);
+        if(!GP->port) sprintf(GP->imageport, "12345");
+        else snprintf(GP->imageport, 31, "%d", 1+atoi(GP->port));
+        verbose(1, "Set image port to %s", GP->imageport);
+    }
     if(GP->client && (GP->commondev || GP->focuserdev || GP->cameradev || GP->wheeldev))
        ERRX("Can't be client and standalone in same time!");
     if(GP->logfile){
@@ -134,8 +140,7 @@ int main(int argc, char **argv){
             wheels();
             camerainit = prepare_ccds();
         }else{ // client mode
-            if(GP->path) return start_socket(isserver, GP->path, FALSE);
-            if(GP->port) return start_socket(isserver, GP->port, TRUE);
+            return start_socket(isserver);
         }
 #ifdef IMAGEVIEW
         if(GP->showimage){ // activate image vindow in capture or simple viewer mode
@@ -169,7 +174,6 @@ int main(int argc, char **argv){
     }
 #endif
 
-    if(GP->path) return start_socket(isserver, GP->path, FALSE);
-    if(GP->port) return start_socket(isserver, GP->port, TRUE);
+    return start_socket(isserver);
 }
 

@@ -70,7 +70,6 @@ strpair allcommands[] = {
     { CMD_FGOTO,        "focuser position" },
     { CMD_FRAMEFORMAT,  "camera frame format (X0,Y0,X1,Y1)" },
     { CMD_GAIN,         "camera gain" },
-    { CMD_GETIMAGE,     "get image (binary data 2*w*h bytes)" },
     { CMD_HBIN,         "horizontal binning" },
     { CMD_HEADERFILES,  "add FITS records from these files (comma-separated list)" },
     { CMD_HELP,         "show this help" },
@@ -528,6 +527,7 @@ static hresult formathandler(int fd, const char *key, const char *val){
         int r = camera->setgeometry(&fmt);
         if(!r) return RESULT_FAIL;
         curformat = fmt;
+        DBG("curformat: w=%d, h=%d", curformat.w, curformat.h);
         fixima();
     }
     if(0 == strcmp(key, CMD_FRAMEMAX)) snprintf(buf, 63, CMD_FRAMEMAX "=%d,%d,%d,%d",
@@ -886,14 +886,6 @@ static hresult helphandler(int fd, _U_ const char *key, _U_ const char *val){
     return RESULT_SILENCE;
 }
 
-// sent to client last image
-static hresult imsendhandler(int fd, _U_ const char *key, _U_ const char *val){
-    if(!ima.data || !ima.h || !ima.w) return RESULT_FAIL;
-    // send image as raw data w*h*2
-    if(!sendimage(fd, ima.data, 2*ima.h*ima.w)) return RESULT_DISCONNECTED;
-    return RESULT_SILENCE;
-}
-
 static hresult imsizehandler(int fd, const char *key, _U_ const char *val){
     char buf[64];
     // send image width/height in pixels
@@ -920,6 +912,10 @@ static hresult chkcam(char *val){
     if(camera) return RESULT_OK;
     return RESULT_FAIL;
 }
+static hresult chkcc(_U_ char *val){ // just check that camera connected
+    if(camera) return RESULT_OK;
+    return RESULT_FAIL;
+}
 static hresult chkwhl(char *val){
     if(val && CAMbusy()) return RESULT_BUSY;
     if(wheel) return RESULT_OK;
@@ -934,31 +930,30 @@ static handleritem items[] = {
     {chktrue,infohandler, CMD_INFO},
     {NULL,   helphandler, CMD_HELP},
     {NULL,   restarthandler, CMD_RESTART},
-    {chkcam, camlisthandler, CMD_CAMLIST},
-    {chkcam, camsetNhandler, CMD_CAMDEVNO},
-    {chkcam, camfanhandler, CMD_CAMFANSPD},
-    {chkcam, exphandler, CMD_EXPOSITION},
-    {chkcam, namehandler, CMD_FILENAME},
-    {chkcam, binhandler, CMD_HBIN},
-    {chkcam, binhandler, CMD_VBIN},
-    {chkcam, temphandler, CMD_CAMTEMPER},
+    {chkcc,  camlisthandler, CMD_CAMLIST},
+    {chkcc,  camsetNhandler, CMD_CAMDEVNO},
+    {chkcc,  camfanhandler, CMD_CAMFANSPD},
+    {chkcc,  exphandler, CMD_EXPOSITION},
+    {chkcc,  namehandler, CMD_FILENAME},
+    {chkcc,  binhandler, CMD_HBIN},
+    {chkcc,  binhandler, CMD_VBIN},
+    {chkcc,  temphandler, CMD_CAMTEMPER},
     {chkcam, shutterhandler, CMD_SHUTTER},
-    {chkcam, confiohandler, CMD_CONFIO},
-    {chkcam, iohandler, CMD_IO},
-    {chkcam, gainhandler, CMD_GAIN},
-    {chkcam, brightnesshandler, CMD_BRIGHTNESS},
-    {chkcam, formathandler, CMD_FRAMEFORMAT},
-    {chkcam, formathandler, CMD_FRAMEMAX},
-    {chkcam, nflusheshandler, CMD_NFLUSHES},
-    {NULL,   expstatehandler, CMD_EXPSTATE},
-    {NULL,   imsendhandler, CMD_GETIMAGE},
+    {chkcc,  confiohandler, CMD_CONFIO},
+    {chkcc,  iohandler, CMD_IO},
+    {chkcc,  gainhandler, CMD_GAIN},
+    {chkcc,  brightnesshandler, CMD_BRIGHTNESS},
+    {chkcc,  formathandler, CMD_FRAMEFORMAT},
+    {chkcc,  formathandler, CMD_FRAMEMAX},
+    {chkcc,  nflusheshandler, CMD_NFLUSHES},
+    {chkcam, expstatehandler, CMD_EXPSTATE},
     {NULL,   imsizehandler, CMD_IMWIDTH},
     {NULL,   imsizehandler, CMD_IMHEIGHT},
-    {chkcam, nameprefixhandler, CMD_FILENAMEPREFIX},
-    {chkcam, rewritefilehandler, CMD_REWRITE},
-    {chkcam, _8bithandler, CMD_8BIT},
-    {chkcam, fastspdhandler, CMD_FASTSPD},
-    {chkcam, darkhandler, CMD_DARK},
+    {chkcc,  nameprefixhandler, CMD_FILENAMEPREFIX},
+    {chkcc,  rewritefilehandler, CMD_REWRITE},
+    {chkcc,  _8bithandler, CMD_8BIT},
+    {chkcc,  fastspdhandler, CMD_FASTSPD},
+    {chkcc,  darkhandler, CMD_DARK},
     {NULL,   tremainhandler, CMD_TREMAIN},
     {NULL,   FITSparhandler, CMD_AUTHOR},
     {NULL,   FITSparhandler, CMD_INSTRUMENT},
@@ -979,7 +974,20 @@ static handleritem items[] = {
 
 #define CLBUFSZ     BUFSIZ
 
-void server(int sock){
+void server(int sock, int imsock){
+    DBG("sockfd=%d, imsockfd=%d", sock, imsock);
+    if(sock < 0) ERRX("server(): need at least command socket fd");
+    if(imsock < 0) WARNX("Server run without image transport support");
+    else if(listen(imsock, MAXCLIENTS) == -1){
+        WARN("listen()");
+        LOGWARN("listen()");
+        return;
+    }
+    if(listen(sock, MAXCLIENTS) == -1){
+        WARN("listen()");
+        LOGWARN("listen()");
+        return;
+    }
     // init everything
     startFocuser(&focdev);
     focdevini(0);
@@ -987,58 +995,75 @@ void server(int sock){
     wheeldevini(0);
     startCCD(&camdev);
     camdevini(0);
-    if(listen(sock, MAXCLIENTS) == -1){
-        WARN("listen");
-        LOGWARN("listen");
-        return;
-    }
     // start camera thread
     pthread_t camthread;
     if(camera){
         if(pthread_create(&camthread, NULL, processCAM, NULL)) ERR("pthread_create()");
     }
-    int nfd = 1; // only one socket @start
-    struct pollfd poll_set[MAXCLIENTS+1];
+    int nfd = 2; // only one socket @start
+    struct pollfd poll_set[MAXCLIENTS+2];
     char buffers[MAXCLIENTS][CLBUFSZ]; // buffers for data reading
     bzero(poll_set, sizeof(poll_set));
     // ZERO - listening server socket
     poll_set[0].fd = sock;
     poll_set[0].events = POLLIN;
+    poll_set[1].fd = imsock;
+    poll_set[1].events = POLLIN;
     while(1){
         poll(poll_set, nfd, 1); // max timeout - 1ms
+        //if(imsock > -1 && canberead(imsock) > 0){
+        if(imsock > -1 && (poll_set[1].revents & POLLIN)){
+            //uint8_t buf[32];
+            //int l = read(imsock, buf, 32);
+            DBG("Somebody wants an image");
+            struct sockaddr_in addr;
+            socklen_t len = sizeof(addr);
+            int client = accept(imsock, (struct sockaddr*)&addr, &len);
+            DBG("client=%d", client);
+            if(client > -1){
+                DBG("client fd: %d", client);
+                // send image as raw data w*h*2
+                if(ima.data && ima.h > 0 && ima.w > 0)
+                    sendimage(client, ima.data, 2*ima.h*ima.w);
+                close(client);
+                DBG("%d closed", client);
+            }else{WARN("accept()"); DBG("disconnected");}
+        }
         if(poll_set[0].revents & POLLIN){ // check main for accept()
             struct sockaddr_in addr;
             socklen_t len = sizeof(addr);
             int client = accept(sock, (struct sockaddr*)&addr, &len);
-            DBG("New connection");
-            LOGMSG("SERVER got connection, fd=%d", client);
-            if(nfd == MAXCLIENTS + 1){
-                LOGWARN("Max amount of connections, disconnect fd=%d", client);
-                WARNX("Limit of connections reached");
-                close(client);
-            }else{
-                memset(&poll_set[nfd], 0, sizeof(struct pollfd));
-                poll_set[nfd].fd = client;
-                poll_set[nfd].events = POLLIN;
-                ++nfd;
+            if(client > -1){
+                DBG("New connection");
+                LOGMSG("SERVER got connection, fd=%d", client);
+                if(nfd == MAXCLIENTS + 1){
+                    LOGWARN("Max amount of connections, disconnect fd=%d", client);
+                    WARNX("Limit of connections reached");
+                    close(client);
+                }else{
+                    memset(&poll_set[nfd], 0, sizeof(struct pollfd));
+                    poll_set[nfd].fd = client;
+                    poll_set[nfd].events = POLLIN;
+                    ++nfd;
+                }
             }
         }
         // process some data & send messages to ALL
         if(camstate == CAMERA_FRAMERDY || camstate == CAMERA_ERROR){
             char buff[PATH_MAX+32];
             snprintf(buff, PATH_MAX, CMD_EXPSTATE "=%d", camstate);
-            DBG("Send %s to %d clients", buff, nfd - 1);
-            for(int i = 1; i < nfd; ++i)
+            DBG("Send %s to %d clients", buff, nfd - 2);
+            for(int i = 2; i < nfd; ++i)
                 sendstrmessage(poll_set[i].fd, buff);
             if(camstate == CAMERA_FRAMERDY){ // send to all last file name
                 snprintf(buff, PATH_MAX+31, CMD_LASTFNAME "=%s", lastfile);
-                for(int i = 1; i < nfd; ++i)
+                for(int i = 2; i < nfd; ++i)
                     sendstrmessage(poll_set[i].fd, buff);
             }
             camstate = CAMERA_IDLE;
         }
         // scan connections
-        for(int fdidx = 1; fdidx < nfd; ++fdidx){
+        for(int fdidx = 2; fdidx < nfd; ++fdidx){
             if((poll_set[fdidx].revents & POLLIN) == 0) continue;
             int fd = poll_set[fdidx].fd;
             if(!processData(fd, items, buffers[fdidx-1], CLBUFSZ)){ // socket closed

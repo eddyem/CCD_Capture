@@ -61,10 +61,12 @@ typedef struct{
     const char *key;                    // keyword
 } handleritem;
 
-int start_socket(int server, char *path, int isnet);
+int open_socket(int isserver, char *path, int isnet);
+int start_socket(int server);
 int sendimage(int fd, uint16_t *data, int l);
 int sendmessage(int fd, const char *msg, int l);
 int sendstrmessage(int fd, const char *msg);
 char *get_keyval(char *keyval);
 
 int processData(int fd, handleritem *handlers, char *buf, int buflen);
+int canberead(int fd);

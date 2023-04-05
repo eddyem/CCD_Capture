@@ -872,6 +872,7 @@ int ccdcaptured(IMG **imgptr){
     frameformat fmt = camera->geometry;
     int raw_width = fmt.w / GP->hbin,  raw_height = fmt.h / GP->vbin;
     IMG *ima = NULL;
+    if(*imgptr && ((*imgptr)->w != raw_width || (*imgptr)->h != raw_height)) FREE(*imgptr);
     if(!*imgptr){
         uint16_t *img = MALLOC(uint16_t, raw_width * raw_height);
         DBG("\n\nAllocated image 2x%dx%d=%d", raw_width, raw_height, 2 * raw_width * raw_height);

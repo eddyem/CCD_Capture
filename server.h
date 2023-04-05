@@ -29,7 +29,7 @@ typedef enum{
 #define TLOG_PAUSE  60.
 
 // server-side functions
-void server(int fd);
+void server(int fd, int imsock);
 char *makeabspath(const char *path, int shouldbe);
 
 // common information about everything
@@ -37,8 +37,6 @@ char *makeabspath(const char *path, int shouldbe);
 #define CMD_HELP        "help"
 // restart server
 #define CMD_RESTART     "restartTheServer"
-// get last exposed image
-#define CMD_GETIMAGE    "getimage"
 // get image size in pixels
 #define CMD_IMWIDTH     "imwidth"
 #define CMD_IMHEIGHT    "imheight"
