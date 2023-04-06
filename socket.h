@@ -19,6 +19,7 @@
 #pragma once
 #include <pthread.h>
 #include <stdint.h>
+#include <usefull_macros.h>
 
 // max & min TCP socket port number
 #define PORTN_MAX   (65535)
@@ -36,6 +37,15 @@
 #define WAIT_TIMEOUT    (2.0)
 // client will disconnect after this time from last server message
 #define CLIENT_TIMEOUT  (3.0)
+
+#ifdef EBUG
+extern double __t0;
+#define TIMEINIT()  do{__t0 = dtime();}while(0)
+#define TIMESTAMP(...) do{DBG(__VA_ARGS__); fprintf(stderr, COLOR_GREEN "%g" COLOR_OLD "\n", dtime()-__t0);}while(0)
+#else
+#define TIMEINIT()
+#define TIMESTAMP()
+#endif
 
 extern pthread_mutex_t locmutex;
 

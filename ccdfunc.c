@@ -28,6 +28,7 @@
 
 #include "ccdfunc.h"
 #include "cmdlnopts.h"
+#include "socket.h"
 #ifdef IMAGEVIEW
 #include "imageview.h"
 #endif
@@ -774,24 +775,31 @@ DBG("w=%d, h=%d", raw_width, raw_height);
     IMG ima = {.data = img, .w = raw_width, .h = raw_height};
     if(GP->nframes < 1) GP->nframes = 1;
     for(int j = 0; j < GP->nframes; ++j){
+        TIMESTAMP("Start next cycle");
+        TIMEINIT();
         // Захват кадра %d\n
         verbose(1, _("Capture frame %d"), j);
         if(!camera->startexposition()){
             WARNX(_("Can't start exposition"));
             break;
         }
+        TIMESTAMP("Check capture");
         if(capt() != CAPTURE_READY){
             WARNX(_("Can't capture image"));
             break;
         }
         verbose(2, _("Read grabbed image"));
+        TIMESTAMP("Read grabbed");
         //if(!camera) return;
         if(!camera->capture(&ima)){
             WARNX(_("Can't grab image"));
             break;
         }
+        TIMESTAMP("Calc stat");
         calculate_stat(&ima);
+        TIMESTAMP("Save fits");
         saveFITS(&ima, NULL);
+        TIMESTAMP("Ready");
         if(GP->pause_len && j != (GP->nframes - 1)){
             double delta, time1 = dtime() + GP->pause_len;
             while((delta = time1 - dtime()) > 0.){
@@ -821,30 +829,28 @@ void camstop(){
 
 
 #ifdef IMAGEVIEW
-static volatile int grabends = 1;
+static volatile int grabno = 0, lastgrabno = 0, exitgrab = FALSE;
 static void *grabnext(void *arg){
     FNAME();
-    grabends = 0;
-    static int retval = FALSE;
     IMG *ima = (IMG*) arg;
-    DBG("nxt");
-    if(!ima || !camera) goto eof;
-    if(!camera->startexposition()){ WARNX(_("Can't start exposition")); goto eof; }
-    capture_status cs;
-    DBG("Poll");
-    while(!camera->pollcapture(&cs, NULL)){
-        usleep(10000);
-        if(!camera) goto eof;
-    }
-    DBG("get");
-    if(!camera->capture(ima)){ WARNX(_("Can't grab image")); goto eof; }
-    calculate_stat(ima);
-    retval = TRUE;
-    DBG("OK");
-eof:
-    grabends = 1;
-    pthread_exit((void*)&retval);
-    DBG("EXIT");
+    do{
+        if(exitgrab) return NULL;
+        TIMESTAMP("Start next exp");
+        TIMEINIT();
+        if(!ima || !camera) return NULL;
+        if(!camera->startexposition()){ WARNX(_("Can't start exposition")); continue; }
+        capture_status cs;
+        TIMESTAMP("Poll");
+        while(!camera->pollcapture(&cs, NULL)){
+            usleep(10000);
+            if(!camera) return NULL;
+        }
+        TIMESTAMP("get");
+        if(!camera->capture(ima)){ WARNX(_("Can't grab image")); continue; }
+        //calculate_stat(ima);
+        TIMESTAMP("OK");
+        ++grabno;
+    }while(1);
 }
 
 
@@ -861,7 +867,8 @@ int ccdcaptured(IMG **imgptr){
     if(imgptr == (void*)-1){ // kill `grabnext`
         DBG("Wait for grabbing thread ends");
         if(grabthread){
-            //pthread_cancel(grabthread); - this kills some cameras
+            exitgrab = TRUE;
+            //pthread_cancel(grabthread); // this kills some cameras
             //pthread_timedjoin_np
             pthread_join(grabthread, NULL);
             grabthread = 0;
@@ -884,26 +891,30 @@ int ccdcaptured(IMG **imgptr){
     }else ima = *imgptr;
 
     if(!grabthread){ // start new grab
-        DBG("\n\n\nStart new grab");
+        TIMESTAMP("Start new grab");
+        TIMEINIT();
         if(pthread_create(&grabthread, NULL, &grabnext, (void*)ima)){
             WARN("Can't create grabbing thread");
             grabthread = 0;
         }
         tlast = dtime();
     }else{ // grab in process
-        if(grabends){ // thread is dead
-            DBG("Grab ends");
-            void *vr;
-            pthread_join(grabthread, &vr);
-            int retcode = *(int*)vr;
-            DBG("retcode = %d", retcode);
-            grabthread = 0;
+        if(grabno != lastgrabno){ // done
+            lastgrabno = grabno;
+            TIMESTAMP("Grab ends");
+            //void *vr;
+            //pthread_join(grabthread, &vr);
+            //int retcode = *(int*)vr;
+            //DBG("retcode = %d", retcode);
+            //grabthread = 0;
             if(GP->verbose > 1){
                 double t = dtime();
-                green("Framerate=%.2g\n", 1./(t-tlast));
+                green("Framerate=%.2g (%g seconds for exp)\n", 1./(t-tlast), t-tlast);
                 tlast = t;
             }
-            if(retcode) return TRUE;
+            //TIMESTAMP("Framerate");
+            //if(retcode)
+            return TRUE;
         }
     }
     return FALSE;

@@ -113,7 +113,7 @@ static void fixima(){
 // functions for processCAM finite state machine
 static inline void cameraidlestate(){ // idle - wait for capture commands
     if(camflags & FLAG_STARTCAPTURE){ // start capturing
-        DBG("Start exposition");
+        TIMESTAMP("Start exposition");
         camflags &= ~(FLAG_STARTCAPTURE | FLAG_CANCEL);
         camstate = CAMERA_CAPTURE;
         fixima();
@@ -137,20 +137,25 @@ static inline void cameracapturestate(){ // capturing - wait for exposition ends
     capture_status cs;
     if(camera->pollcapture(&cs, &tremain)){
         if(cs != CAPTURE_PROCESS){
-            DBG("Capture ready");
+            TIMESTAMP("Capture ready");
             tremain = 0.;
             // now save frame
             if(!ima.data) LOGERR("Can't save image: not initialized");
             else{
+                TIMESTAMP("start capture");
                 if(!camera->capture(&ima)){
                     LOGERR("Can't capture image");
                     camstate = CAMERA_ERROR;
                     return;
                 }else{
-                    calculate_stat(&ima);
+                    if(lastfile){
+                        TIMESTAMP("Calc stat");
+                        calculate_stat(&ima);
+                    }
                     if(saveFITS(&ima, &lastfile)){
                         DBG("LAST file name changed");
                     }
+                    TIMESTAMP("Image saved");
                 }
             }
             camstate = CAMERA_FRAMERDY;
@@ -221,6 +226,8 @@ static int camdevini(int n){
     curformat = frmformatmax;
     DBG("\n\nGeometry format (offx/offy) w/h: (%d/%d) %d/%d", curformat.xoff, curformat.yoff,
         curformat.w, curformat.h);
+    curformat.xoff = 0;
+    curformat.yoff = 0;
     if(GP->hbin < 1) GP->hbin = 1;
     if(GP->vbin < 1) GP->vbin = 1;
     fixima();
@@ -560,6 +567,8 @@ static hresult expstatehandler(_U_ int fd, _U_ const char *key, _U_ const char *
             return RESULT_OK;
         }
         else if(n == CAMERA_CAPTURE){ // start exposition
+            TIMESTAMP("End of cycle - start new");
+            TIMEINIT();
             camflags |= FLAG_STARTCAPTURE;
             return RESULT_OK;
         }
@@ -1028,6 +1037,7 @@ void server(int sock, int imsock){
                 close(client);
                 DBG("%d closed", client);
             }else{WARN("accept()"); DBG("disconnected");}
+            TIMESTAMP("Image sent");
         }
         if(poll_set[0].revents & POLLIN){ // check main for accept()
             struct sockaddr_in addr;
@@ -1053,8 +1063,10 @@ void server(int sock, int imsock){
             char buff[PATH_MAX+32];
             snprintf(buff, PATH_MAX, CMD_EXPSTATE "=%d", camstate);
             DBG("Send %s to %d clients", buff, nfd - 2);
-            for(int i = 2; i < nfd; ++i)
+            for(int i = 2; i < nfd; ++i){
+                TIMESTAMP("Send message that all ready");
                 sendstrmessage(poll_set[i].fd, buff);
+            }
             if(camstate == CAMERA_FRAMERDY){ // send to all last file name
                 snprintf(buff, PATH_MAX+31, CMD_LASTFNAME "=%s", lastfile);
                 for(int i = 2; i < nfd; ++i)

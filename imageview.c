@@ -28,6 +28,7 @@
 #include "imageview.h"
 #include "events.h"
 #include "omp.h"
+//#include "socket.h" // for timestamp
 
 windowData *win = NULL; // main window (common variable for events.c)
 static pthread_t GLUTthread = 0; // main GLUT thread
@@ -557,8 +558,10 @@ int viewer(imagefunc newimage){
         }
         if((win->winevt & WINEVT_GETIMAGE) || !(win->winevt & WINEVT_PAUSE)){
             if(newimage(&img)){
+                //TIMESTAMP("got image -> change");
                 win->winevt &= ~WINEVT_GETIMAGE;
                 change_displayed_image(img); // change image if refreshed
+                //TIMESTAMP("changed");
             }
         }
         if(!win->winevt){

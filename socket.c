@@ -34,6 +34,10 @@
 #include "server.h"
 #include "socket.h"
 
+#ifdef EBUG
+double __t0 = 0.;
+#endif
+
 pthread_mutex_t locmutex = PTHREAD_MUTEX_INITIALIZER; // mutex for wheel/camera/focuser functions
 
 /**

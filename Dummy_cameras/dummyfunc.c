@@ -26,6 +26,7 @@
 #include <usefull_macros.h>
 
 #include "basestructs.h"
+#include "omp.h"
 
 extern Camera camera;
 extern Focuser focuser;
@@ -67,12 +68,14 @@ static int startexp(){
 static int camcapt(IMG *ima){
     static int n = 0;
     if(!ima || !ima->data) return FALSE;
-    uint16_t *d = ima->data;
-    for(int y = 0; y < ima->h; ++y)
+    OMP_FOR()
+    for(int y = 0; y < ima->h; ++y){
+        uint16_t *d = &ima->data[y*ima->w];
         for(int x = 0; x < ima->w; ++x){ // sinusoide 100x200
             //*d++ = (uint16_t)(((n+x)%100)/99.*65535.);
             *d++ = (uint16_t)((1 + sin((n+x) * M_PI/50)*sin((n+y) * M_PI/100))*32767.);
         }
+    }
     ++n;
     ima->bitpix = 16;
     return TRUE;

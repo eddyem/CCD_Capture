@@ -41,7 +41,7 @@ static int xc0,yc0,xc1,yc1; // current format
 
 #ifdef IMAGEVIEW
 static IMG ima = {0};
-static volatile atomic_int grabends = 0;
+static volatile atomic_int grabno = 0, oldgrabno = 0;
 static int imdatalen = 0, imbufsz = 0;
 #endif
 
@@ -74,6 +74,7 @@ static char *readmsg(int fd){
 // parser of CCD server messages; return TRUE to exit from polling cycle of `getans` (if receive 'FAIL', 'OK' or 'BUSY')
 static int parseans(char *ans){
     if(!ans) return FALSE;
+    TIMESTAMP("parseans() begin");
     //DBG("Parsing of '%s'", ans);
     if(0 == strcmp(hresult2str(RESULT_BUSY), ans)){
         WARNX("Server busy");
@@ -103,6 +104,7 @@ static int parseans(char *ans){
         imdatalen = ima.w * ima.h * 2;
     }
 #endif
+    TIMESTAMP("parseans() end");
     return FALSE;
 }
 
@@ -119,7 +121,7 @@ static int getans(int sock, const char *msg){
         }
         t0 = dtime();
         ans = s;
-        DBG("Got from server: %s", ans);
+        TIMESTAMP("Got from server: %s", ans);
         verbose(1, "\t%s", ans);
         if(parseans(ans)){
             if(msg && strncmp(ans, msg, strlen(msg))) continue;
@@ -297,6 +299,7 @@ void init_grab_sock(int sock){
 static void getimage(){
     FNAME();
     int sock = controlfd;
+    TIMESTAMP("Get image sizes");
     SENDMSG(CMD_IMWIDTH);
     SENDMSG(CMD_IMHEIGHT);
     int imsock = open_socket(FALSE, GP->imageport, TRUE);
@@ -310,6 +313,7 @@ static void getimage(){
     int got = 0;
     while(dtime() - t0 < CLIENT_TIMEOUT){
         if(!canberead(imsock)) continue;
+        TIMESTAMP("Read data");
         uint8_t *target = ((uint8_t*)ima.data)+got;
         int rd = read(imsock, target, imdatalen - got);
         if(rd <= 0){
@@ -320,12 +324,12 @@ static void getimage(){
         DBG("Read %d bytes; total read %d from %d; first: %x %x %x %x", rd, got, imdatalen, target[0],
                 target[1], target[2], target[3]);
         if(got == imdatalen){
-            DBG("Got image");
-            grabends = 1;
             break;
         }
     }
     if(dtime() - t0 > CLIENT_TIMEOUT) WARNX("Timeout, image didn't received");
+    TIMESTAMP("Got image");
+    ++grabno;
     close(imsock);
 }
 
@@ -334,10 +338,9 @@ static void *grabnext(void _U_ *arg){ // daemon grabbing images through the net
     if(controlfd < 0) return NULL;
     int sock = controlfd;
     while(1){
-        DBG("WAIT");
-        while(grabends); // wait until image processed
         expstate = CAMERA_CAPTURE;
-        DBG("CAPT");
+        TIMESTAMP("End of cycle, start new");
+        TIMEINIT();
         SENDMSG(CMD_EXPSTATE "=%d", CAMERA_CAPTURE); // start capture
         double timeout = GP->exptime + CLIENT_TIMEOUT, t0 = dtime();
         useconds_t sleept = 500000; // 0.5s
@@ -346,18 +349,18 @@ static void *grabnext(void _U_ *arg){ // daemon grabbing images through the net
             if(sleept < 1000) sleept = 1000;
         }
         while(dtime() - t0 < timeout){
-            DBG("SLEEP!");
+            TIMESTAMP("Wait for exposition ends");
             usleep(sleept);
-            //SENDMSG(CMD_EXPSTATE);
+            TIMESTAMP("check answer");
             getans(sock, NULL);
-            DBG("EXPSTATE ===> %d", expstate);
+            TIMESTAMP("EXPSTATE ===> %d", expstate);
             if(expstate != CAMERA_CAPTURE) break;
         }
         if(dtime() - t0 >= timeout || expstate != CAMERA_FRAMERDY){
             WARNX("Image wasn't received");
             continue;
         }
-        DBG("Frame ready");
+        TIMESTAMP("Frame ready");
         getimage();
     }
     return NULL;
@@ -368,13 +371,13 @@ static void *waitimage(void _U_ *arg){ // passive waiting for next image
     if(controlfd < 0) return NULL;
     int sock = controlfd;
     while(1){
-        while(grabends); // wait until image processed
         getans(sock, NULL);
         if(expstate != CAMERA_FRAMERDY){
             usleep(1000);
             continue;
         }
-        DBG("Image can be downloaded");
+        TIMESTAMP("End of cycle, start new");
+        TIMEINIT();
         getimage();
         expstate = CAMERA_IDLE;
     }
@@ -398,12 +401,14 @@ int sockcaptured(IMG **imgptr){
     }
     if(!grabthread || pthread_kill(grabthread, 0)){ // start new grab
         if(GP->viewer){
+            TIMEINIT();
             DBG("\n\n\nStart new waiting");
             if(pthread_create(&grabthread, NULL, &waitimage, NULL)){
                 WARN("Can't create waiting thread");
                 grabthread = 0;
            }
         }else{
+            TIMEINIT();
             DBG("\n\n\nStart new grab");
             if(pthread_create(&grabthread, NULL, &grabnext, NULL)){
                 WARN("Can't create grabbing thread");
@@ -411,11 +416,11 @@ int sockcaptured(IMG **imgptr){
            }
         }
     }else{ // grab in process
-        if(grabends){ // image is ready
-            DBG("Image ready");
+        if(grabno != oldgrabno){ // image is ready
+            TIMESTAMP("Image ready");
             if(*imgptr && (*imgptr != &ima)) free(*imgptr);
             *imgptr = &ima;
-            grabends = 0;
+            oldgrabno = grabno;
             return TRUE;
         }
     }

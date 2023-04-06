@@ -24,6 +24,7 @@
 
 #include "basestructs.h"
 #include "omp.h"
+//#include "socket.h" // timestamp
 
 extern Camera camera;
 
@@ -32,7 +33,7 @@ static int isopened = FALSE, is16bit = FALSE;
 static char camname[BUFSIZ] = {0};
 static size_t payloadsize = 0; // size of imgBuf
 static unsigned char *imgBuf = NULL;
-static uint32_t expostime = 0.; // current exposition time (in microseconds)
+static uint32_t expostime = 0; // current exposition time (in microseconds)
 static PYLON_DEVICECALLBACK_HANDLE hCb;
 static int curhbin = 1, curvbin = 1;
 
@@ -322,9 +323,11 @@ static int pollcapt(capture_status *st, float *remain){
 
 static int capture(IMG *ima){
     FNAME();
+    //double __t0 = dtime();
     if(!ima || !ima->data || !imgBuf || !isopened) return FALSE;
     static int toohot = FALSE;
     float_values f;
+    //TIMESTAMP("start capt");
     if(!getFloat("DeviceTemperature", &f)) WARNX("Can't get temperature");
     else{
         DBG("Temperature: %.1f", f.val);
@@ -338,17 +341,20 @@ static int capture(IMG *ima){
     }
     PylonGrabResult_t grabResult;
     _Bool bufferReady;
+    //TIMESTAMP("grab single frame");
     GENAPIC_RESULT res = PylonDeviceGrabSingleFrame(hDev, 0, imgBuf, payloadsize,
-                                                    &grabResult, &bufferReady, 500 + (uint32_t)expostime);
+                                                    &grabResult, &bufferReady, 1000 + expostime);
+    //TIMESTAMP("end of grabbing");
     if(res != GENAPI_E_OK || !bufferReady){
         WARNX("res != GENAPI_E_OK || !bufferReady");
         return FALSE;
     }
     if(grabResult.Status != Grabbed){
-        WARNX("grabResult.Status != Grabbed");
+        WARNX("grabResult.Status != Grabbed (%d)", grabResult.Status);
         return FALSE;
     }
     int width = grabResult.SizeX, height = grabResult.SizeY, stride = grabResult.SizeX + grabResult.PaddingX;
+    //TIMESTAMP("start converting");
     if(is16bit){
         int s2 = stride<<1, w2 = width<<1;
         OMP_FOR()
@@ -367,6 +373,7 @@ static int capture(IMG *ima){
             }
         }
     }
+    //TIMESTAMP("image ready");
     ima->bitpix = (is16bit) ? 16 : 8;
     return TRUE;
 }
