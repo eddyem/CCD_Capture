@@ -23,7 +23,6 @@ cmake options:
 ```
 Usage: ccd_capture [args] [output file prefix]
         Args are:
-
   -8, --8bit                  run in 8-bit mode
   -A, --author=arg            program author
   -C, --cameradev=arg         camera device plugin (e.g. devfli.so)
@@ -67,6 +66,7 @@ Usage: ccd_capture [args] [output file prefix]
   --focdevno=arg              focuser device number (if many: 0, 1, 2 etc)
   --gain=arg                  CMOS gain level
   --help                      show this help
+  --imageport=arg             local INET socket port to send/receive images
   --logfile=arg               logging file name (if run as server)
   --open-shutter              open shutter
   --path=arg                  UNIX socket name
@@ -78,6 +78,7 @@ Usage: ccd_capture [args] [output file prefix]
   --set-fan=arg               set fan speed (0 - off, 1 - low, 2 - high)
   --shutter-on-high           run exposition on HIGH @ pin5 I/O port
   --shutter-on-low            run exposition on LOW @ pin5 I/O port
+  --viewer                    passive viewer (only get last images)
   --wait                      wait while exposition ends
   --wheeldevno=arg            filter wheel device number (if many: 0, 1, 2 etc)
 ```

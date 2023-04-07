@@ -48,14 +48,14 @@ pthread_mutex_t locmutex = PTHREAD_MUTEX_INITIALIZER; // mutex for wheel/camera/
  * @return socket FD or -1 if failed
  */
 int open_socket(int isserver, char *path, int isnet){
-    DBG("isserver=%d, path=%s, isnet=%d", isserver, path, isnet);
+    //DBG("isserver=%d, path=%s, isnet=%d", isserver, path, isnet);
     if(!path) return 1;
-    DBG("path/port: %s", path);
+    //DBG("path/port: %s", path);
     int sock = -1;
     struct addrinfo hints = {0}, *res;
     struct sockaddr_un unaddr = {0};
     if(isnet){
-        DBG("Network socket");
+        //DBG("Network socket");
         hints.ai_family = AF_INET;
         hints.ai_socktype = SOCK_STREAM;
         hints.ai_flags = AI_PASSIVE;
@@ -63,7 +63,7 @@ int open_socket(int isserver, char *path, int isnet){
             ERR("getaddrinfo");
         }
     }else{
-        DBG("UNIX socket");
+        //DBG("UNIX socket");
         char apath[128];
         if(*path == 0){
             DBG("convert name");
@@ -187,7 +187,7 @@ int sendmessage(int fd, const char *msg, int l){
         buflen += 1024;
         tmpbuf = realloc(tmpbuf, buflen);
     }
-    DBG("send to fd %d: %s [%d]", fd, msg, l);
+    //DBG("send to fd %d: %s [%d]", fd, msg, l);
     memcpy(tmpbuf, msg, l);
     if(msg[l-1] != '\n') tmpbuf[l++] = '\n';
     if(l != send(fd, tmpbuf, l, MSG_NOSIGNAL)){
@@ -195,7 +195,7 @@ int sendmessage(int fd, const char *msg, int l){
         LOGWARN("write()");
         return FALSE;
     }else{
-        DBG("success");
+        //DBG("success");
         if(globlog){ // logging turned ON
             tmpbuf[l-1] = 0; // remove trailing '\n' for logging
             LOGDBG("SEND '%s'", tmpbuf);
@@ -230,7 +230,7 @@ const char *hresult2str(hresult r){
  * @return `val`
  */
 char *get_keyval(char *keyval){
-    DBG("Got string %s", keyval);
+    //DBG("Got string %s", keyval);
     // remove starting spaces in key
     while(isspace(*keyval)) ++keyval;
     char *val = strchr(keyval, '=');
@@ -238,7 +238,7 @@ char *get_keyval(char *keyval){
         *val++ = 0;
         while(isspace(*val)) ++val;
     }
-    DBG("val = %s (%zd bytes)", val, (val)?strlen(val):0);
+    //DBG("val = %s (%zd bytes)", val, (val)?strlen(val):0);
     // remove trailing spaces in key
     char *e = keyval + strlen(keyval) - 1; // last key symbol
     while(isspace(*e) && e > keyval) --e;

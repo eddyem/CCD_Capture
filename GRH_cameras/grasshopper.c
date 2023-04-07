@@ -391,7 +391,7 @@ static int changeformat(frameformat *fmt){
 
 static int setbitdepth(int i){
     frameformat fmt;
-    getformat(&fmt);
+    if(!getformat(&fmt)) return FALSE;
     int o16bit = is16bit;
     if(i == 0) is16bit = FALSE; // 8 bit
     else is16bit = TRUE;

@@ -32,7 +32,7 @@
 
 windowData *win = NULL; // main window (common variable for events.c)
 static pthread_t GLUTthread = 0; // main GLUT thread
-static int imequalize = TRUE;
+static int imequalize = FALSE;
 static int initialized = 0; // ==1 if GLUT is initialized; ==0 after clear_GL_context
 
 static void *Redraw(_U_ void *p);
@@ -218,7 +218,7 @@ static void RedrawWindow(){
     glFinish();
     glutSwapBuffers();
     pthread_mutex_unlock(&win->mutex);
-    usleep(10000);
+    usleep(1000);
 }
 
 /**
@@ -407,6 +407,8 @@ static uint8_t *equalize(uint16_t *ori, int w, int h){
     double orig_hysto[0x10000] = {0.}; // original hystogram
     uint8_t eq_levls[0x10000] = {0};   // levels to convert: newpix = eq_levls[oldpix]
     int s = w*h;
+    //double t0 = dtime();
+    /* -- takes too long because of sync
 #pragma omp parallel
 {
     //printf("%d\n", omp_get_thread_num());
@@ -419,45 +421,53 @@ static uint8_t *equalize(uint16_t *ori, int w, int h){
     {
         for(int i = 0; i < 0x10000; ++i) orig_hysto[i] += histogram_private[i];
     }
-}
+}*/
+    for(int i = 0; i < s; ++i){
+        ++orig_hysto[ori[i]];
+    }
+    //DBG("HISTOGRAM takes %g", dtime() - t0);
     double part = (double)(s + 1) / 0x100, N = 0.;
     for(int i = 0; i <= 0xffff; ++i){
         N += orig_hysto[i];
         eq_levls[i] = (uint8_t)(N/part);
     }
-    OMP_FOR()
+    //OMP_FOR() -- takes too long!
     for(int i = 0; i < s; ++i){
         retn[i] = eq_levls[ori[i]];
     }
+    //DBG("EQUALIZATION takes %g", dtime() - t0);
     return retn;
 }
 
 static void change_displayed_image(IMG *img){
-    if(!win || !win->image) return;
+    if(!win || !img) return;
     pthread_mutex_lock(&win->mutex);
     rawimage *im = win->image;
     DBG("imh=%d, imw=%d, ch=%u, cw=%u", im->h, im->w, img->h, img->w);
     int w = img->w, h = img->h, s = w*h;
     if(!im || (im->h != h) || (im->w != w)){ // realloc image to new size
         DBG("\n\nRealloc rawdata");
-        if(im) FREE(im->rawdata);
-        else im = MALLOC(rawimage, 1);
-        im->rawdata = MALLOC(GLubyte, w*h*3);
+        if(!im) im = MALLOC(rawimage, 1);
+        if(im->h*im->w < s) im->rawdata = realloc(im->rawdata, s*3);
         im->h = h; im->w = w;
         win->image = im;
         DBG("win->image changed");
     }
     if(imequalize){
+        DBG("equalize");
         uint8_t *newima = equalize(img->data, w, h);
         GLubyte *dst = im->rawdata;
-        OMP_FOR()
+        DBG("convert; s=%d, im->s=%d", s, im->h*im->w);
+        // openmp would make all calculations MORE SLOW than even in one thread!
+        //OMP_FOR()
         for(int i = 0; i < s; ++i){
             gray2rgb(colorfun(newima[i] / 256.), &dst[i*3]);
         }
         FREE(newima);
     }else{
+        DBG("convert; s=%d, im->s=%d", s, im->h*im->w);
         GLubyte *dst = im->rawdata;
-        OMP_FOR()
+        //OMP_FOR()
         for(int i = 0; i < s; ++i){
             gray2rgb(colorfun(img->data[i] / 65536.), &dst[i*3]);
         }
@@ -476,6 +486,7 @@ static void change_displayed_image(IMG *img){
     }
     FREE(b);
 }*/
+    DBG("Unlock");
     win->image->changed = 1;
     pthread_mutex_unlock(&win->mutex);
 }
@@ -549,6 +560,7 @@ int viewer(imagefunc newimage){
         return 1;
     }
     IMG *img = NULL;
+    //double t0 = dtime();
     while(1){
         if(!win || win->killthread){
             DBG("got killthread");
@@ -557,15 +569,18 @@ int viewer(imagefunc newimage){
             return 0;
         }
         if((win->winevt & WINEVT_GETIMAGE) || !(win->winevt & WINEVT_PAUSE)){
+            //DBG("CHK new image, t=%g", dtime()-t0);
             if(newimage(&img)){
                 //TIMESTAMP("got image -> change");
                 win->winevt &= ~WINEVT_GETIMAGE;
                 change_displayed_image(img); // change image if refreshed
                 //TIMESTAMP("changed");
             }
+            //DBG("Next cycle, t=%g", dtime()-t0);
         }
         if(!win->winevt){
-            usleep(10000);
+            //DBG("No events");
+            //usleep(1000);
             continue;
         }
         if(win->winevt & WINEVT_SAVEIMAGE){ // save image

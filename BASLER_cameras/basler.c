@@ -292,14 +292,26 @@ static int setdevno(int N){
 }
 
 static int setbitdepth(int i){
+#define MONON 4
+    const char *fmts[MONON] = {"Mono16", "Mono14", "Mono12", "Mono10"};
     if(i == 0){ // 8 bit
         if(!PylonDeviceFeatureIsAvailable( hDev, "EnumEntry_PixelFormat_Mono8" )) return FALSE;
         PYLONFN(PylonDeviceFeatureFromString, hDev, "PixelFormat", "Mono8");
+        green("Pixel format: Mono8\n");
         is16bit = FALSE;
         DBG("8 bit");
     }else{ // 16 bit
-        if(!PylonDeviceFeatureIsAvailable( hDev, "EnumEntry_PixelFormat_Mono16" )) return FALSE;
-        PYLONFN(PylonDeviceFeatureFromString, hDev, "PixelFormat", "Mono16");
+        char buf[128];
+        int  i = 0;
+        for(; i < MONON; ++i){
+            snprintf(buf, 127, "EnumEntry_PixelFormat_%s", fmts[i]);
+            if(!PylonDeviceFeatureIsAvailable( hDev, buf)) continue;
+            green("Pixel format: %s\n", fmts[i]);
+            PYLONFN(PylonDeviceFeatureFromString, hDev, "PixelFormat", fmts[i]);
+            break;
+        }
+        if(i == MONON) return FALSE;
+#undef MONON
         is16bit = TRUE;
         DBG("16 bit");
     }

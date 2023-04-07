@@ -63,7 +63,7 @@ typedef struct{
     int Ndevices;               // amount of devices found
     void (*close)();            // disconnect & close device
     int (*startexposition)();   // start exposition
-    int (*pollcapture)(capture_status *st, float *remain);// start or poll capture process, `remain` - time remain (s)
+    int (*pollcapture)(capture_status *st, float *remain);// get `st` - status of capture process, `remain` - time remain (s); @return FALSE if error (exp aborted), TRUE while no errors
     int (*capture)(IMG *ima);   // capture an image, struct `ima` should be prepared before
     void (*cancel)();           // cancel exposition
     // setters:

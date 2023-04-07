@@ -44,7 +44,7 @@ extern double __t0;
 #define TIMESTAMP(...) do{DBG(__VA_ARGS__); fprintf(stderr, COLOR_GREEN "%g" COLOR_OLD "\n", dtime()-__t0);}while(0)
 #else
 #define TIMEINIT()
-#define TIMESTAMP()
+#define TIMESTAMP(...)
 #endif
 
 extern pthread_mutex_t locmutex;

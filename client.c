@@ -25,6 +25,7 @@
 #include <sys/socket.h>
 #include <usefull_macros.h>
 
+#include "ccdfunc.h" // framerate
 #include "client.h"
 #include "cmdlnopts.h"
 #include "server.h" // for common commands names
@@ -74,7 +75,7 @@ static char *readmsg(int fd){
 // parser of CCD server messages; return TRUE to exit from polling cycle of `getans` (if receive 'FAIL', 'OK' or 'BUSY')
 static int parseans(char *ans){
     if(!ans) return FALSE;
-    TIMESTAMP("parseans() begin");
+    //TIMESTAMP("parseans() begin");
     //DBG("Parsing of '%s'", ans);
     if(0 == strcmp(hresult2str(RESULT_BUSY), ans)){
         WARNX("Server busy");
@@ -104,7 +105,7 @@ static int parseans(char *ans){
         imdatalen = ima.w * ima.h * 2;
     }
 #endif
-    TIMESTAMP("parseans() end");
+    //TIMESTAMP("parseans() end");
     return FALSE;
 }
 
@@ -311,9 +312,9 @@ static void getimage(){
     }
     double t0 = dtime();
     int got = 0;
+    TIMESTAMP("Start of data read");
     while(dtime() - t0 < CLIENT_TIMEOUT){
         if(!canberead(imsock)) continue;
-        TIMESTAMP("Read data");
         uint8_t *target = ((uint8_t*)ima.data)+got;
         int rd = read(imsock, target, imdatalen - got);
         if(rd <= 0){
@@ -321,8 +322,8 @@ static void getimage(){
             signals(1);
         }
         got += rd;
-        DBG("Read %d bytes; total read %d from %d; first: %x %x %x %x", rd, got, imdatalen, target[0],
-                target[1], target[2], target[3]);
+        //DBG("Read %d bytes; total read %d from %d; first: %x %x %x %x", rd, got, imdatalen, target[0],
+        //        target[1], target[2], target[3]);
         if(got == imdatalen){
             break;
         }
@@ -339,7 +340,7 @@ static void *grabnext(void _U_ *arg){ // daemon grabbing images through the net
     int sock = controlfd;
     while(1){
         expstate = CAMERA_CAPTURE;
-        TIMESTAMP("End of cycle, start new");
+        TIMESTAMP("End of cycle, start new #%d", grabno+1);
         TIMEINIT();
         SENDMSG(CMD_EXPSTATE "=%d", CAMERA_CAPTURE); // start capture
         double timeout = GP->exptime + CLIENT_TIMEOUT, t0 = dtime();
@@ -353,7 +354,7 @@ static void *grabnext(void _U_ *arg){ // daemon grabbing images through the net
             usleep(sleept);
             TIMESTAMP("check answer");
             getans(sock, NULL);
-            TIMESTAMP("EXPSTATE ===> %d", expstate);
+            //TIMESTAMP("EXPSTATE ===> %d", expstate);
             if(expstate != CAMERA_CAPTURE) break;
         }
         if(dtime() - t0 >= timeout || expstate != CAMERA_FRAMERDY){
@@ -376,7 +377,7 @@ static void *waitimage(void _U_ *arg){ // passive waiting for next image
             usleep(1000);
             continue;
         }
-        TIMESTAMP("End of cycle, start new");
+        TIMESTAMP("End of cycle, start new #%d", grabno+1);
         TIMEINIT();
         getimage();
         expstate = CAMERA_IDLE;
@@ -386,6 +387,7 @@ static void *waitimage(void _U_ *arg){ // passive waiting for next image
 
 // try to capture images through socket
 int sockcaptured(IMG **imgptr){
+    //TIMESTAMP("sockcaptured() start");
     if(!imgptr) return FALSE;
     static pthread_t grabthread = 0;
     if(controlfd < 0) return FALSE;
@@ -417,13 +419,16 @@ int sockcaptured(IMG **imgptr){
         }
     }else{ // grab in process
         if(grabno != oldgrabno){ // image is ready
-            TIMESTAMP("Image ready");
+            TIMESTAMP("Image #%d ready", grabno);
             if(*imgptr && (*imgptr != &ima)) free(*imgptr);
             *imgptr = &ima;
             oldgrabno = grabno;
+            framerate();
+            //TIMESTAMP("sockcaptured() end, return TRUE");
             return TRUE;
         }
     }
+    //TIMESTAMP("sockcaptured() end, return FALSE");
     return FALSE;
 }
 // IMAGEVIEW

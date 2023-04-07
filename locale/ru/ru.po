@@ -7,7 +7,7 @@
 msgid   ""
 msgstr  "Project-Id-Version: PACKAGE VERSION\n"
         "Report-Msgid-Bugs-To: \n"
-        "POT-Creation-Date: 2023-04-06 15:49+0300\n"
+        "POT-Creation-Date: 2023-04-07 12:51+0300\n"
         "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
         "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
         "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -22,7 +22,7 @@ msgid   "%.1f seconds till exposition ends"
 msgstr  "%.1f секунд до окончания экспозиции"
 
 #. %d я│п╣п╨я┐п╫п╢ п╢п╬ п╬п╨п╬п╫я┤п╟п╫п╦я▐ п©п╟я┐п╥я▀\n
-#: ccdfunc.c:807 client.c:271
+#: ccdfunc.c:807 client.c:272
 #, c-format
 msgid   "%d seconds till pause ends\n"
 msgstr  "%d секунд до окончания паузы\n"
@@ -105,7 +105,7 @@ msgstr  "Не могу определить предельную позицию фокусера"
 msgid   "Can't get max wheel position"
 msgstr  "Не могу определить предельную позицию колеса"
 
-#: ccdfunc.c:795 ccdfunc.c:849
+#: ccdfunc.c:795 ccdfunc.c:870
 msgid   "Can't grab image"
 msgstr  "Не могу захватить изображение"
 
@@ -117,11 +117,11 @@ msgstr  "Не могу установить фокусер в нуль"
 msgid   "Can't init mutex!"
 msgstr  "Не могу инициализировать мьютекс!"
 
-#: client.c:258
+#: client.c:259
 msgid   "Can't make exposition"
 msgstr  "Не могу выполнить экспозицию"
 
-#: imageview.c:548
+#: imageview.c:559
 msgid   "Can't open OpenGL window, image preview will be inaccessible"
 msgstr  "Не могу открыть окно OpenGL, отображение будет недоступно"
 
@@ -213,7 +213,7 @@ msgstr  "Не могу установить скорость считывания"
 msgid   "Can't set wheel position %d"
 msgstr  "Не могу установить положение колеса %d"
 
-#: ccdfunc.c:783 ccdfunc.c:841 server.c:122
+#: ccdfunc.c:783 ccdfunc.c:857 server.c:122
 msgid   "Can't start exposition"
 msgstr  "Не могу начать экспозицию"
 
@@ -232,7 +232,7 @@ msgstr  ""
 msgid   "Display image in OpenGL window"
 msgstr  "Отображение изображения в окне OpenGL"
 
-#: imageview.c:509 imageview.c:584
+#: imageview.c:520 imageview.c:599
 #, c-format
 msgid   "Equalization of histogram: %s"
 msgstr  "Эквализация гистограммы: %s"
@@ -327,7 +327,7 @@ msgstr  "Считывание изображения"
 msgid   "Readout mode: %s"
 msgstr  "Режим считывания: %s"
 
-#: client.c:287
+#: client.c:288
 msgid   "Server timeout"
 msgstr  "Таймаут сервера"
 
@@ -350,6 +350,10 @@ msgstr  "Установить Gain в %g"
 #, c-format
 msgid   "Shutter command: %s\n"
 msgstr  "Команда затвора: %s\n"
+
+#: ccdfunc.c:868
+msgid   "Some error when capture"
+msgstr  ""
 
 #. "п÷п╬п©я▀я┌п╨п╟ я│п╨п╬п╫я└п╦пЁя┐я─п╦я─п╬п╡п╟я┌я▄ п©п╬я─я┌ I/O п╨п╟п╨ %d\n"
 #: ccdfunc.c:690
@@ -510,11 +514,11 @@ msgstr  "имена наблюдателей"
 msgid   "observing program name"
 msgstr  "название программы"
 
-#: imageview.c:509 imageview.c:584
+#: imageview.c:520 imageview.c:599
 msgid   "off"
 msgstr  "выкл"
 
-#: imageview.c:509 imageview.c:584
+#: imageview.c:520 imageview.c:599
 msgid   "on"
 msgstr  "вкл"
 

@@ -38,6 +38,7 @@ void focclose();
 void closewheel();
 void closecam();
 #ifdef IMAGEVIEW
+void framerate();
 int ccdcaptured(IMG **img);
 #endif
 

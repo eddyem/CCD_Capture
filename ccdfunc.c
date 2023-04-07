@@ -829,22 +829,43 @@ void camstop(){
 
 
 #ifdef IMAGEVIEW
+#define NFRM        (10)
+void framerate(){
+    if(GP->verbose == 0) return;
+    static double tlast = 0., lastn[NFRM] = {0.}, sumn = 0.;
+    static int lastidx = 0;
+    if(tlast == 0.){tlast = dtime(); return;}
+    double t = dtime(), dT = t-tlast;
+    if(++lastidx > NFRM-1) lastidx = 0;
+    sumn = sumn - lastn[lastidx] + dT;
+    lastn[lastidx] = dT;
+    //for(int i = 0; i < NFRM; ++i) printf("last[%d]=%g\n", i, lastn[i]);
+    green("Framerate=%.2f (%g seconds for exp); mean framerate=%.2f\n", 1./dT, dT, NFRM/sumn);
+    tlast = t;
+}
+
 static volatile int grabno = 0, lastgrabno = 0, exitgrab = FALSE;
 static void *grabnext(void *arg){
     FNAME();
     IMG *ima = (IMG*) arg;
     do{
         if(exitgrab) return NULL;
-        TIMESTAMP("Start next exp");
+        TIMESTAMP("Start exp #%d", grabno+1);
         TIMEINIT();
         if(!ima || !camera) return NULL;
-        if(!camera->startexposition()){ WARNX(_("Can't start exposition")); continue; }
-        capture_status cs;
+        if(!camera->startexposition()){
+            WARNX(_("Can't start exposition"));
+            usleep(10000);
+            continue;
+        }
+        capture_status cs = CAPTURE_ABORTED;
         TIMESTAMP("Poll");
-        while(!camera->pollcapture(&cs, NULL)){
+        while(camera->pollcapture(&cs, NULL)){
+            if(cs != CAPTURE_PROCESS) break;
             usleep(10000);
             if(!camera) return NULL;
         }
+        if(cs != CAPTURE_READY){ WARNX(_("Some error when capture")); return NULL;}
         TIMESTAMP("get");
         if(!camera->capture(ima)){ WARNX(_("Can't grab image")); continue; }
         //calculate_stat(ima);
@@ -861,8 +882,8 @@ static void *grabnext(void *arg){
  * @return TRUE if new image available
  */
 int ccdcaptured(IMG **imgptr){
-    static double tlast = 0.;
     if(!imgptr) return FALSE;
+    TIMESTAMP("ccdcaptured() start");
     static pthread_t grabthread = 0;
     if(imgptr == (void*)-1){ // kill `grabnext`
         DBG("Wait for grabbing thread ends");
@@ -897,26 +918,15 @@ int ccdcaptured(IMG **imgptr){
             WARN("Can't create grabbing thread");
             grabthread = 0;
         }
-        tlast = dtime();
     }else{ // grab in process
         if(grabno != lastgrabno){ // done
             lastgrabno = grabno;
-            TIMESTAMP("Grab ends");
-            //void *vr;
-            //pthread_join(grabthread, &vr);
-            //int retcode = *(int*)vr;
-            //DBG("retcode = %d", retcode);
-            //grabthread = 0;
-            if(GP->verbose > 1){
-                double t = dtime();
-                green("Framerate=%.2g (%g seconds for exp)\n", 1./(t-tlast), t-tlast);
-                tlast = t;
-            }
-            //TIMESTAMP("Framerate");
-            //if(retcode)
+            TIMESTAMP("Got exp #%d", grabno);
+            framerate();
             return TRUE;
         }
     }
+    TIMESTAMP("ccdcaptured() end");
     return FALSE;
 }
 #endif
