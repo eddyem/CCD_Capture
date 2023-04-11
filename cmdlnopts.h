@@ -39,7 +39,6 @@ typedef struct{
     char *path;         // UNIX socket name
     char *port;         // local INET socket port
     char *imageport;    // port to send/receive images (by default == port+1)
-    char *pidfile;      // PID file (default: /tmp/CCD_Capture.pid)
     char **addhdr;      // list of files from which to add header records
     int restart;        // restart server
     int waitexpend;     // wait while exposition ends

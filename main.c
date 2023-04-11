@@ -41,10 +41,6 @@ static pid_t childpid = 0;
 
 void signals(int signo){
     if(signo) signal(signo, SIG_IGN);
-    if(!GP->client){
-        DBG("Unlink pid file");
-        unlink(GP->pidfile);
-    }
     if(childpid){ // master process
         if(signo == SIGUSR1){ // kill child
             kill(childpid, signo);
@@ -131,8 +127,6 @@ int main(int argc, char **argv){
     signal(SIGHUP, SIG_IGN);
     signal(SIGTSTP, SIG_IGN);
     signal(SIGUSR1, signals); // restart server
-    // check for another running process in server and standalone mode
-    if(!GP->client) check4running(self, GP->pidfile);
     if(!isserver){ // run in standalone or client mode
         int camerainit = FALSE;
         if(!GP->client){ // standalone mode

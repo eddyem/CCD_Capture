@@ -10,8 +10,6 @@
 #include "cmdlnopts.h"
 #include "basestructs.h"
 
-#define DEFAULT_PID_FILE    "/tmp/CCD_Capture.pid"
-
 static int help;
 glob_pars *GP = NULL;
 //            DEFAULTS
@@ -29,7 +27,6 @@ static glob_pars  G = {
     .shtr_cmd = -1,
     .confio = -1, .setio = -1,
     .gotopos = NAN, .addsteps = NAN,
-    .pidfile = DEFAULT_PID_FILE,
     .brightness = NAN, .gain = NAN,
     .setwheel = -1,
     .fanspeed = -1,
@@ -103,7 +100,6 @@ myoption cmdlnopts[] = {
     {"imageport",NEED_ARG,  NULL,   0,      arg_string, APTR(&G.imageport), N_("local INET socket port to send/receive images")},
     {"client",  NO_ARGS,    &G.client,1,    arg_none,   NULL,               N_("run as client")},
     {"viewer",  NO_ARGS,    &G.viewer,1,    arg_none,   NULL,               N_("passive viewer (only get last images)")},
-    {"pidfile", NEED_ARG,   NULL,   0,      arg_string, APTR(&G.pidfile),   N_("PID file (default: " DEFAULT_PID_FILE ")")},
     {"restart", NO_ARGS,    &G.restart,1,   arg_none,   NULL,               N_("restart image server")},
 
 #ifdef IMAGEVIEW
