@@ -7,7 +7,7 @@
 msgid   ""
 msgstr  "Project-Id-Version: PACKAGE VERSION\n"
         "Report-Msgid-Bugs-To: \n"
-        "POT-Creation-Date: 2023-04-11 09:57+0300\n"
+        "POT-Creation-Date: 2023-04-11 14:24+0300\n"
         "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
         "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
         "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -22,7 +22,7 @@ msgid   "%.1f seconds till exposition ends"
 msgstr  "%.1f секунд до окончания экспозиции"
 
 #. %d я│п╣п╨я┐п╫п╢ п╢п╬ п╬п╨п╬п╫я┤п╟п╫п╦я▐ п©п╟я┐п╥я▀\n
-#: ccdfunc.c:807 client.c:272
+#: ccdfunc.c:807 client.c:278
 #, c-format
 msgid   "%d seconds till pause ends\n"
 msgstr  "%d секунд до окончания паузы\n"
@@ -117,7 +117,7 @@ msgstr  "Не могу установить фокусер в нуль"
 msgid   "Can't init mutex!"
 msgstr  "Не могу инициализировать мьютекс!"
 
-#: client.c:259
+#: client.c:265
 msgid   "Can't make exposition"
 msgstr  "Не могу выполнить экспозицию"
 
@@ -162,7 +162,7 @@ msgstr  "Не могу установить номер активного фокусера"
 msgid   "Can't set active wheel number"
 msgstr  "Не могу установить номер активного колеса"
 
-#: ccdfunc.c:725 server.c:236
+#: ccdfunc.c:725 server.c:251
 #, c-format
 msgid   "Can't set binning %dx%d"
 msgstr  "Не могу установить биннинг %dx%d"
@@ -190,7 +190,7 @@ msgstr  "Не могу установить скорость вентиляторов"
 msgid   "Can't set gain to %g"
 msgstr  "Не могу установить Gain в %g"
 
-#: ccdfunc.c:737 server.c:237
+#: ccdfunc.c:737 server.c:252
 msgid   "Can't set given geometry"
 msgstr  "Не могу установить геометрию"
 
@@ -213,7 +213,7 @@ msgstr  "Не могу установить скорость считывания"
 msgid   "Can't set wheel position %d"
 msgstr  "Не могу установить положение колеса %d"
 
-#: ccdfunc.c:783 ccdfunc.c:857 server.c:122
+#: ccdfunc.c:783 ccdfunc.c:857 server.c:137
 msgid   "Can't start exposition"
 msgstr  "Не могу начать экспозицию"
 
@@ -289,7 +289,7 @@ msgstr  "Статистика по изображению: \n"
 msgid   "N flushes before exposing (default: 1)"
 msgstr  "N засвечиваний перед экспозицией (по умолчанию: 1)"
 
-#: server.c:170
+#: server.c:185
 msgid   "No camera device"
 msgstr  "Не указано устройство камеры"
 
@@ -323,7 +323,7 @@ msgstr  "Считывание изображения"
 msgid   "Readout mode: %s"
 msgstr  "Режим считывания: %s"
 
-#: client.c:288
+#: client.c:294
 msgid   "Server timeout"
 msgstr  "Таймаут сервера"
 

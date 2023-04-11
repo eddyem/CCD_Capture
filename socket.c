@@ -38,8 +38,6 @@
 double __t0 = 0.;
 #endif
 
-pthread_mutex_t locmutex = PTHREAD_MUTEX_INITIALIZER; // mutex for wheel/camera/focuser functions
-
 /**
  * @brief open_socket - create socket and open it
  * @param isserver  - TRUE for server, FALSE for client
@@ -187,7 +185,7 @@ int sendmessage(int fd, const char *msg, int l){
         buflen += 1024;
         tmpbuf = realloc(tmpbuf, buflen);
     }
-    //DBG("send to fd %d: %s [%d]", fd, msg, l);
+    DBG("send to fd %d: %s [%d]", fd, msg, l);
     memcpy(tmpbuf, msg, l);
     if(msg[l-1] != '\n') tmpbuf[l++] = '\n';
     if(l != send(fd, tmpbuf, l, MSG_NOSIGNAL)){
@@ -246,79 +244,6 @@ char *get_keyval(char *keyval){
     // now we have key (`str`) and val (or NULL)
     //DBG("key=%s, val=%s", keyval, val);
     return val;
-}
-
-// parse string of data (command or key=val)
-// the CONTENT of buffer `str` WILL BE BROKEN!
-// @return FALSE if client closed (nothing to read)
-static int parsestring(int fd, handleritem *handlers, char *str){
-    if(fd < 1 || !handlers || !handlers->key || !str || !*str) return FALSE;
-    char *val = get_keyval(str);
-    if(val){
-        DBG("RECEIVE '%s=%s'", str, val);
-        LOGDBG("RECEIVE '%s=%s'", str, val);
-    }else{
-        DBG("RECEIVE '%s'", str);
-        LOGDBG("RECEIVE '%s'", str);
-    }
-    for(handleritem *h = handlers; h->key; ++h){
-        if(strcmp(str, h->key) == 0){ // found command
-            hresult r = RESULT_OK;
-            int l = 1;
-            if(h->chkfunction){
-                double t0 = dtime();
-                do{ l = pthread_mutex_trylock(&locmutex); }while(l && dtime() - t0 > BUSY_TIMEOUT);
-                if(l){
-                    DBG("Can't lock mutex");
-                    return RESULT_BUSY; // long blocking work
-                }
-                r = h->chkfunction(val);
-            } // else NULL instead of chkfuntion -> don't check and don't lock mutex
-            if(r == RESULT_OK){ // no test function or it returns TRUE
-                if(h->handler) r = h->handler(fd, str, val);
-                else r = RESULT_FAIL;
-            }
-            if(!l) pthread_mutex_unlock(&locmutex);
-            if(r == RESULT_DISCONNECTED){
-                DBG("handler return RESULT_DISCONNECTED");
-                return FALSE;
-            }
-            return sendstrmessage(fd, hresult2str(r));
-        }
-    }
-    DBG("Command not found!");
-    return sendstrmessage(fd, resmessages[RESULT_BADKEY]);
-}
-
-/**
- * @brief processData - read (if available) data from fd and run processing, sending to fd messages for each command
- * @param fd        - socket file descriptor
- * @param handlers  - NULL-terminated array of handlers
- * @param buf (io)   - zero-terminated buffer for storing rest of data (without newline), its content will be changed
- * @param buflen    - its length
- * @return FALSE if client closed (nothing to read)
- */
-int processData(int fd, handleritem *handlers, char *buf, int buflen){
-    int curlen = strlen(buf);
-    if(curlen == buflen-1) curlen = 0; // buffer overflow - clear old content
-    ssize_t rd = read(fd, buf + curlen, buflen-1 - curlen);
-    if(rd <= 0){
-        //DBG("read %zd bytes from client", rd);
-        return FALSE;
-    }
-    //DBG("got %s[%zd] from %d", buf, rd, fd);
-    char *restofdata = buf, *eptr = buf + curlen + rd;
-    *eptr = 0;
-    do{
-        char *nl = strchr(restofdata, '\n');
-        if(!nl) break;
-        *nl++ = 0;
-        if(!parsestring(fd, handlers, restofdata)) return FALSE; // client disconnected
-        restofdata = nl;
-        //DBG("rest of data: %s", restofdata);
-    }while(1);
-    if(restofdata != buf) memmove(buf, restofdata, eptr - restofdata + 1);
-    return TRUE;
 }
 
 /**

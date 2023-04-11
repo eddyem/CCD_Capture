@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2023-04-11 10:00+0300\n"
+"POT-Creation-Date: 2023-04-11 14:57+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -478,12 +478,12 @@ msgstr ""
 msgid "Can't set brightness to %g"
 msgstr ""
 
-#: ccdfunc.c:725 server.c:236
+#: ccdfunc.c:725 server.c:251
 #, c-format
 msgid "Can't set binning %dx%d"
 msgstr ""
 
-#: ccdfunc.c:737 server.c:237
+#: ccdfunc.c:737 server.c:252
 msgid "Can't set given geometry"
 msgstr ""
 
@@ -529,7 +529,7 @@ msgstr ""
 msgid "Capture frame %d"
 msgstr ""
 
-#: ccdfunc.c:783 ccdfunc.c:857 server.c:122
+#: ccdfunc.c:783 ccdfunc.c:857 server.c:137
 msgid "Can't start exposition"
 msgstr ""
 
@@ -546,7 +546,7 @@ msgid "Can't grab image"
 msgstr ""
 
 #. %d секунд до окончания паузы\n
-#: ccdfunc.c:807 client.c:272
+#: ccdfunc.c:807 client.c:278
 #, c-format
 msgid "%d seconds till pause ends\n"
 msgstr ""
@@ -555,15 +555,15 @@ msgstr ""
 msgid "Some error when capture"
 msgstr ""
 
-#: server.c:170
+#: server.c:185
 msgid "No camera device"
 msgstr ""
 
-#: client.c:259
+#: client.c:265
 msgid "Can't make exposition"
 msgstr ""
 
-#: client.c:288
+#: client.c:294
 msgid "Server timeout"
 msgstr ""
 

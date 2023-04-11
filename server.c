@@ -30,6 +30,8 @@
 #include "server.h"
 #include "socket.h"
 
+static int processData(int fd, handleritem *handlers, char *buf, int buflen);
+
 static atomic_int camdevno = 0, wheeldevno = 0, focdevno = 0; // current devices numbers
 static _Atomic camera_state camstate = CAMERA_IDLE;
 #define FLAG_STARTCAPTURE       (1<<0)
@@ -37,7 +39,6 @@ static _Atomic camera_state camstate = CAMERA_IDLE;
 #define FLAG_RESTARTSERVER      (1<<2)
 static atomic_int camflags = 0, camfanspd = 0, confio = 0, nflushes;
 static char *outfile = NULL, *lastfile = NULL; // current output file name/prefix; last name of saved file
-//static pthread_mutex_t locmutex = PTHREAD_MUTEX_INITIALIZER; // mutex for wheel/camera/focuser functions
 static frameformat frmformatmax = {0}, curformat = {0}; // maximal format
 static void *camdev = NULL, *focdev = NULL, *wheeldev = NULL;
 
@@ -96,6 +97,20 @@ strpair allcommands[] = {
     { CMD_WPOS,         "wheel position" },
     {NULL, NULL},
 };
+
+static pthread_mutex_t locmutex = PTHREAD_MUTEX_INITIALIZER; // mutex for wheel/camera/focuser functions
+
+// return TRUE if `locmutex` can be locked
+static int lock(){
+    if(pthread_mutex_trylock(&locmutex)){
+        DBG("\n\nAlready locked");
+        return FALSE;
+    }
+    return TRUE;
+}
+static void unlock(){
+    if(pthread_mutex_unlock(&locmutex)) ERR("Can't unlock mutex");
+}
 
 static IMG ima = {0};
 static void fixima(){
@@ -176,7 +191,7 @@ static void* processCAM(_U_ void *d){
             signals(1);
         }
         usleep(100);
-        if(0 == pthread_mutex_trylock(&locmutex)){
+        if(lock()){
             // log
             if(dtime() - logt > TLOG_PAUSE){
                 logt = dtime();
@@ -206,7 +221,7 @@ static void* processCAM(_U_ void *d){
     // do nothing: when `server` got this state it sends "expstate=3" to all clients and changes state to IDLE
                 break;
             }
-            pthread_mutex_unlock(&locmutex);
+            unlock();
         }
     }
     return NULL;
@@ -354,7 +369,6 @@ static hresult nameprefixhandler(_U_ int fd, _U_ const char *key, const char *va
         char *path = makeabspath(val, FALSE);
         if(!path){
             LOGERR("Can't create file '%s'", val);
-            //pthread_mutex_unlock(&locmutex);
             return RESULT_BADVAL;
         }
         FREE(outfile);
@@ -676,7 +690,6 @@ static hresult FITSheaderhandler(int fd, _U_ const char *key, const char *val){
                     FREE(*sptr++);
                 }
                 FREE(list);
-                //pthread_mutex_unlock(&locmutex);
                 return RESULT_BADVAL;
             }
             *lptr++ = strdup(newpath);
@@ -958,8 +971,8 @@ static handleritem items[] = {
     {chkcc,  formathandler, CMD_FRAMEMAX},
     {chkcc,  nflusheshandler, CMD_NFLUSHES},
     {chkcam, expstatehandler, CMD_EXPSTATE},
-    {NULL,   imsizehandler, CMD_IMWIDTH},
-    {NULL,   imsizehandler, CMD_IMHEIGHT},
+    {chktrue,imsizehandler, CMD_IMWIDTH},
+    {chktrue,imsizehandler, CMD_IMHEIGHT},
     {chkcc,  nameprefixhandler, CMD_FILENAMEPREFIX},
     {chkcc,  rewritefilehandler, CMD_REWRITE},
     {chkcc,  _8bithandler, CMD_8BIT},
@@ -1124,4 +1137,78 @@ char *makeabspath(const char *path, int shouldbe){
     fclose(f);
     if(unl) unlink(path);
     return ret;
+}
+
+// parse string of data (command or key=val)
+// the CONTENT of buffer `str` WILL BE BROKEN!
+// @return FALSE if client closed (nothing to read)
+static int parsestring(int fd, handleritem *handlers, char *str){
+    if(fd < 1 || !handlers || !handlers->key || !str || !*str) return FALSE;
+    char *val = get_keyval(str);
+    if(val){
+        DBG("RECEIVE '%s=%s'", str, val);
+        LOGDBG("RECEIVE '%s=%s'", str, val);
+    }else{
+        DBG("RECEIVE '%s'", str);
+        LOGDBG("RECEIVE '%s'", str);
+    }
+    for(handleritem *h = handlers; h->key; ++h){
+        if(strcmp(str, h->key) == 0){ // found command
+            hresult r = RESULT_OK;
+            int l = FALSE;
+            if(h->chkfunction){
+                double t0 = dtime();
+                do{ l = lock(); } while(!l && dtime() - t0 < BUSY_TIMEOUT);
+                DBG("time: %g", dtime() - t0);
+                if(!l){
+                    WARN("Can't lock mutex"); //signals(1);
+                    return RESULT_BUSY; // long blocking work
+                }
+                r = h->chkfunction(val);
+            } // else NULL instead of chkfuntion -> don't check and don't lock mutex
+            if(r == RESULT_OK){ // no test function or it returns TRUE
+                if(h->handler) r = h->handler(fd, str, val);
+                else r = RESULT_FAIL;
+            }
+            if(l) unlock();
+            if(r == RESULT_DISCONNECTED){
+                DBG("handler return RESULT_DISCONNECTED");
+                return FALSE;
+            }
+            return sendstrmessage(fd, hresult2str(r));
+        }
+    }
+    DBG("Command not found!");
+    return sendstrmessage(fd, hresult2str(RESULT_BADKEY));
+}
+
+/**
+ * @brief processData - read (if available) data from fd and run processing, sending to fd messages for each command
+ * @param fd        - socket file descriptor
+ * @param handlers  - NULL-terminated array of handlers
+ * @param buf (io)   - zero-terminated buffer for storing rest of data (without newline), its content will be changed
+ * @param buflen    - its length
+ * @return FALSE if client closed (nothing to read)
+ */
+static int processData(int fd, handleritem *handlers, char *buf, int buflen){
+    int curlen = strlen(buf);
+    if(curlen == buflen-1) curlen = 0; // buffer overflow - clear old content
+    ssize_t rd = read(fd, buf + curlen, buflen-1 - curlen);
+    if(rd <= 0){
+        //DBG("read %zd bytes from client", rd);
+        return FALSE;
+    }
+    //DBG("got %s[%zd] from %d", buf, rd, fd);
+    char *restofdata = buf, *eptr = buf + curlen + rd;
+    *eptr = 0;
+    do{
+        char *nl = strchr(restofdata, '\n');
+        if(!nl) break;
+        *nl++ = 0;
+        if(!parsestring(fd, handlers, restofdata)) return FALSE; // client disconnected
+        restofdata = nl;
+        //DBG("rest of data: %s", restofdata);
+    }while(1);
+    if(restofdata != buf) memmove(buf, restofdata, eptr - restofdata + 1);
+    return TRUE;
 }

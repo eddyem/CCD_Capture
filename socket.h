@@ -30,7 +30,7 @@
 #define MAXCLIENTS  (30)
 
 // wait for mutex locking
-#define BUSY_TIMEOUT    (0.1)
+#define BUSY_TIMEOUT    (1.0)
 // waiting for answer timeout
 #define ANSWER_TIMEOUT  (1.0)
 // wait for exposition ends (between subsequent check calls)
@@ -47,16 +47,14 @@ extern double __t0;
 #define TIMESTAMP(...)
 #endif
 
-extern pthread_mutex_t locmutex;
-
 typedef enum{
-    RESULT_OK,      // all OK
-    RESULT_BUSY,    // camera busy and no setters can be done
-    RESULT_FAIL,    // failed running command
-    RESULT_BADVAL,  // bad key's value
-    RESULT_BADKEY,  // bad key
-    RESULT_SILENCE, // send nothing to client
-    RESULT_DISCONNECTED,// client disconnected
+    RESULT_OK,          // 0: all OK
+    RESULT_BUSY,        // 1: camera busy and no setters can be done
+    RESULT_FAIL,        // 2: failed running command
+    RESULT_BADVAL,      // 3: bad key's value
+    RESULT_BADKEY,      // 4: bad key
+    RESULT_SILENCE,     // 5: send nothing to client
+    RESULT_DISCONNECTED,// 6: client disconnected
     RESULT_NUM
 } hresult;
 
@@ -78,5 +76,4 @@ int sendmessage(int fd, const char *msg, int l);
 int sendstrmessage(int fd, const char *msg);
 char *get_keyval(char *keyval);
 
-int processData(int fd, handleritem *handlers, char *buf, int buflen);
 int canberead(int fd);
