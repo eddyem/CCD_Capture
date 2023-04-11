@@ -68,7 +68,6 @@ void signals(int signo){
 }
 
 int main(int argc, char **argv){
-    char *self = strdup(argv[0]);
     initial_setup();
 #if defined GETTEXT_PACKAGE && defined LOCALEDIR
     printf("GETTEXT_PACKAGE=" GETTEXT_PACKAGE ", LOCALEDIR=" LOCALEDIR "\n");

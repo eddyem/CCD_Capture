@@ -253,12 +253,14 @@ static int geometrylimits(frameformat *max, frameformat *step){
     int64_values i;
     if(!getInt("Width", &i)) return FALSE;
     max->w = i.max; step->w = i.incr;
+    max->xoff = i.max; step->xoff = i.incr;
     if(!getInt("Height", &i)) return FALSE;
     max->h = i.max; step->h = i.incr;
-    if(!getInt("OffsetX", &i)) return FALSE;
-    max->xoff = i.max; step->xoff = i.incr;
-    if(!getInt("OffsetY", &i)) return FALSE;
     max->yoff = i.max; step->yoff = i.incr;
+    if(!getInt("OffsetX", &i)) return FALSE;
+    max->w -= i.max;
+    if(!getInt("OffsetY", &i)) return FALSE;
+    max->h -= i.max;
     return TRUE;
 }
 

@@ -224,8 +224,10 @@ static int camdevini(int n){
     frameformat step;
     camera->getgeomlimits(&frmformatmax, &step);
     curformat = frmformatmax;
-    DBG("\n\nGeometry format (offx/offy) w/h: (%d/%d) %d/%d", curformat.xoff, curformat.yoff,
+    DBG("\n\nGeometry format max (offx/offy) w/h: (%d/%d) %d/%d", curformat.xoff, curformat.yoff,
         curformat.w, curformat.h);
+//    curformat.w -= curformat.xoff;
+//    curformat.h -= curformat.yoff;
     curformat.xoff = 0;
     curformat.yoff = 0;
     if(GP->hbin < 1) GP->hbin = 1;
