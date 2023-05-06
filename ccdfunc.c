@@ -218,6 +218,7 @@ int saveFITS(IMG *img, char **outp){
     int tmpi = 0;
     struct tm *tm_time;
     char bufc[FLEN_CARD];
+    double dsavetime = dtime();
     time_t savetime = time(NULL);
     fitsfile *fp;
     fitserror = 0;
@@ -278,10 +279,9 @@ int saveFITS(IMG *img, char **outp){
     // DATE / Creation date (YYYY-MM-DDThh:mm:ss, UTC)
     strftime(bufc, FLEN_VALUE, "%Y-%m-%dT%H:%M:%S", gmtime(&savetime));
     WRITEKEY(fp, TSTRING, "DATE", bufc, "Creation date (YYYY-MM-DDThh:mm:ss, UTC)");
-    tmpl = (long) savetime;
     tm_time = localtime(&savetime);
     strftime(bufc, FLEN_VALUE, "File creation time (UNIX)", tm_time);
-    WRITEKEY(fp, TLONG, "UNIXTIME", &tmpl, bufc);
+    WRITEKEY(fp, TDOUBLE, "UNIXTIME", &dsavetime, bufc);
     strftime(bufc, 80, "%Y/%m/%d", tm_time);
     // DATE-OBS / DATE (YYYY/MM/DD) OF OBS.
     WRITEKEY(fp, TSTRING, "DATE-OBS", bufc, "DATE OF OBS. (YYYY/MM/DD, local)");
