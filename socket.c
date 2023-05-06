@@ -146,6 +146,7 @@ int start_socket(int isserver){
             if(!GP->viewer && GP->exptime < 0.00001) ERRX("Need exposition time!");
             init_grab_sock(sock);
             viewer(sockcaptured); // start viewer with socket client parser
+            DBG("done");
         }else
 #endif
             client(sock);

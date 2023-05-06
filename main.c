@@ -40,7 +40,8 @@ static int isserver = FALSE;
 static pid_t childpid = 0;
 
 void signals(int signo){
-    if(signo) signal(signo, SIG_IGN);
+    //if(signo) signal(signo, SIG_IGN);
+    DBG("signo=%d", signo);
     if(childpid){ // master process
         if(signo == SIGUSR1){ // kill child
             kill(childpid, signo);
@@ -62,8 +63,8 @@ void signals(int signo){
 #ifdef IMAGEVIEW
     DBG("KILL GL");
     closeGL();
-    usleep(10000);
 #endif
+    DBG("exit(%d)", signo);
     exit(signo);
 }
 

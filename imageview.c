@@ -129,15 +129,12 @@ static void createWindow(){
     DBG("Window opened");
 }
 
-static int killwindow(){
-    if(!win) return 0;
+static void killwindow(){
+    if(!win) return;
     if(!win->killthread){
         // say threads to die
         win->killthread = 1;
     }
-    //DBG("Lock mutex");
-    //pthread_mutex_lock(&win->mutex);
-    //pthread_join(win->thread, NULL); // wait while thread dies
     if(win->menu){
         DBG("Destroy menu");
         glutDestroyMenu(win->menu);
@@ -146,18 +143,25 @@ static int killwindow(){
     glutDestroyWindow(win->ID);
     DBG("Delete textures");
     glDeleteTextures(1, &(win->Tex));
-    DBG("Cancel");
+    if(GLUTthread){
+        DBG("Leave mainloop");
+        glutLeaveMainLoop();
+        DBG("cancel GLUTthread");
+        pthread_cancel(GLUTthread);
+        GLUTthread = 0;
+    }
+    DBG("main GL thread cancelled");
+    initialized = 0;
     windowData *old = win;
     win = NULL;
     DBG("free(rawdata)");
     FREE(old->image->rawdata);
     DBG("free(image)");
     FREE(old->image);
-    //pthread_mutex_unlock(&old->mutex);
     DBG("free(win)");
     FREE(old);
     DBG("return");
-    return 1;
+    return;
 }
 
 /*
@@ -525,20 +529,15 @@ static void* image_thread(void *data){
 }
 #endif
 
-void closeGL(){
-    if(win) win->killthread = 1;
-    usleep(1000);
+void closeGL(){ // killed by external signal or ctrl+c
     if(!initialized) return;
-    initialized = 0;
+    DBG("KILLL");
     camstop(); // cancel expositions
-    //DBG("Leave mainloop");
-    //glutLeaveMainLoop();
-    DBG("kill");
-    killwindow();
-    DBG("join");
-    if(GLUTthread) pthread_join(GLUTthread, NULL); // wait while main thread exits
-    DBG("main GL thread cancelled");
-    usleep(1000);
+    win->killthread = 1;
+    while(initialized){
+        usleep(100000);
+        if(initialized) killwindow(); // kill here, if `viewer` died
+    }
 }
 
 /**
@@ -562,9 +561,11 @@ int viewer(imagefunc newimage){
     IMG *img = NULL;
     //double t0 = dtime();
     while(1){
-        if(!win || win->killthread){
+        if(!win || win->killthread){ // got kill from ctrl+q
             DBG("got killthread");
             newimage((void*)-1);
+            DBG("kill");
+            killwindow();
             signals(0); // just run common cleaner
             return 0;
         }

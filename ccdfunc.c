@@ -212,7 +212,7 @@ int saveFITS(IMG *img, char **outp){
     }
     int width = img->w, height = img->h;
     void *data = (void*) img->data;
-    long naxes[2] = {width, height}, tmpl;
+    long naxes[2] = {width, height};
     double tmpd = 0.0;
     float tmpf = 0.0;
     int tmpi = 0;

@@ -28,16 +28,17 @@
 #include "ccdfunc.h" // framerate
 #include "client.h"
 #include "cmdlnopts.h"
+#include "imageview.h"
 #include "server.h" // for common commands names
 #include "socket.h"
 
 static char sendbuf[BUFSIZ];
 // send message and wait any answer
-#define SENDMSG(...) do{snprintf(sendbuf, BUFSIZ-1, __VA_ARGS__); verbose(2, "\t> %s", sendbuf); sendstrmessage(sock, sendbuf); getans(sock, NULL);}while(0)
+#define SENDMSG(...) do{DBG("SENDMSG"); snprintf(sendbuf, BUFSIZ-1, __VA_ARGS__); verbose(2, "\t> %s", sendbuf); sendstrmessage(sock, sendbuf); while(getans(sock, NULL));} while(0)
 // send message and wait answer starting with 'cmd'
-#define SENDMSGW(cmd, ...) do{snprintf(sendbuf, BUFSIZ-1, cmd __VA_ARGS__); verbose(2, "\t> %s", sendbuf); sendstrmessage(sock, sendbuf); getans(sock, cmd);}while(0)
+#define SENDMSGW(cmd, ...) do{DBG("SENDMSGW"); snprintf(sendbuf, BUFSIZ-1, cmd __VA_ARGS__); verbose(2, "\t> %s", sendbuf); sendstrmessage(sock, sendbuf);}while(!getans(sock, cmd))
 // send command and wait for answer on it
-#define SENDCMDW(cmd) do{strncpy(sendbuf, cmd, BUFSIZ-1); verbose(2, "\t> %s", sendbuf); sendstrmessage(sock, sendbuf); getans(sock, cmd);}while(0)
+#define SENDCMDW(cmd) do{DBG("SENDCMDW"); strncpy(sendbuf, cmd, BUFSIZ-1); verbose(2, "\t> %s", sendbuf); sendstrmessage(sock, sendbuf);}while(!getans(sock, cmd))
 static volatile atomic_int expstate = CAMERA_CAPTURE;
 static int xm0,ym0,xm1,ym1; // max format
 static int xc0,yc0,xc1,yc1; // current format
@@ -89,22 +90,27 @@ static int parseans(char *ans){
     if(0 == strcmp(CMD_EXPSTATE, ans)){
         expstate = atoi(val);
         DBG("Exposition state: %d", expstate);
+        return TRUE;
     }else if(0 == strcmp(CMD_FRAMEMAX, ans)){
         sscanf(val, "%d,%d,%d,%d", &xm0, &ym0, &xm1, &ym1);
         DBG("Got maxformat: %d,%d,%d,%d", xm0, ym0, xm1, ym1);
+        return TRUE;
     }else if(0 == strcmp(CMD_FRAMEFORMAT, ans)){
         sscanf(val, "%d,%d,%d,%d", &xc0, &yc0, &xc1, &yc1);
         DBG("Got current format: %d,%d,%d,%d", xc0, yc0, xc1, yc1);
+        return TRUE;
     }
 #ifdef IMAGEVIEW
     else if(0 == strcmp(CMD_IMWIDTH, ans)){
         ima.w = atoi(val);
         DBG("Get width: %d", ima.w);
         imdatalen = ima.w * ima.h * 2;
+        return TRUE;
     }else if(0 == strcmp(CMD_IMHEIGHT, ans)){
         ima.h = atoi(val);
         DBG("Get height: %d", ima.h);
         imdatalen = ima.w * ima.h * 2;
+        return TRUE;
     }
 #endif
     //TIMESTAMP("parseans() end");
@@ -118,20 +124,24 @@ static int getans(int sock, const char *msg){
     char *ans = NULL;
     while(dtime() - t0 < ANSWER_TIMEOUT){
         char *s = readmsg(sock);
-        if(!s){ // buffer is empty, return last message or wait for it
-            if(ans) return TRUE;
+        if(!s) continue;
+        /*if(!s){ // buffer is empty, return last message or wait for it
+            if(ans) return (msg ? FALSE : TRUE);
             else continue;
-        }
+        }*/
         t0 = dtime();
         ans = s;
         TIMESTAMP("Got from server: %s", ans);
         verbose(1, "\t%s", ans);
+DBG("1 msg-> %s, ans -> %s", msg, ans);
         if(parseans(ans)){
+            DBG("2 msg-> %s, ans -> %s", msg, ans);
             if(msg && strncmp(ans, msg, strlen(msg))) continue;
+            DBG("BREAK");
             break;
         }
     }
-    DBG("GETANS: timeout, ans: %s", ans);
+    DBG("GETANS: %s, %s", ans, (dtime()-t0 > ANSWER_TIMEOUT) ? "timeout" : "got answer");
     return ((ans) ? TRUE : FALSE);
 }
 
@@ -345,6 +355,8 @@ static void *grabnext(void _U_ *arg){ // daemon grabbing images through the net
     if(controlfd < 0) return NULL;
     int sock = controlfd;
     while(1){
+        DBG("xx");
+        if(!getWin()) exit(1);
         expstate = CAMERA_CAPTURE;
         TIMESTAMP("End of cycle, start new #%d", grabno+1);
         TIMEINIT();
@@ -378,6 +390,7 @@ static void *waitimage(void _U_ *arg){ // passive waiting for next image
     if(controlfd < 0) return NULL;
     int sock = controlfd;
     while(1){
+        if(!getWin()) exit(1);
         getans(sock, NULL);
         if(expstate != CAMERA_FRAMERDY){
             usleep(1000);

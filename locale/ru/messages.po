@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2023-04-11 14:57+0300\n"
+"POT-Creation-Date: 2023-05-06 14:36+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -546,7 +546,7 @@ msgid "Can't grab image"
 msgstr ""
 
 #. %d секунд до окончания паузы\n
-#: ccdfunc.c:807 client.c:278
+#: ccdfunc.c:807 client.c:288
 #, c-format
 msgid "%d seconds till pause ends\n"
 msgstr ""
@@ -559,11 +559,11 @@ msgstr ""
 msgid "No camera device"
 msgstr ""
 
-#: client.c:265
+#: client.c:275
 msgid "Can't make exposition"
 msgstr ""
 
-#: client.c:294
+#: client.c:304
 msgid "Server timeout"
 msgstr ""
 
@@ -571,28 +571,28 @@ msgstr ""
 msgid "Already initialized!"
 msgstr ""
 
-#: imageview.c:287
+#: imageview.c:291
 msgid "Can't init mutex!"
 msgstr ""
 
-#: imageview.c:389
+#: imageview.c:393
 #, c-format
 msgid "Histogram conversion: %s"
 msgstr ""
 
-#: imageview.c:520 imageview.c:599
+#: imageview.c:524 imageview.c:600
 #, c-format
 msgid "Equalization of histogram: %s"
 msgstr ""
 
-#: imageview.c:520 imageview.c:599
+#: imageview.c:524 imageview.c:600
 msgid "on"
 msgstr ""
 
-#: imageview.c:520 imageview.c:599
+#: imageview.c:524 imageview.c:600
 msgid "off"
 msgstr ""
 
-#: imageview.c:559
+#: imageview.c:558
 msgid "Can't open OpenGL window, image preview will be inaccessible"
 msgstr ""
