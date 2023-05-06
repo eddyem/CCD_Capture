@@ -32,7 +32,7 @@
 // wait for mutex locking
 #define BUSY_TIMEOUT    (1.0)
 // waiting for answer timeout
-#define ANSWER_TIMEOUT  (1.0)
+#define ANSWER_TIMEOUT  (0.1)
 // wait for exposition ends (between subsequent check calls)
 #define WAIT_TIMEOUT    (2.0)
 // client will disconnect after this time from last server message
