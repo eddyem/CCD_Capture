@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2023-05-06 14:36+0300\n"
+"POT-Creation-Date: 2023-05-31 16:14+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -571,28 +571,28 @@ msgstr ""
 msgid "Already initialized!"
 msgstr ""
 
-#: imageview.c:291
+#: imageview.c:308
 msgid "Can't init mutex!"
 msgstr ""
 
-#: imageview.c:393
+#: imageview.c:421
 #, c-format
 msgid "Histogram conversion: %s"
 msgstr ""
 
-#: imageview.c:524 imageview.c:600
+#: imageview.c:640
+msgid "Can't open OpenGL window, image preview will be inaccessible"
+msgstr ""
+
+#: imageview.c:682
 #, c-format
 msgid "Equalization of histogram: %s"
 msgstr ""
 
-#: imageview.c:524 imageview.c:600
+#: imageview.c:682
 msgid "on"
 msgstr ""
 
-#: imageview.c:524 imageview.c:600
+#: imageview.c:682
 msgid "off"
-msgstr ""
-
-#: imageview.c:558
-msgid "Can't open OpenGL window, image preview will be inaccessible"
 msgstr ""

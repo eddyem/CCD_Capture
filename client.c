@@ -273,7 +273,7 @@ void client(int sock){
             t0 = dtime();
             if(expstate == CAMERA_ERROR){
                 WARNX(_("Can't make exposition"));
-                return;
+                continue;
             }
             if(expstate != CAMERA_CAPTURE){
                 verbose(2, "Frame ready!");

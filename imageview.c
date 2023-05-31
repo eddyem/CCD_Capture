@@ -16,7 +16,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <X11/Xlib.h> // XInitThreads();
+//#include <X11/Xlib.h> // XInitThreads();
 #include <math.h>     // roundf(), log(), sqrt()
 #include <pthread.h>
 #include <signal.h>
@@ -51,10 +51,12 @@ static void imageview_init(){
         WARNX(_("Already initialized!"));
         return;
     }
-    XInitThreads(); // we need it for threaded windows
+    //XInitThreads(); // we need it for threaded windows
     glutInit(&c, v);
     glutInitDisplayMode(GLUT_RGB | GLUT_DOUBLE | GLUT_DEPTH);
-    glutSetOption(GLUT_ACTION_ON_WINDOW_CLOSE, GLUT_ACTION_CONTINUE_EXECUTION);
+    // we should call desctructors before exiting
+    //glutSetOption(GLUT_ACTION_ON_WINDOW_CLOSE, GLUT_ACTION_CONTINUE_EXECUTION);
+    glutSetOption(GLUT_ACTION_ON_WINDOW_CLOSE, GLUT_ACTION_GLUTMAINLOOP_RETURNS);
     initialized = 1;
 }
 
@@ -138,28 +140,37 @@ static void killwindow(){
     if(win->menu){
         DBG("Destroy menu");
         glutDestroyMenu(win->menu);
+        win->menu = 0;
     }
-    DBG("Destroy window");
-    glutDestroyWindow(win->ID);
+    if(win->ID){
+        DBG("Destroy window");
+        glutDestroyWindow(win->ID);
+        win->ID = 0;
+    }
     DBG("Delete textures");
-    glDeleteTextures(1, &(win->Tex));
+    if(win->Tex){
+        glDeleteTextures(1, &(win->Tex));
+        win->Tex = 0;
+    }
     if(GLUTthread){
         DBG("Leave mainloop");
         glutLeaveMainLoop();
-        DBG("cancel GLUTthread");
-        pthread_cancel(GLUTthread);
+        DBG("wait GLUTthread");
+        pthread_join(GLUTthread, NULL);
         GLUTthread = 0;
     }
     DBG("main GL thread cancelled");
     initialized = 0;
-    windowData *old = win;
-    win = NULL;
-    DBG("free(rawdata)");
-    FREE(old->image->rawdata);
-    DBG("free(image)");
-    FREE(old->image);
-    DBG("free(win)");
-    FREE(old);
+    if(win){
+        windowData *old = win;
+        win = NULL;
+        DBG("free(rawdata)");
+        FREE(old->image->rawdata);
+        DBG("free(image)");
+        FREE(old->image);
+        DBG("free(win)");
+        FREE(old);
+    }
     DBG("return");
     return;
 }
@@ -233,6 +244,12 @@ static void *Redraw(_U_ void *arg){
     FNAME();
     createWindow();
     glutMainLoop();
+    // cleanup after window closing
+    win->menu = 0; // prevent deleting of non-existant menu and window
+    win->ID = 0;
+    win->killthread = 1; // kill all threads
+    GLUTthread = 0; // prevent call of glutLeaveMainLoop
+    DBG("\n\nCLOSE ALL after window closing");
     return NULL;
 }
 
@@ -354,17 +371,20 @@ static void gray2rgb(double gray, GLubyte *rgb){
 }
 
 typedef enum{
-    COLORFN_LINEAR, // linear
-    COLORFN_LOG,    // ln
-    COLORFN_SQRT,   // sqrt
-    COLORFN_POW,    // power
-    COLORFN_MAX     // end of list
+    COLORFN_BWLINEAR,   // gray levels, linear
+    COLORFN_BWLOG,      // gray ln
+    COLORFN_LINEAR,     // linear
+    COLORFN_LOG,        // ln
+    COLORFN_SQRT,       // sqrt
+    COLORFN_POW,        // power
+    COLORFN_MAX         // end of list
 } colorfn_type;
 
-static colorfn_type ft = COLORFN_LINEAR;
+static colorfn_type ft = COLORFN_BWLINEAR;
 
 // all colorfun's should get argument in [0, 1] and return in [0, 1]
 static double linfun(double arg){ return arg; } // bung for PREVIEW_LINEAR
+static double glogfun(double arg){ return 45.98590 * log(1.+arg); } // gray for log (arg in [0, 255])
 static double logfun(double arg){ return log(1.+arg) / 0.6931472; } // for PREVIEW_LOG [log_2(x+1)]
 static double powfun(double arg){ return arg * arg;}
 static double (*colorfun)(double) = linfun; // default function to convert color
@@ -374,6 +394,14 @@ static void change_colorfun(colorfn_type f){
     const char *cfn = NULL;
     ft = f;
     switch (f){
+        case COLORFN_BWLINEAR:
+            colorfun = linfun;
+            cfn = "bw linear";
+        break;
+        case COLORFN_BWLOG:
+            colorfun = glogfun;
+            cfn = "bw log";
+        break;
         case COLORFN_LOG:
             colorfun = logfun;
             cfn = "log";
@@ -396,9 +424,19 @@ static void change_colorfun(colorfn_type f){
 // cycle switch between palettes
 static void roll_colorfun(){
     colorfn_type t = ++ft;
-    if(t == COLORFN_MAX) t = COLORFN_LINEAR;
+    if(t == COLORFN_MAX) t = COLORFN_BWLINEAR;
     change_colorfun(t);
 }
+/*
+no omp
+histo: 0.000675201s
+equal: 0.000781059s
+result: 0.00135899s
+omp:
+histo: 0.000928879s
+equal: 0.0010879s
+result: 0.0014689s
+*/
 
 /**
  * @brief equalize - hystogram equalization
@@ -411,7 +449,7 @@ static uint8_t *equalize(uint16_t *ori, int w, int h){
     double orig_hysto[0x10000] = {0.}; // original hystogram
     uint8_t eq_levls[0x10000] = {0};   // levels to convert: newpix = eq_levls[oldpix]
     int s = w*h;
-    //double t0 = dtime();
+//double t0 = dtime();
     /* -- takes too long because of sync
 #pragma omp parallel
 {
@@ -429,17 +467,88 @@ static uint8_t *equalize(uint16_t *ori, int w, int h){
     for(int i = 0; i < s; ++i){
         ++orig_hysto[ori[i]];
     }
-    //DBG("HISTOGRAM takes %g", dtime() - t0);
+//WARNX("histo: %gs", dtime()-t0);
     double part = (double)(s + 1) / 0x100, N = 0.;
     for(int i = 0; i <= 0xffff; ++i){
         N += orig_hysto[i];
         eq_levls[i] = (uint8_t)(N/part);
     }
-    //OMP_FOR() -- takes too long!
+//WARNX("equal: %gs", dtime()-t0);
+    //OMP_FOR() -- takes the same time!
     for(int i = 0; i < s; ++i){
         retn[i] = eq_levls[ori[i]];
     }
-    //DBG("EQUALIZATION takes %g", dtime() - t0);
+//WARNX("result: %gs", dtime()-t0);
+    return retn;
+}
+/*
+ no omp @ histo:
+histo: 0.00269914s
+stat: 0.00272393s
+cuts: 0.00357103s
+ omp @ histo:
+histo: 0.00120497s
+stat: 0.00127792s
+cuts: 0.00188208s
+*/
+
+// count image cuts as [median-sigma median+5sigma]
+static uint8_t *mkcuts(uint16_t *ori, int w, int h){
+    uint8_t *retn = MALLOC(uint8_t, w*h);
+    int orig_hysto[0x10000] = {0.}; // original hystogram
+    int s = w*h;
+    double sum = 0., sum2 = 0.;
+//double t0 = dtime();
+#pragma omp parallel
+{
+    size_t histogram_private[0x10000] = {0};
+    double sm = 0., sm2 = 0.;
+    #pragma omp for nowait
+    for(int i = 0; i < s; ++i){
+        ++histogram_private[ori[i]];
+        double b = ori[i];
+        sm += b;
+        sm2 += b*b;
+    }
+    #pragma omp critical
+    {
+        for(int i = 0; i < 0x10000; ++i) orig_hysto[i] += histogram_private[i];
+        sum += sm;
+        sum2 += sm2;
+    }
+}
+/*
+    for(int i = 0; i < s; ++i){
+        double b = ori[i];
+        ++orig_hysto[ori[i]];
+        sum += b;
+        sum2 += b*b;
+    }
+*/
+//WARNX("histo: %gs", dtime()-t0);
+    // get median level
+    int counts = s/2, median = 0;
+    for(; median < 0xffff; ++median){
+        if((counts -= orig_hysto[median]) < 0) break;
+    }
+    sum /= s;
+    double sigma = sqrt(sum2/s - sum*sum);
+    int low = median - sigma, high = median + 5.*sigma;
+    if(low < 0) low = 0;
+    if(high > 0xffff) high = 0xffff;
+    double A = 255./(high - low);
+    DBG("Got: sigma=%.1f, low=%d, high=%d, A=%g", sigma, low, high, A);
+    // now we can recalculate values: new = (old - low)*A
+//WARNX("stat: %gs", dtime()-t0);
+// DEBUG: 2ms without OMP; 0.7ms with
+    OMP_FOR()
+    for(int i = 0; i < s; ++i){
+        uint16_t old = ori[i];
+        if(old > high){ retn[i] = 255; continue; }
+        else if(old < low){ retn[i] = 0; continue; }
+        retn[i] = (uint8_t)(A*(old - low));
+    }
+//WARNX("cuts: %gs", dtime()-t0);
     return retn;
 }
 
@@ -457,25 +566,32 @@ static void change_displayed_image(IMG *img){
         win->image = im;
         DBG("win->image changed");
     }
+    uint8_t *newima;
     if(imequalize){
         DBG("equalize");
-        uint8_t *newima = equalize(img->data, w, h);
-        GLubyte *dst = im->rawdata;
-        DBG("convert; s=%d, im->s=%d", s, im->h*im->w);
-        // openmp would make all calculations MORE SLOW than even in one thread!
-        //OMP_FOR()
+        newima = equalize(img->data, w, h);
+    }else{
+        DBG("cuts");
+        newima = mkcuts(img->data, w, h);
+    }
+    GLubyte *dst = im->rawdata;
+//double t0 = dtime();
+    if(ft < COLORFN_LINEAR){ // gray
+        // without OMP: 1.8ms; with OMP: 0.8ms
+        OMP_FOR()
+        for(int i = 0; i < s; ++i){
+            GLubyte *t = &dst[i*3];
+            t[0] = t[1] = t[2] = colorfun(newima[i]);
+        }
+    }else{
+        // without OMP: 3.6ms; with OMP: 1.7ms
+        OMP_FOR()
         for(int i = 0; i < s; ++i){
             gray2rgb(colorfun(newima[i] / 256.), &dst[i*3]);
         }
-        FREE(newima);
-    }else{
-        DBG("convert; s=%d, im->s=%d", s, im->h*im->w);
-        GLubyte *dst = im->rawdata;
-        //OMP_FOR()
-        for(int i = 0; i < s; ++i){
-            gray2rgb(colorfun(img->data[i] / 65536.), &dst[i*3]);
-        }
     }
+//WARNX("Conversion time: %g", dtime()-t0);
+    FREE(newima);
     /*
     // mirror image around Y
     int w3 = w*3, h1 = h-1, wsz = w3*sizeof(GLubyte);
@@ -494,40 +610,6 @@ static void change_displayed_image(IMG *img){
     win->image->changed = 1;
     pthread_mutex_unlock(&win->mutex);
 }
-
-#if 0
-// thread for checking
-static void* image_thread(void *data){
-    FNAME();
-    IMG *(*newimage)(const char *) = (IMG*(*)(const char*)) data;
-    IMG *img = NULL;
-    while(1){
-        if(!win || win->killthread){
-            DBG("got killthread");
-            clear_GL_context();
-            pthread_exit(NULL);
-        }
-        if(win && win->winevt){
-            if(win->winevt & WINEVT_SAVEIMAGE){ // save image
-                verbose(2, "Make screenshot\n");
-                saveFITS(img, NULL);
-                win->winevt &= ~WINEVT_SAVEIMAGE;
-            }
-            if(win->winevt & WINEVT_ROLLCOLORFUN){
-                roll_colorfun();
-                win->winevt &= ~WINEVT_ROLLCOLORFUN;
-                change_displayed_image(win, img);
-            }
-            if(win->winevt & WINEVT_EQUALIZE){
-                win->winevt &= ~WINEVT_EQUALIZE;
-                imequalize = !imequalize;
-                verbose(1, _("Equalization of histogram: %s"), imequalize ? N_("on") : N_("off"));
-            }
-        }
-        usleep(10000);
-    }
-}
-#endif
 
 void closeGL(){ // killed by external signal or ctrl+c
     if(!initialized) return;

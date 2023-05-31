@@ -883,7 +883,7 @@ static void *grabnext(void *arg){
  */
 int ccdcaptured(IMG **imgptr){
     if(!imgptr) return FALSE;
-    TIMESTAMP("ccdcaptured() start");
+    //TIMESTAMP("ccdcaptured() start");
     static pthread_t grabthread = 0;
     if(imgptr == (void*)-1){ // kill `grabnext`
         DBG("Wait for grabbing thread ends");
@@ -926,7 +926,7 @@ int ccdcaptured(IMG **imgptr){
             return TRUE;
         }
     }
-    TIMESTAMP("ccdcaptured() end");
+    //TIMESTAMP("ccdcaptured() end");
     return FALSE;
 }
 #endif

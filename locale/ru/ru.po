@@ -7,7 +7,7 @@
 msgid   ""
 msgstr  "Project-Id-Version: PACKAGE VERSION\n"
         "Report-Msgid-Bugs-To: \n"
-        "POT-Creation-Date: 2023-05-06 14:36+0300\n"
+        "POT-Creation-Date: 2023-05-31 16:14+0300\n"
         "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
         "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
         "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -113,7 +113,7 @@ msgstr  "Не могу захватить изображение"
 msgid   "Can't home focuser"
 msgstr  "Не могу установить фокусер в нуль"
 
-#: imageview.c:291
+#: imageview.c:308
 msgid   "Can't init mutex!"
 msgstr  "Не могу инициализировать мьютекс!"
 
@@ -121,7 +121,7 @@ msgstr  "Не могу инициализировать мьютекс!"
 msgid   "Can't make exposition"
 msgstr  "Не могу выполнить экспозицию"
 
-#: imageview.c:558
+#: imageview.c:640
 msgid   "Can't open OpenGL window, image preview will be inaccessible"
 msgstr  "Не могу открыть окно OpenGL, отображение будет недоступно"
 
@@ -232,7 +232,7 @@ msgstr  ""
 msgid   "Display image in OpenGL window"
 msgstr  "Отображение изображения в окне OpenGL"
 
-#: imageview.c:524 imageview.c:600
+#: imageview.c:682
 #, c-format
 msgid   "Equalization of histogram: %s"
 msgstr  "Эквализация гистограммы: %s"
@@ -275,7 +275,7 @@ msgstr  "Обнаружено %d колес, вы указали %d"
 msgid   "Full array: %s"
 msgstr  "Полный формат: %s"
 
-#: imageview.c:393
+#: imageview.c:421
 #, c-format
 msgid   "Histogram conversion: %s"
 msgstr  "Преобразование гистограммы: %s"
@@ -510,11 +510,11 @@ msgstr  "имена наблюдателей"
 msgid   "observing program name"
 msgstr  "название программы"
 
-#: imageview.c:524 imageview.c:600
+#: imageview.c:682
 msgid   "off"
 msgstr  "выкл"
 
-#: imageview.c:524 imageview.c:600
+#: imageview.c:682
 msgid   "on"
 msgstr  "вкл"
 

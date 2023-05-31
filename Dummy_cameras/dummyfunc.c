@@ -73,7 +73,7 @@ static int camcapt(IMG *ima){
         uint16_t *d = &ima->data[y*ima->w];
         for(int x = 0; x < ima->w; ++x){ // sinusoide 100x200
             //*d++ = (uint16_t)(((n+x)%100)/99.*65535.);
-            *d++ = (uint16_t)((1 + sin((n+x) * M_PI/50)*sin((n+y) * M_PI/100))*32767.);
+            *d++ = (uint16_t)((1. + sin((n+x) * M_PI/50.)*sin((n+y) * M_PI/100.))*32767.);
         }
     }
     ++n;
