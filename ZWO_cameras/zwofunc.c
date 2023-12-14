@@ -101,7 +101,8 @@ static int campoll(capture_status *st, float *remain){
         break;
         default: // failed
             DBG("Failed: %d", s);
-            *st = CAPTURE_ABORTED;
+            //*st = CAPTURE_ABORTED;
+             *st = CAPTURE_READY;
     }
     if(remain){
         float diff = exptime - (dtime() - starttime);
@@ -392,6 +393,7 @@ static int setfspd(int spd){ // set fast speed (0..3): 0 - 40% bandwidthovrl, 3 
     if(spd > 2) bw = 100.;
     else if(spd > 0) bw += 20. * spd;
     DBG("set BANDWIDTH to %g", bw);
+    zwo_setfloat(1, ASI_HIGH_SPEED_MODE);
     if(ASI_SUCCESS != zwo_setfloat(bw, ASI_BANDWIDTHOVERLOAD)){
         DBG("Can't set");
         return FALSE;

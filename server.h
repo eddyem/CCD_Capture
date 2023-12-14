@@ -40,6 +40,8 @@ char *makeabspath(const char *path, int shouldbe);
 // get image size in pixels
 #define CMD_IMWIDTH     "imwidth"
 #define CMD_IMHEIGHT    "imheight"
+// get shared memory key
+#define CMD_SHMEMKEY    "shmemkey"
 
 // CCD/CMOS
 #define CMD_CAMLIST     "camlist"

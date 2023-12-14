@@ -161,13 +161,13 @@ int start_socket(int isserver){
 }
 
 // send image data to client
-int sendimage(int fd, uint16_t *data, int l){
-    DBG("fd=%d, l=%d", fd, l);
+int senddata(int fd, void *data, size_t l){
+    DBG("fd=%d, l=%zd", fd, l);
     if(fd < 1 || !data || l < 1) return TRUE; // empty message
-    DBG("send new image (size=%d) to fd %d", l, fd);
+    DBG("send new data (size=%zd) to fd %d", l, fd);
 //strncpy((char*)data, "TEST image data\n", 17);
 //l = 16;
-    if(l != send(fd, data, l, MSG_NOSIGNAL)){
+    if(l != (size_t)send(fd, data, l, MSG_NOSIGNAL)){
         WARN("write()");
         LOGWARN("write()");
         return FALSE;
@@ -183,7 +183,7 @@ int sendmessage(int fd, const char *msg, int l){
     static char *tmpbuf = NULL;
     static int buflen = 0;
     if(l + 1 > buflen){
-        buflen += 1024;
+        buflen = 1024 * (1 + l/1024);
         tmpbuf = realloc(tmpbuf, buflen);
     }
     DBG("send to fd %d: %s [%d]", fd, msg, l);

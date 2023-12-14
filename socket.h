@@ -71,7 +71,7 @@ typedef struct{
 
 int open_socket(int isserver, char *path, int isnet);
 int start_socket(int server);
-int sendimage(int fd, uint16_t *data, int l);
+int senddata(int fd, void *data, size_t l);
 int sendmessage(int fd, const char *msg, int l);
 int sendstrmessage(int fd, const char *msg);
 char *get_keyval(char *keyval);

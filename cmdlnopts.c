@@ -30,6 +30,7 @@ static glob_pars  G = {
     .brightness = NAN, .gain = NAN,
     .setwheel = -1,
     .fanspeed = -1,
+    .shmkey = 7777777
 };
 
 /*
@@ -101,6 +102,8 @@ myoption cmdlnopts[] = {
     {"client",  NO_ARGS,    &G.client,1,    arg_none,   NULL,               N_("run as client")},
     {"viewer",  NO_ARGS,    &G.viewer,1,    arg_none,   NULL,               N_("passive viewer (only get last images)")},
     {"restart", NO_ARGS,    &G.restart,1,   arg_none,   NULL,               N_("restart image server")},
+
+    {"shmkey", NEED_ARG,    NULL,   'k',    arg_int,    APTR(&G.shmkey),    N_("shared memory (with image data) key (default: 7777777")},
 
 #ifdef IMAGEVIEW
     {"display", NO_ARGS,    NULL,   'D',    arg_int,   APTR(&G.showimage),  N_("Display image in OpenGL window")},

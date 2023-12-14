@@ -31,6 +31,8 @@ int prepare_ccds();
 void ccds();
 void camstop();
 
+int getNbytes(IMG *image);
+
 int startCCD(void **dlh);
 int startWheel(void **dlh);
 int startFocuser(void **dlh);

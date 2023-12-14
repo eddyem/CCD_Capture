@@ -445,36 +445,27 @@ retn:
 static int cam_capt(IMG *ima){
     if(!handle || !pdata) return FALSE;
     if(!ima || !ima->data) return FALSE;
-    ;
-    int bytes = ima->h*ima->w * 2, stbytes = stImageInfo.nWidth * stImageInfo.nHeight * 2;
-    if(bytes > pdatasz) bytes = pdatasz;
-    if(bytes != stbytes) WARNX("Different sizes of image buffer & grabbed image");
-    if(stbytes > bytes) bytes = stbytes;
-    DBG("Copy %d bytes (stbytes=%d)", bytes, stbytes);
     MVCC_ENUMVALUE EnumValue;
     TRY(GetEnumValue, "PixelSize", &EnumValue);
     DBG("PixelSize = %u", EnumValue.nCurValue);
     ONOK(){
-//green("pixsize=%d\n", EnumValue.nCurValue);
+        int bytes = ima->h*ima->w * ((7 + ima->bitpix) / 8), stbytes = stImageInfo.nWidth * stImageInfo.nHeight;
         if(EnumValue.nCurValue == 16){
-            memcpy(ima->data, pdata, bytes);
             ima->bitpix = 12;
-            return TRUE;
-        }else if(EnumValue.nCurValue != 8){
+            stbytes *= 2;
+        }else if(EnumValue.nCurValue == 8){
+            ima->bitpix = 8;
+        }else{
             WARNX("Unsupported pixel size");
             return FALSE;
         }
+        if(bytes > pdatasz) bytes = pdatasz;
+        if(bytes != stbytes) WARNX("Different sizes of image buffer & grabbed image");
+        DBG("Copy %d bytes (stbytes=%d)", bytes, stbytes);
+        memcpy(ima->data, pdata, bytes);
+        return TRUE;
     }
-    // transform 8bits to 16
-    DBG("TRANSFORM 8 bit to 16");
-    bytes /= 2;
-    uint8_t *ptr = (uint8_t*) pdata;
-    OMP_FOR()
-    for(int i = 0; i < bytes; ++i){
-        ima->data[i] = (uint16_t) *ptr++;
-    }
-    ima->bitpix = 8;
-    return TRUE;
+    return FALSE;
 }
 
 static int cam_modelname(char *buf, int bufsz){

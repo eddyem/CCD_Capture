@@ -40,6 +40,7 @@ static float focuserpos = 1., brightness = 1., gain = 0.;
 static float camtemp = -30., exptime = 0.;
 static capture_status capstat = CAPTURE_NO;
 static double texpstart = 0.;
+static uint8_t bitpix = 16; // bit depth: 8 or 16
 
 static int campoll(capture_status *st, float *remain){
     if(capstat != CAPTURE_PROCESS){
@@ -68,16 +69,37 @@ static int startexp(){
 static int camcapt(IMG *ima){
     static int n = 0;
     if(!ima || !ima->data) return FALSE;
-    OMP_FOR()
-    for(int y = 0; y < ima->h; ++y){
-        uint16_t *d = &ima->data[y*ima->w];
-        for(int x = 0; x < ima->w; ++x){ // sinusoide 100x200
-            //*d++ = (uint16_t)(((n+x)%100)/99.*65535.);
-            *d++ = (uint16_t)((1. + sin((n+x) * M_PI/50.)*sin((n+y) * M_PI/100.))*32767.);
+    if(bitpix == 16){
+        OMP_FOR()
+        for(int y = 0; y < ima->h; ++y){
+            uint16_t *d = &((uint16_t*)ima->data)[y*ima->w];
+            for(int x = 0; x < ima->w; ++x){ // sinusoide 100x200
+                //*d++ = (uint16_t)(((n+x)%100)/99.*65535.);
+                *d++ = (uint16_t)((1. + sin((n+x) * M_PI/50.)*sin((n+y) * M_PI/100.))*32767.);
+            }
+        }
+    }else{
+        OMP_FOR()
+        for(int y = 0; y < ima->h; ++y){
+            uint8_t *d = &((uint8_t*)ima->data)[y*ima->w];
+            for(int x = 0; x < ima->w; ++x){ // sinusoide 100x200
+                //*d++ = (uint16_t)(((n+x)%100)/99.*65535.);
+                *d++ = (uint8_t)((1. + sin((n+x) * M_PI/50.)*sin((n+y) * M_PI/100.))*127.);
+            }
         }
     }
     ++n;
-    ima->bitpix = 16;
+    ima->bitpix = bitpix;
+    return TRUE;
+}
+
+static int camsetbit(int b){
+    bitpix = (b) ? 16 : 8;
+    return TRUE;
+}
+
+static int camgetbp(uint8_t *bp){
+    if(bp) *bp = bitpix;
     return TRUE;
 }
 
@@ -105,7 +127,6 @@ static int camsetexp(float t){
     exptime = t;
     return TRUE;
 }
-
 static int camsetgain(float g){
     gain = g;
     return TRUE;
@@ -261,11 +282,12 @@ __attribute__ ((visibility("default"))) Camera camera = {
     .confio = istub,
     .setio = istub,
     .setframetype = istub,
-    .setbitdepth = istub,
+    .setbitdepth = camsetbit,
     .setfastspeed = istub,
     .setgeometry = camsetgeom,
     .setfanspeed = camfan,
     // getters:
+    .getbitpix = camgetbp,
     .getbrightness = camgetbrig,
     .getModelName = camgetnam,
     .getgain = camgetgain,

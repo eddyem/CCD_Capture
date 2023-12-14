@@ -22,6 +22,8 @@
 #include <poll.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
 #include <sys/socket.h>
 #include <usefull_macros.h>
 
@@ -45,6 +47,9 @@ static void *camdev = NULL, *focdev = NULL, *wheeldev = NULL;
 static float focmaxpos = 0., focminpos = 0.; // focuser extremal positions
 static int wmaxpos = 0.; // wheel max pos
 static float tremain = 0.; // time when capture done
+
+// IPC key for shared memory
+static key_t shmkey = IPC_PRIVATE;
 
 typedef struct{
     const char *key;
@@ -88,6 +93,7 @@ strpair allcommands[] = {
     { CMD_PROGRAM,      "FITS 'PROG-ID' field" },
     { CMD_RESTART,      "restart server" },
     { CMD_REWRITE,      "rewrite file (if give `filename`, not `filenameprefix`" },
+    { CMD_SHMEMKEY,     "get shared memory key" },
     { CMD_SHUTTER,      "camera shutter's operations" },
     { CMD_CAMTEMPER,    "camera chip temperature" },
     { CMD_TREMAIN,      "time (in seconds) of exposition remained" },
@@ -112,16 +118,71 @@ static void unlock(){
     if(pthread_mutex_unlock(&locmutex)) ERR("Can't unlock mutex");
 }
 
-static IMG ima = {0};
+static IMG *ima = NULL;
+
+/**
+ * @brief getshm - get shared memory segment for image
+ * @param imsize - size of image data (in bytes)
+ * @return
+ */
+static IMG *getshm(key_t key, size_t imsize){
+    size_t shmsize = sizeof(IMG) + imsize;
+    shmsize = 1024 * (1 + shmsize / 1024);
+    DBG("Allocate %zd bytes in shared memory", shmsize);
+    int shmid = -1;
+    int flags = (imsize) ? IPC_CREAT | 0666 : 0;
+    shmid = shmget(key, 0, flags);
+    if(shmid < 0){
+        WARN("Can't get shared memory segment %d", key);
+        return NULL;
+    }
+    if(imsize){ // check if segment exists and its size equal to needs
+        struct shmid_ds buf;
+        if(shmctl(shmid, IPC_STAT, &buf) > -1 && shmsize != buf.shm_segsz){ // remove already existing segment
+            DBG("Need to remove already existing segment");
+            shmctl(shmid, IPC_RMID, NULL);
+        }
+        shmid = shmget(key, shmsize, flags);
+        if(shmid < 0){
+            WARN("Can't create shared memory segment %d", key);
+            return NULL;
+        }
+    }
+    flags = (imsize) ? 0 : SHM_RDONLY; // client opens memory in readonly mode
+    IMG *ptr = shmat(shmid, NULL, flags);
+    if(ptr == (void*)-1){
+        WARN("Can't attach SHM segment %d", key);
+        return NULL;
+    }
+    if(!imsize){
+        if(ptr->MAGICK != SHM_MAGIC){
+            WARNX("Shared memory %d isn't belongs to image server", key);
+            shmdt(ptr);
+            return NULL;
+        }
+        return ptr;
+    }
+    bzero(ptr, sizeof(IMG));
+    ptr->data = (void*)((uint8_t*)ptr + sizeof(IMG));
+    ptr->MAGICK = SHM_MAGIC;
+    shmkey = key;
+    return ptr;
+}
+
 static void fixima(){
     FNAME();
     if(!camera) return;
     int raw_width = curformat.w / GP->hbin,  raw_height = curformat.h / GP->vbin;
-    if(!ima.data) ima.data = MALLOC(uint16_t,  camera->array.h * camera->array.w);
-    if(ima.data && raw_width == ima.w && raw_height == ima.h) return; // all OK
+    // allocate memory for largest possible image
+    if(!ima) ima = getshm(GP->shmkey, camera->array.h * camera->array.w * 2);
+    if(!ima) ERRX("Can't allocate memory for image");
+    if(raw_width == ima->w && raw_height == ima->h) return; // all OK
     DBG("curformat: %dx%d", curformat.w, curformat.h);
-    ima.h = raw_height;
-    ima.w = raw_width;
+    ima->h = raw_height;
+    ima->w = raw_width;
+    if(!camera->getbitpix(&ima->bitpix)) ima->bitpix = 16;
+    if(ima->bitpix < 8 || ima->bitpix > 16) ima->bitpix = 16; // use maximum in any strange cases
+    ima->bytelen = raw_height * raw_width * getNbytes(ima);
     DBG("new image: %dx%d", raw_width, raw_height);
 }
 
@@ -155,19 +216,19 @@ static inline void cameracapturestate(){ // capturing - wait for exposition ends
             TIMESTAMP("Capture ready");
             tremain = 0.;
             // now save frame
-            if(!ima.data) LOGERR("Can't save image: not initialized");
+            if(!ima->data) LOGERR("Can't save image: not initialized");
             else{
                 TIMESTAMP("start capture");
-                if(!camera->capture(&ima)){
+                if(!camera->capture(ima)){
                     LOGERR("Can't capture image");
                     camstate = CAMERA_ERROR;
                     return;
                 }else{
                     if(lastfile){
                         TIMESTAMP("Calc stat");
-                        calculate_stat(&ima);
+                        calculate_stat(ima);
                     }
-                    if(saveFITS(&ima, &lastfile)){
+                    if(saveFITS(ima, &lastfile)){
                         DBG("LAST file name changed");
                     }
                     TIMESTAMP("Image saved");
@@ -287,6 +348,15 @@ static hresult restarthandler(_U_ int fd, _U_ const char *key, _U_ const char *v
 /*******************************************************************************
  *************************** CCD/CMOS handlers *********************************
  ******************************************************************************/
+// image size
+static hresult imsizehandler(int fd, const char *key, _U_ const char *val){
+    char buf[64];
+    // send image width/height in pixels
+    if(0 == strcmp(key, CMD_IMHEIGHT)) snprintf(buf, 63, CMD_IMHEIGHT "=%d", ima->h);
+    else snprintf(buf, 63, CMD_IMWIDTH "=%d", ima->w);
+    if(!sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
+    return RESULT_SILENCE;
+}
 static hresult camlisthandler(int fd, _U_ const char *key, _U_ const char *val){
     char buf[BUFSIZ], modname[256];
     for(int i = 0; i < camera->Ndevices; ++i){
@@ -910,11 +980,11 @@ static hresult helphandler(int fd, _U_ const char *key, _U_ const char *val){
     return RESULT_SILENCE;
 }
 
-static hresult imsizehandler(int fd, const char *key, _U_ const char *val){
+// shared memory key
+static hresult shmemkeyhandler(int fd, _U_ const char *key, _U_ const char *val){
     char buf[64];
-    // send image width/height in pixels
-    if(0 == strcmp(key, CMD_IMHEIGHT)) snprintf(buf, 63, CMD_IMHEIGHT "=%d", ima.h);
-    else snprintf(buf, 63, CMD_IMWIDTH "=%d", ima.w);
+    if(shmkey == IPC_PRIVATE) return RESULT_FAIL;
+    snprintf(buf, 63, CMD_SHMEMKEY "=%d", shmkey);
     if(!sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
     return RESULT_SILENCE;
 }
@@ -971,6 +1041,7 @@ static handleritem items[] = {
     {chkcc,  formathandler, CMD_FRAMEMAX},
     {chkcc,  nflusheshandler, CMD_NFLUSHES},
     {chkcam, expstatehandler, CMD_EXPSTATE},
+    {chktrue,shmemkeyhandler, CMD_SHMEMKEY},
     {chktrue,imsizehandler, CMD_IMWIDTH},
     {chktrue,imsizehandler, CMD_IMHEIGHT},
     {chkcc,  nameprefixhandler, CMD_FILENAMEPREFIX},
@@ -997,6 +1068,17 @@ static handleritem items[] = {
 };
 
 #define CLBUFSZ     BUFSIZ
+
+// send image as raw data
+static void sendimage(int client){
+    if(ima->h < 1 || ima->w < 1) return;
+    senddata(client, ima, sizeof(IMG));
+    senddata(client, ima->data, ima->bytelen);
+    /*void *mem = malloc(ima->bytelen);
+    memcpy(mem, ima->data, ima->bytelen);
+    senddata(client, mem, ima->bytelen);
+    FREE(mem);*/
+}
 
 void server(int sock, int imsock){
     DBG("sockfd=%d, imsockfd=%d", sock, imsock);
@@ -1046,9 +1128,7 @@ void server(int sock, int imsock){
             DBG("client=%d", client);
             if(client > -1){
                 DBG("client fd: %d", client);
-                // send image as raw data w*h*2
-                if(ima.data && ima.h > 0 && ima.w > 0)
-                    sendimage(client, ima.data, 2*ima.h*ima.w);
+                sendimage(client);
                 close(client);
                 DBG("%d closed", client);
             }else{WARN("accept()"); DBG("disconnected");}
@@ -1075,6 +1155,7 @@ void server(int sock, int imsock){
         }
         // process some data & send messages to ALL
         if(camstate == CAMERA_FRAMERDY || camstate == CAMERA_ERROR){
+            if(camstate == CAMERA_FRAMERDY) ima->timestamp = time(NULL); // set timestamp
             char buff[PATH_MAX+32];
             snprintf(buff, PATH_MAX, CMD_EXPSTATE "=%d", camstate);
             DBG("Send %s to %d clients", buff, nfd - 2);

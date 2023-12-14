@@ -69,6 +69,7 @@ typedef struct{
     int verbose;        // each '-V' increases it
     int rewrite;        // rewrite file
     int showimage;      // show image preview
+    int shmkey;         // shared memory (with image data) key
     float gain;         // gain level (only for CMOS)
     float brightness;   // brightness (only for CMOS)
     double exptime;     // time of exposition in seconds

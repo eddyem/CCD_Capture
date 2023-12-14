@@ -427,6 +427,7 @@ static void roll_colorfun(){
     if(t == COLORFN_MAX) t = COLORFN_BWLINEAR;
     change_colorfun(t);
 }
+
 /*
 no omp
 histo: 0.000675201s
@@ -444,7 +445,7 @@ result: 0.0014689s
  * @param w,h      - image width and height
  * @return data allocated here
  */
-static uint8_t *equalize(uint16_t *ori, int w, int h){
+static uint8_t *equalize(IMG *img, int w, int h){
     uint8_t *retn = MALLOC(uint8_t, w*h);
     double orig_hysto[0x10000] = {0.}; // original hystogram
     uint8_t eq_levls[0x10000] = {0};   // levels to convert: newpix = eq_levls[oldpix]
@@ -464,19 +465,39 @@ static uint8_t *equalize(uint16_t *ori, int w, int h){
         for(int i = 0; i < 0x10000; ++i) orig_hysto[i] += histogram_private[i];
     }
 }*/
-    for(int i = 0; i < s; ++i){
-        ++orig_hysto[ori[i]];
+    int bytes = getNbytes(img);
+
+    if(bytes == 1){
+        uint8_t *data = (uint8_t*) img->data;
+        for(int i = 0; i < s; ++i){
+            ++orig_hysto[data[i]];
+        }
+    }else{
+        uint16_t *data = (uint16_t*) img->data;
+        for(int i = 0; i < s; ++i){
+            ++orig_hysto[data[i]];
+        }
     }
+
 //WARNX("histo: %gs", dtime()-t0);
+    int max = (bytes == 1) ? 0xff : 0xffff;
     double part = (double)(s + 1) / 0x100, N = 0.;
-    for(int i = 0; i <= 0xffff; ++i){
+    for(int i = 0; i <= max; ++i){
         N += orig_hysto[i];
         eq_levls[i] = (uint8_t)(N/part);
     }
 //WARNX("equal: %gs", dtime()-t0);
     //OMP_FOR() -- takes the same time!
-    for(int i = 0; i < s; ++i){
-        retn[i] = eq_levls[ori[i]];
+    if(bytes == 1){
+        uint8_t *data = (uint8_t*) img->data;
+        for(int i = 0; i < s; ++i){
+            retn[i] = eq_levls[data[i]];
+        }
+    }else{
+        uint16_t *data = (uint16_t*) img->data;
+        for(int i = 0; i < s; ++i){
+            retn[i] = eq_levls[data[i]];
+        }
     }
 //WARNX("result: %gs", dtime()-t0);
     return retn;
@@ -493,20 +514,42 @@ cuts: 0.00188208s
 */
 
 // count image cuts as [median-sigma median+5sigma]
-static uint8_t *mkcuts(uint16_t *ori, int w, int h){
+static uint8_t *mkcuts(IMG *img, int w, int h){
     uint8_t *retn = MALLOC(uint8_t, w*h);
     int orig_hysto[0x10000] = {0.}; // original hystogram
     int s = w*h;
     double sum = 0., sum2 = 0.;
-//double t0 = dtime();
+    int bytes = getNbytes(img);
+    if(bytes == 1){
+        uint8_t *data = (uint8_t*) img->data;
+#pragma omp parallel
+{
+    size_t histogram_private[0x100] = {0};
+    double sm = 0., sm2 = 0.;
+    #pragma omp for nowait
+    for(int i = 0; i < s; ++i){
+        ++histogram_private[data[i]];
+        double b = data[i];
+        sm += b;
+        sm2 += b*b;
+    }
+    #pragma omp critical
+    {
+        for(int i = 0; i < 0x100; ++i) orig_hysto[i] += histogram_private[i];
+        sum += sm;
+        sum2 += sm2;
+    }
+}
+    }else{
+        uint16_t *data = (uint16_t*) img->data;
 #pragma omp parallel
 {
     size_t histogram_private[0x10000] = {0};
     double sm = 0., sm2 = 0.;
     #pragma omp for nowait
     for(int i = 0; i < s; ++i){
-        ++histogram_private[ori[i]];
-        double b = ori[i];
+        ++histogram_private[data[i]];
+        double b = data[i];
         sm += b;
         sm2 += b*b;
     }
@@ -517,36 +560,42 @@ static uint8_t *mkcuts(uint16_t *ori, int w, int h){
         sum2 += sm2;
     }
 }
-/*
-    for(int i = 0; i < s; ++i){
-        double b = ori[i];
-        ++orig_hysto[ori[i]];
-        sum += b;
-        sum2 += b*b;
     }
-*/
+
 //WARNX("histo: %gs", dtime()-t0);
     // get median level
-    int counts = s/2, median = 0;
-    for(; median < 0xffff; ++median){
+    int counts = s/2, median = 0, max = (bytes == 1) ? 0xff : 0xffff;
+    for(; median < max; ++median){
         if((counts -= orig_hysto[median]) < 0) break;
     }
     sum /= s;
     double sigma = sqrt(sum2/s - sum*sum);
     int low = median - sigma, high = median + 5.*sigma;
     if(low < 0) low = 0;
-    if(high > 0xffff) high = 0xffff;
+    if(high > max) high = max;
     double A = 255./(high - low);
     DBG("Got: sigma=%.1f, low=%d, high=%d, A=%g", sigma, low, high, A);
     // now we can recalculate values: new = (old - low)*A
 //WARNX("stat: %gs", dtime()-t0);
 // DEBUG: 2ms without OMP; 0.7ms with
-    OMP_FOR()
-    for(int i = 0; i < s; ++i){
-        uint16_t old = ori[i];
-        if(old > high){ retn[i] = 255; continue; }
-        else if(old < low){ retn[i] = 0; continue; }
-        retn[i] = (uint8_t)(A*(old - low));
+    if(bytes == 1){
+        uint8_t *data = (uint8_t*) img->data;
+        OMP_FOR()
+        for(int i = 0; i < s; ++i){
+            uint16_t old = data[i];
+            if(old > high){ retn[i] = 255; continue; }
+            else if(old < low){ retn[i] = 0; continue; }
+            retn[i] = (uint8_t)(A*(old - low));
+        }
+    }else{
+        uint16_t *data = (uint16_t*) img->data;
+        OMP_FOR()
+        for(int i = 0; i < s; ++i){
+            uint16_t old = data[i];
+            if(old > high){ retn[i] = 255; continue; }
+            else if(old < low){ retn[i] = 0; continue; }
+            retn[i] = (uint8_t)(A*(old - low));
+        }
     }
 //WARNX("cuts: %gs", dtime()-t0);
     return retn;
@@ -569,10 +618,10 @@ static void change_displayed_image(IMG *img){
     uint8_t *newima;
     if(imequalize){
         DBG("equalize");
-        newima = equalize(img->data, w, h);
+        newima = equalize(img, w, h);
     }else{
         DBG("cuts");
-        newima = mkcuts(img->data, w, h);
+        newima = mkcuts(img, w, h);
     }
     GLubyte *dst = im->rawdata;
 //double t0 = dtime();

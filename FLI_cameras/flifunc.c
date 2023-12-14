@@ -463,7 +463,8 @@ retn:
 static int fli_capt(IMG *ima){
     if(!ima || !ima->data) return FALSE;
     for(int row = 0; row < ima->h; row++){
-        TRYFUNC(FLIGrabRow, camdev, &ima->data[row * ima->w], ima->w);
+        void *ptr = (void*)((is16bit) ? ((uint16_t*)ima->data) + row * ima->w : ((uint8_t*)ima->data) + row * ima->w);
+        TRYFUNC(FLIGrabRow, camdev, ptr, ima->w);
         if(fli_err) return FALSE;
     }
     ima->bitpix = is16bit ? 16 : 8;

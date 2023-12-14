@@ -211,7 +211,6 @@ int saveFITS(IMG *img, char **outp){
         }
     }
     int width = img->w, height = img->h;
-    void *data = (void*) img->data;
     long naxes[2] = {width, height};
     double tmpd = 0.0;
     float tmpf = 0.0;
@@ -224,7 +223,9 @@ int saveFITS(IMG *img, char **outp){
     fitserror = 0;
     TRYFITS(fits_create_file, &fp, fnam);
     if(fitserror) goto cloerr;
-    TRYFITS(fits_create_img, fp, USHORT_IMG, 2, naxes);
+    int nbytes = getNbytes(img);
+    if(nbytes == 1) TRYFITS(fits_create_img, fp, BYTE_IMG, 2, naxes);
+    else TRYFITS(fits_create_img, fp, USHORT_IMG, 2, naxes);
     if(fitserror) goto cloerr;
     // ORIGIN / organization responsible for the data
     WRITEKEY(fp, TSTRING, "ORIGIN", "SAO RAS", "organization responsible for the data");
@@ -348,7 +349,8 @@ int saveFITS(IMG *img, char **outp){
     // INSTRUME / Instrument
     if(GP->instrument)
         WRITEKEY(fp, TSTRING, "INSTRUME", GP->instrument, "Instrument");
-    TRYFITS(fits_write_img, fp, TUSHORT, 1, width * height, data);
+    if(nbytes == 1) TRYFITS(fits_write_img, fp, TBYTE, 1, width * height, img->data);
+    else TRYFITS(fits_write_img, fp, TUSHORT, 1, width * height, img->data);
     if(fitserror) goto cloerr;
     TRYFITS(fits_close_file, fp);
 cloerr:
@@ -369,24 +371,23 @@ cloerr:
     return ret;
 }
 
-void calculate_stat(IMG *image){
-    uint64_t Noverld = 0L, size = image->h*image->w;
+static void stat8(IMG *image){
     double sum = 0., sum2 = 0.;
-    uint16_t max = 0, min = 65535;
+    size_t size = image->w * image->h;
+    uint8_t max = 0, min = UINT8_MAX;
+    uint8_t *idata = (uint8_t*)image->data;
 #pragma omp parallel
 {
-    uint16_t maxpriv = 0, minpriv = 65535;
-    uint64_t ovrpriv = 0;
+    uint8_t maxpriv = 0, minpriv = UINT8_MAX;
     double sumpriv = 0., sum2priv = 0.;
     #pragma omp for nowait
-    for(uint64_t i = 0; i < size; ++i){
-        uint16_t val = image->data[i];
+    for(size_t i = 0; i < size; ++i){
+        uint8_t val = idata[i];
         float pv = (float) val;
         sum += pv;
         sum2 += (pv * pv);
         if(max < val) max = val;
         if(min > val) min = val;
-        if(val >= 65530) ovrpriv++;
     }
     #pragma omp critical
     {
@@ -394,7 +395,6 @@ void calculate_stat(IMG *image){
         if(min > minpriv) min = minpriv;
         sum += sumpriv;
         sum2 += sum2priv;
-        Noverld += ovrpriv;
     }
 }
     double sz = (float)size;
@@ -402,10 +402,49 @@ void calculate_stat(IMG *image){
     image->avr = avr;
     image->std = sqrt(fabs(sum2/sz - avr*avr));
     image->max = max; image->min = min;
+}
+static void stat16(IMG *image){
+    double sum = 0., sum2 = 0.;
+    size_t size = image->w * image->h;
+    uint16_t max = 0, min = UINT16_MAX;
+    uint16_t *idata = (uint16_t*)image->data;
+#pragma omp parallel
+{
+    uint16_t maxpriv = 0, minpriv = UINT16_MAX;
+    double sumpriv = 0., sum2priv = 0.;
+    #pragma omp for nowait
+    for(size_t i = 0; i < size; ++i){
+        uint16_t val = idata[i];
+        float pv = (float) val;
+        sum += pv;
+        sum2 += (pv * pv);
+        if(max < val) max = val;
+        if(min > val) min = val;
+    }
+    #pragma omp critical
+    {
+        if(max < maxpriv) max = maxpriv;
+        if(min > minpriv) min = minpriv;
+        sum += sumpriv;
+        sum2 += sum2priv;
+    }
+}
+    double sz = (float)size;
+    double avr = sum/sz;
+    image->avr = avr;
+    image->std = sqrt(fabs(sum2/sz - avr*avr));
+    image->max = max; image->min = min;
+}
+
+
+void calculate_stat(IMG *image){
+    int nbytes = ((7 + image->bitpix) / 8);
+    if(nbytes == 1) stat8(image);
+    else stat16(image);
     if(GP->verbose){
         printf(_("Image stat:\n"));
-        printf("avr = %.1f, std = %.1f, Noverload = %ld\n", avr, image->std, Noverld);
-        printf("max = %u, min = %u, size = %ld\n", max, min, size);
+        printf("avr = %.1f, std = %.1f\n", image->avr, image->std);
+        printf("max = %u, min = %u, size = %d pix\n", image->max, image->min, image->w * image->h);
     }
 }
 
@@ -770,6 +809,7 @@ void ccds(){
     frameformat fmt = camera->geometry;
     int raw_width = fmt.w / GP->hbin,  raw_height = fmt.h / GP->vbin;
 DBG("w=%d, h=%d", raw_width, raw_height);
+    // allocate maximum available memory - for 16bit image
     uint16_t *img = MALLOC(uint16_t, raw_width * raw_height);
     DBG("\n\nAllocated image 2x%dx%d=%d", raw_width, raw_height, 2 * raw_width * raw_height);
     IMG ima = {.data = img, .w = raw_width, .h = raw_height};
@@ -827,6 +867,17 @@ void camstop(){
     }
 }
 
+/**
+ * @brief getNbytes - calculate amount of bytes to store bitpix (1/2)
+ * @param image - image
+ * @return 1 for bitpix<8 or 2
+ */
+int getNbytes(IMG *image){
+    int n = (image->bitpix + 7) / 8;
+    if(n < 1) n = 1;
+    if(n > 2) n = 2;
+    return n;
+}
 
 #ifdef IMAGEVIEW
 #define NFRM        (10)

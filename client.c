@@ -46,7 +46,8 @@ static int xc0,yc0,xc1,yc1; // current format
 #ifdef IMAGEVIEW
 static IMG ima = {0};
 static volatile atomic_int grabno = 0, oldgrabno = 0;
-static int imdatalen = 0, imbufsz = 0;
+static size_t imbufsz = 0;
+static uint8_t *imbuf = NULL;
 #endif
 
 static char *readmsg(int fd){
@@ -100,6 +101,7 @@ static int parseans(char *ans){
         DBG("Got current format: %d,%d,%d,%d", xc0, yc0, xc1, yc1);
         return TRUE;
     }
+    /*
 #ifdef IMAGEVIEW
     else if(0 == strcmp(CMD_IMWIDTH, ans)){
         ima.w = atoi(val);
@@ -113,6 +115,7 @@ static int parseans(char *ans){
         return TRUE;
     }
 #endif
+*/
     //TIMESTAMP("parseans() end");
     return FALSE;
 }
@@ -313,40 +316,56 @@ void init_grab_sock(int sock){
     send_headers(sock);
 }
 
-static void getimage(){
-    FNAME();
-    int sock = controlfd;
-    TIMESTAMP("Get image sizes");
-    SENDCMDW(CMD_IMWIDTH);
-    SENDCMDW(CMD_IMHEIGHT);
-    int imsock = open_socket(FALSE, GP->imageport, TRUE);
-    if(imsock < 0) ERRX("getimage(): can't open image transport socket");
-    if(imbufsz < imdatalen){
-        DBG("Reallocate memory from %d to %d", imbufsz, imdatalen);
-        ima.data = realloc(ima.data, imdatalen);
-        imbufsz = imdatalen;
-    }
+/**
+ * @brief readNbytes - read `N` bytes from descriptor `fd` into buffer *buf
+ * @return false if failed
+ */
+static int readNbytes(int fd, size_t N, uint8_t *buf){
+    size_t got = 0, need = N;
     double t0 = dtime();
-    int got = 0;
-    TIMESTAMP("Start of data read");
-    while(dtime() - t0 < CLIENT_TIMEOUT){
-        if(!canberead(imsock)) continue;
-        uint8_t *target = ((uint8_t*)ima.data)+got;
-        int rd = read(imsock, target, imdatalen - got);
+    while(dtime() - t0 < CLIENT_TIMEOUT && canberead(fd) && need){
+        ssize_t rd = read(fd, buf + got, need);
         if(rd <= 0){
             WARNX("Server disconnected");
             signals(1);
         }
-        got += rd;
-        //DBG("Read %d bytes; total read %d from %d; first: %x %x %x %x", rd, got, imdatalen, target[0],
-        //        target[1], target[2], target[3]);
-        if(got == imdatalen){
-            break;
-        }
+        got += rd; need -= rd;
     }
-    if(dtime() - t0 > CLIENT_TIMEOUT) WARNX("Timeout, image didn't received");
+    if(need) return FALSE; // didn't got whole packet
+    return TRUE;
+}
+
+static void getimage(){
+    FNAME();
+    TIMESTAMP("Get image sizes");
+    /*SENDCMDW(CMD_IMWIDTH);
+    SENDCMDW(CMD_IMHEIGHT);*/
+    int imsock = open_socket(FALSE, GP->imageport, TRUE);
+    if(imsock < 0) ERRX("getimage(): can't open image transport socket");
+    // get image size
+    if(!readNbytes(imsock, sizeof(IMG), (uint8_t*)&ima)){
+        WARNX("Can't read image header");
+        goto eofg;
+    }
+    if(ima.bytelen < 1){
+        WARNX("Wrong image size");
+        goto eofg;
+    }
+    if(imbufsz < ima.bytelen){
+        size_t newsz = 1024 * (1 + ima.bytelen / 1024);
+        DBG("Reallocate memory from %zd to %zd", imbufsz, newsz);
+        imbufsz = newsz;
+        imbuf = realloc(imbuf, imbufsz);
+    }
+    ima.data = imbuf; // renew this value each time after getting `ima` from server
+    TIMESTAMP("Start of data read");
+    if(!readNbytes(imsock, ima.bytelen, imbuf)){
+        WARNX("Can't read image data");
+        goto eofg;
+    }
     TIMESTAMP("Got image");
     ++grabno;
+eofg:
     close(imsock);
 }
 

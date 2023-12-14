@@ -293,10 +293,10 @@ static int setdevno(int N){
     return TRUE;
 }
 
-static int setbitdepth(int i){
+static int setbitdepth(int depth){
 #define MONON 4
     const char *fmts[MONON] = {"Mono16", "Mono14", "Mono12", "Mono10"};
-    if(i == 0){ // 8 bit
+    if(depth == 0){ // 8 bit
         if(!PylonDeviceFeatureIsAvailable( hDev, "EnumEntry_PixelFormat_Mono8" )) return FALSE;
         PYLONFN(PylonDeviceFeatureFromString, hDev, "PixelFormat", "Mono8");
         green("Pixel format: Mono8\n");
@@ -370,21 +370,21 @@ static int capture(IMG *ima){
     int width = grabResult.SizeX, height = grabResult.SizeY, stride = grabResult.SizeX + grabResult.PaddingX;
     //TIMESTAMP("start converting");
     if(is16bit){
-        int s2 = stride<<1, w2 = width<<1;
+        int s2 = stride<<1;
         OMP_FOR()
         for(int y = 0; y < height; ++y){
-            uint16_t *Out = &ima->data[y*width];
+            uint8_t *Out = &((uint8_t*)ima->data)[y*width];
             const uint8_t *In = &imgBuf[y*s2];
-            memcpy(Out, In, w2);
+            for(int x = 0; x < width; ++x){
+                *Out++ = *In; In += 2;
+            }
         }
     }else{
         OMP_FOR()
         for(int y = 0; y < height; ++y){
-            uint16_t *Out = &ima->data[y*width];
+            uint16_t *Out = &((uint16_t*)ima->data)[y*width];
             const uint8_t *In = &imgBuf[y*stride];
-            for(int x = 0; x < width; ++x){
-                *Out++ = *In++;
-            }
+            memcpy(Out, In, width);
         }
     }
     //TIMESTAMP("image ready");

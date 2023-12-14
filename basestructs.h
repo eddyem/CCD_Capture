@@ -18,13 +18,22 @@
 
 #pragma once
 #include <stdint.h>
+#include <stdlib.h> // for size_t
 
-typedef struct{
-    uint16_t *data;             // image data
+// magic to mark our SHM
+#define SHM_MAGIC   (0xdeadbeef)
+
+// base image parameters - sent by socket and stored in shared memory
+typedef struct __attribute__((packed, aligned(4))){
+    uint32_t MAGICK;            // magick (DEADBEEF) - to mark our shm
+    double timestamp;           // timestamp of image taken
     uint8_t bitpix;             // bits per pixel (8 or 16)
     int w, h;                   // image size
     uint16_t max, min;          // min/max values
     float avr, std;             // statistics
+    size_t bytelen;           // size of image in bytes
+    void *data;                 // pointer to data (next byte after this struct) - only for server
+    /* `data` is uint8_t or uint16_t depending on `bitpix` */
 } IMG;
 
 // format of single frame
@@ -78,12 +87,13 @@ typedef struct{
     int (*confio)(int s);       // configure IO-port
     int (*setio)(int s);        // set IO-port to given state
     int (*setframetype)(int l); // set frametype: 1 - light, 0 - dark
-    int (*setbitdepth)(int h);  // set bit depth: 1 - high, 0 - low
+    int (*setbitdepth)(int h);  // set bit depth : 1 - high (16 bit), 0 - low (8 bit)
     int (*setfastspeed)(int s); // set readout speed: 1 - fast, 0 - low
     // geometry (if TRUE, all args are changed to suitable values)
     int (*setgeometry)(frameformat *fmt); // set geometry in UNBINNED coordinates
     int (*setfanspeed)(fan_speed spd); // set fan speed
     // getters:
+    int (*getbitpix)(uint8_t *bp); // get bit depth in bits per pixel (8, 12, 16 etc)
     int (*getbrightness)(float *b);// get brightnes level
     int (*getModelName)(char *n, int l);// string with model name (l - length of n in bytes)
     int (*getgain)(float *g);   // get gain value
