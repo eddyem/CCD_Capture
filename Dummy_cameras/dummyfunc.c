@@ -69,20 +69,24 @@ static int startexp(){
 static int camcapt(IMG *ima){
     static int n = 0;
     if(!ima || !ima->data) return FALSE;
+#ifdef EBUG
+    double t0 = dtime();
+#endif
+    int y1 = ima->h * curvbin, x1 = ima->w * curhbin;
     if(bitpix == 16){
         OMP_FOR()
-        for(int y = 0; y < ima->h; ++y){
-            uint16_t *d = &((uint16_t*)ima->data)[y*ima->w];
-            for(int x = 0; x < ima->w; ++x){ // sinusoide 100x200
+        for(int y = 0; y < y1; y += curvbin){
+            uint16_t *d = &((uint16_t*)ima->data)[y*ima->w/curvbin];
+            for(int x = 0; x < x1; x += curhbin){ // sinusoide 100x200
                 //*d++ = (uint16_t)(((n+x)%100)/99.*65535.);
                 *d++ = (uint16_t)((1. + sin((n+x) * M_PI/50.)*sin((n+y) * M_PI/100.))*32767.);
             }
         }
     }else{
         OMP_FOR()
-        for(int y = 0; y < ima->h; ++y){
-            uint8_t *d = &((uint8_t*)ima->data)[y*ima->w];
-            for(int x = 0; x < ima->w; ++x){ // sinusoide 100x200
+        for(int y = 0; y < y1; y += curvbin){
+            uint8_t *d = &((uint8_t*)ima->data)[y*ima->w/curvbin];
+            for(int x = 0; x < x1; x += curhbin){ // sinusoide 100x200
                 //*d++ = (uint16_t)(((n+x)%100)/99.*65535.);
                 *d++ = (uint8_t)((1. + sin((n+x) * M_PI/50.)*sin((n+y) * M_PI/100.))*127.);
             }
@@ -90,6 +94,7 @@ static int camcapt(IMG *ima){
     }
     ++n;
     ima->bitpix = bitpix;
+    DBG("Time of capture: %g", dtime() - t0);
     return TRUE;
 }
 

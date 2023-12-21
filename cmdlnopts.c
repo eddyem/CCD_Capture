@@ -96,14 +96,15 @@ myoption cmdlnopts[] = {
     {"brightness",NEED_ARG, NULL,   0,      arg_float,  APTR(&G.brightness),N_("CMOS brightness level")},
 
     {"logfile", NEED_ARG,   NULL,   0,      arg_string, APTR(&G.logfile),   N_("logging file name (if run as server)")},
-    {"path",    NEED_ARG,   NULL,   0,      arg_string, APTR(&G.path),      N_("UNIX socket name")},
-    {"port",    NEED_ARG,   NULL,   0,      arg_string, APTR(&G.port),      N_("local INET socket port")},
-    {"imageport",NEED_ARG,  NULL,   0,      arg_string, APTR(&G.imageport), N_("local INET socket port to send/receive images")},
+    {"path",    NEED_ARG,   NULL,   0,      arg_string, APTR(&G.path),      N_("UNIX socket name (command socket)")},
+    {"port",    NEED_ARG,   NULL,   0,      arg_string, APTR(&G.port),      N_("local INET command socket port")},
+    {"imageport",NEED_ARG,  NULL,   0,      arg_string, APTR(&G.imageport), N_("INET image socket port")},
     {"client",  NO_ARGS,    &G.client,1,    arg_none,   NULL,               N_("run as client")},
     {"viewer",  NO_ARGS,    &G.viewer,1,    arg_none,   NULL,               N_("passive viewer (only get last images)")},
     {"restart", NO_ARGS,    &G.restart,1,   arg_none,   NULL,               N_("restart image server")},
 
     {"shmkey", NEED_ARG,    NULL,   'k',    arg_int,    APTR(&G.shmkey),    N_("shared memory (with image data) key (default: 7777777")},
+    {"forceimsock",NO_ARGS, &G.forceimsock,1, arg_none, NULL,               N_("force using image through socket transition even if can use SHM")},
 
 #ifdef IMAGEVIEW
     {"display", NO_ARGS,    NULL,   'D',    arg_int,   APTR(&G.showimage),  N_("Display image in OpenGL window")},

@@ -70,6 +70,7 @@ typedef struct{
     int rewrite;        // rewrite file
     int showimage;      // show image preview
     int shmkey;         // shared memory (with image data) key
+    int forceimsock;    // force using image through socket transition even if can use SHM
     float gain;         // gain level (only for CMOS)
     float brightness;   // brightness (only for CMOS)
     double exptime;     // time of exposition in seconds

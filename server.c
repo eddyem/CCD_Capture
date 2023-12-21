@@ -22,8 +22,6 @@
 #include <poll.h>
 #include <stdio.h>
 #include <string.h>
-#include <sys/ipc.h>
-#include <sys/shm.h>
 #include <sys/socket.h>
 #include <usefull_macros.h>
 
@@ -120,55 +118,6 @@ static void unlock(){
 
 static IMG *ima = NULL;
 
-/**
- * @brief getshm - get shared memory segment for image
- * @param imsize - size of image data (in bytes)
- * @return
- */
-static IMG *getshm(key_t key, size_t imsize){
-    size_t shmsize = sizeof(IMG) + imsize;
-    shmsize = 1024 * (1 + shmsize / 1024);
-    DBG("Allocate %zd bytes in shared memory", shmsize);
-    int shmid = -1;
-    int flags = (imsize) ? IPC_CREAT | 0666 : 0;
-    shmid = shmget(key, 0, flags);
-    if(shmid < 0){
-        WARN("Can't get shared memory segment %d", key);
-        return NULL;
-    }
-    if(imsize){ // check if segment exists and its size equal to needs
-        struct shmid_ds buf;
-        if(shmctl(shmid, IPC_STAT, &buf) > -1 && shmsize != buf.shm_segsz){ // remove already existing segment
-            DBG("Need to remove already existing segment");
-            shmctl(shmid, IPC_RMID, NULL);
-        }
-        shmid = shmget(key, shmsize, flags);
-        if(shmid < 0){
-            WARN("Can't create shared memory segment %d", key);
-            return NULL;
-        }
-    }
-    flags = (imsize) ? 0 : SHM_RDONLY; // client opens memory in readonly mode
-    IMG *ptr = shmat(shmid, NULL, flags);
-    if(ptr == (void*)-1){
-        WARN("Can't attach SHM segment %d", key);
-        return NULL;
-    }
-    if(!imsize){
-        if(ptr->MAGICK != SHM_MAGIC){
-            WARNX("Shared memory %d isn't belongs to image server", key);
-            shmdt(ptr);
-            return NULL;
-        }
-        return ptr;
-    }
-    bzero(ptr, sizeof(IMG));
-    ptr->data = (void*)((uint8_t*)ptr + sizeof(IMG));
-    ptr->MAGICK = SHM_MAGIC;
-    shmkey = key;
-    return ptr;
-}
-
 static void fixima(){
     FNAME();
     if(!camera) return;
@@ -176,7 +125,8 @@ static void fixima(){
     // allocate memory for largest possible image
     if(!ima) ima = getshm(GP->shmkey, camera->array.h * camera->array.w * 2);
     if(!ima) ERRX("Can't allocate memory for image");
-    if(raw_width == ima->w && raw_height == ima->h) return; // all OK
+    shmkey = GP->shmkey;
+    //if(raw_width == ima->w && raw_height == ima->h) return; // all OK
     DBG("curformat: %dx%d", curformat.w, curformat.h);
     ima->h = raw_height;
     ima->w = raw_width;
@@ -224,10 +174,10 @@ static inline void cameracapturestate(){ // capturing - wait for exposition ends
                     camstate = CAMERA_ERROR;
                     return;
                 }else{
-                    if(lastfile){
+                    /*if(lastfile){ (move calcstat into savefits)
                         TIMESTAMP("Calc stat");
                         calculate_stat(ima);
-                    }
+                    }*/
                     if(saveFITS(ima, &lastfile)){
                         DBG("LAST file name changed");
                     }
@@ -677,9 +627,9 @@ static hresult _8bithandler(int fd, _U_ const char *key, const char *val){
     if(val){
         int s = atoi(val);
         if(s != 0 && s != 1) return RESULT_BADVAL;
+        if(!camera->setbitdepth(!s)) return RESULT_FAIL;
+        fixima();
         GP->_8bit = s;
-        s = !s;
-        if(!camera->setbitdepth(s)) return RESULT_FAIL;
     }
     snprintf(buf, 63, CMD_8BIT "=%d", GP->_8bit);
     if(!sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
@@ -1155,7 +1105,7 @@ void server(int sock, int imsock){
         }
         // process some data & send messages to ALL
         if(camstate == CAMERA_FRAMERDY || camstate == CAMERA_ERROR){
-            if(camstate == CAMERA_FRAMERDY) ima->timestamp = time(NULL); // set timestamp
+            if(camstate == CAMERA_FRAMERDY) ima->timestamp = dtime(); // set timestamp
             char buff[PATH_MAX+32];
             snprintf(buff, PATH_MAX, CMD_EXPSTATE "=%d", camstate);
             DBG("Send %s to %d clients", buff, nfd - 2);
@@ -1163,7 +1113,7 @@ void server(int sock, int imsock){
                 TIMESTAMP("Send message that all ready");
                 sendstrmessage(poll_set[i].fd, buff);
             }
-            if(camstate == CAMERA_FRAMERDY){ // send to all last file name
+            if(camstate == CAMERA_FRAMERDY && (GP->outfile || GP->outfileprefix)){ // send to all last file name if file saved
                 snprintf(buff, PATH_MAX+31, CMD_LASTFNAME "=%s", lastfile);
                 for(int i = 2; i < nfd; ++i)
                     sendstrmessage(poll_set[i].fd, buff);

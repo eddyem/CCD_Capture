@@ -44,9 +44,10 @@ static int xm0,ym0,xm1,ym1; // max format
 static int xc0,yc0,xc1,yc1; // current format
 
 #ifdef IMAGEVIEW
-static IMG ima = {0};
 static volatile atomic_int grabno = 0, oldgrabno = 0;
-static size_t imbufsz = 0;
+// IPC key for shared memory
+static IMG ima = {0}, *shmima = NULL; // ima - local storage, shmima - shm (if available)
+static size_t imbufsz = 0; // image buffer for allocated `ima`
 static uint8_t *imbuf = NULL;
 #endif
 
@@ -196,7 +197,7 @@ static void send_headers(int sock){
     if(!isnan(GP->gain)) SENDMSGW(CMD_GAIN, "=%g", GP->gain);
     if(!isnan(GP->brightness)) SENDMSGW(CMD_BRIGHTNESS, "=%g", GP->brightness);
     if(GP->nflushes > 0) SENDMSGW(CMD_NFLUSHES, "=%d", GP->nflushes);
-    if(GP->outfile || GP->outfileprefix){ // exposition and reading control: only if start of exposition
+    if(GP->exptime > -DBL_EPSILON){ // exposition and reading control: only if start of exposition
         if(GP->_8bit) SENDMSGW(CMD_8BIT, "=1");
         else SENDMSGW(CMD_8BIT, "=0");
         if(GP->fast) SENDMSGW(CMD_FASTSPD, "=1");
@@ -278,8 +279,10 @@ void client(int sock){
                 WARNX(_("Can't make exposition"));
                 continue;
             }
-            if(expstate != CAMERA_CAPTURE){
+            //if(expstate != CAMERA_CAPTURE){
+            if(expstate == CAMERA_FRAMERDY){
                 verbose(2, "Frame ready!");
+                expstate = CAMERA_IDLE;
                 if(Nremain){
                     verbose(1, "\n");
                     if(GP->pause_len > 0){
@@ -299,7 +302,7 @@ void client(int sock){
                     SENDMSGW(CMD_EXPSTATE, "=%d", CAMERA_CAPTURE);
                 }else{
                     GP->waitexpend = 0;
-                    timeout = WAIT_TIMEOUT; // wait for last file name
+                    timeout = ANSWER_TIMEOUT; // wait for last file name
                 }
             }
         }
@@ -309,11 +312,14 @@ void client(int sock){
 }
 
 #ifdef IMAGEVIEW
-static int controlfd = -1;
+static int controlfd = -1; // control socket FD
 void init_grab_sock(int sock){
     if(sock < 0) ERRX("Can't run without command socket");
     controlfd = sock;
     send_headers(sock);
+    if(!GP->forceimsock && !shmima){ // init shm buffer if user don't ask to work through image socket
+        shmima = getshm(GP->shmkey, 0); // try to init client shm
+    }
 }
 
 /**
@@ -323,7 +329,7 @@ void init_grab_sock(int sock){
 static int readNbytes(int fd, size_t N, uint8_t *buf){
     size_t got = 0, need = N;
     double t0 = dtime();
-    while(dtime() - t0 < CLIENT_TIMEOUT && canberead(fd) && need){
+    while(dtime() - t0 < CLIENT_TIMEOUT /*&& canberead(fd)*/ && need){
         ssize_t rd = read(fd, buf + got, need);
         if(rd <= 0){
             WARNX("Server disconnected");
@@ -335,22 +341,33 @@ static int readNbytes(int fd, size_t N, uint8_t *buf){
     return TRUE;
 }
 
+/**
+ * @brief getimage - read image from shared memory or socket
+ */
 static void getimage(){
     FNAME();
+    int imsock = -1;
+    static double oldtimestamp = -1.;
     TIMESTAMP("Get image sizes");
     /*SENDCMDW(CMD_IMWIDTH);
     SENDCMDW(CMD_IMHEIGHT);*/
-    int imsock = open_socket(FALSE, GP->imageport, TRUE);
-    if(imsock < 0) ERRX("getimage(): can't open image transport socket");
-    // get image size
-    if(!readNbytes(imsock, sizeof(IMG), (uint8_t*)&ima)){
-        WARNX("Can't read image header");
-        goto eofg;
+    if(shmima){ // read image from shared memory
+        memcpy(&ima, shmima, sizeof(IMG));
+    }else{ // get image by socket
+        imsock = open_socket(FALSE, GP->imageport, TRUE);
+        if(imsock < 0) ERRX("getimage(): can't open image transport socket");
+        // get image size
+        if(!readNbytes(imsock, sizeof(IMG), (uint8_t*)&ima)){
+            WARNX("Can't read image header");
+            goto eofg;
+        }
     }
     if(ima.bytelen < 1){
         WARNX("Wrong image size");
         goto eofg;
     }
+    DBG("bytelen=%zd, w=%d, h=%d; bitpix=%d", ima.bytelen, ima.w, ima.h, ima.bitpix);
+    // realloc memory if needed
     if(imbufsz < ima.bytelen){
         size_t newsz = 1024 * (1 + ima.bytelen / 1024);
         DBG("Reallocate memory from %zd to %zd", imbufsz, newsz);
@@ -359,14 +376,24 @@ static void getimage(){
     }
     ima.data = imbuf; // renew this value each time after getting `ima` from server
     TIMESTAMP("Start of data read");
-    if(!readNbytes(imsock, ima.bytelen, imbuf)){
-        WARNX("Can't read image data");
-        goto eofg;
+    if(shmima){
+        uint8_t *datastart = (uint8_t*)shmima + sizeof(IMG);
+        memcpy(imbuf, datastart, ima.bytelen);
+        TIMESTAMP("Got by shared memory");
+    }else{
+        if(!readNbytes(imsock, ima.bytelen, imbuf)){
+            WARNX("Can't read image data");
+            goto eofg;
+        }
+        TIMESTAMP("Got by socket");
     }
-    TIMESTAMP("Got image");
-    ++grabno;
+    if(ima.timestamp != oldtimestamp){ // test if image is really new
+        oldtimestamp = ima.timestamp;
+        TIMESTAMP("Got image");
+        ++grabno;
+    }else WARNX("Still got old image");
 eofg:
-    close(imsock);
+    if(!shmima) close(imsock);
 }
 
 static void *grabnext(void _U_ *arg){ // daemon grabbing images through the net
@@ -374,7 +401,6 @@ static void *grabnext(void _U_ *arg){ // daemon grabbing images through the net
     if(controlfd < 0) return NULL;
     int sock = controlfd;
     while(1){
-        DBG("xx");
         if(!getWin()) exit(1);
         expstate = CAMERA_CAPTURE;
         TIMESTAMP("End of cycle, start new #%d", grabno+1);
@@ -386,13 +412,15 @@ static void *grabnext(void _U_ *arg){ // daemon grabbing images through the net
             sleept = (useconds_t)(GP->exptime * 500000.);
             if(sleept < 1000) sleept = 1000;
         }
+//        double exptime = GP->exptime;
         while(dtime() - t0 < timeout){
-            TIMESTAMP("Wait for exposition ends");
+            TIMESTAMP("Wait for exposition ends (%u us)", sleept);
             usleep(sleept);
             TIMESTAMP("check answer");
             getans(sock, NULL);
             //TIMESTAMP("EXPSTATE ===> %d", expstate);
             if(expstate != CAMERA_CAPTURE) break;
+            if(dtime() - t0 < GP->exptime + 0.5) sleept = 1000;
         }
         if(dtime() - t0 >= timeout || expstate != CAMERA_FRAMERDY){
             WARNX("Image wasn't received");

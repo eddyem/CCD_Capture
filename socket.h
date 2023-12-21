@@ -19,7 +19,11 @@
 #pragma once
 #include <pthread.h>
 #include <stdint.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
 #include <usefull_macros.h>
+
+#include "basestructs.h"
 
 // max & min TCP socket port number
 #define PORTN_MAX   (65535)
@@ -32,7 +36,7 @@
 // wait for mutex locking
 #define BUSY_TIMEOUT    (1.0)
 // waiting for answer timeout
-#define ANSWER_TIMEOUT  (0.1)
+#define ANSWER_TIMEOUT  (0.001)
 // wait for exposition ends (between subsequent check calls)
 #define WAIT_TIMEOUT    (2.0)
 // client will disconnect after this time from last server message
@@ -75,5 +79,5 @@ int senddata(int fd, void *data, size_t l);
 int sendmessage(int fd, const char *msg, int l);
 int sendstrmessage(int fd, const char *msg);
 char *get_keyval(char *keyval);
-
+IMG *getshm(key_t key, size_t imsize);
 int canberead(int fd);

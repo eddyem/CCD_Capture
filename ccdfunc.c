@@ -210,6 +210,8 @@ int saveFITS(IMG *img, char **outp){
             LOGERR("Can't save image with prefix %s", GP->outfileprefix);
         }
     }
+    calculate_stat(img);
+
     int width = img->w, height = img->h;
     long naxes[2] = {width, height};
     double tmpd = 0.0;
@@ -283,6 +285,7 @@ int saveFITS(IMG *img, char **outp){
     tm_time = localtime(&savetime);
     strftime(bufc, FLEN_VALUE, "File creation time (UNIX)", tm_time);
     WRITEKEY(fp, TDOUBLE, "UNIXTIME", &dsavetime, bufc);
+    WRITEKEY(fp, TDOUBLE, "TIMESTAM", &img->timestamp, "Time of acquisition end");
     strftime(bufc, 80, "%Y/%m/%d", tm_time);
     // DATE-OBS / DATE (YYYY/MM/DD) OF OBS.
     WRITEKEY(fp, TSTRING, "DATE-OBS", bufc, "DATE OF OBS. (YYYY/MM/DD, local)");

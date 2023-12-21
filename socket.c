@@ -42,7 +42,7 @@ double __t0 = 0.;
  * @brief open_socket - create socket and open it
  * @param isserver  - TRUE for server, FALSE for client
  * @param path      - UNIX-socket path or local INET socket port
- * @param isnet     - TRUE for INET socket, FALSE for UNIX
+ * @param isnet     - 1/2 for INET socket (1 - localhost, 2 - network), 0 for UNIX
  * @return socket FD or -1 if failed
  */
 int open_socket(int isserver, char *path, int isnet){
@@ -57,7 +57,8 @@ int open_socket(int isserver, char *path, int isnet){
         hints.ai_family = AF_INET;
         hints.ai_socktype = SOCK_STREAM;
         hints.ai_flags = AI_PASSIVE;
-        if(getaddrinfo("127.0.0.1", path, &hints, &res) != 0){
+        const char *node = (isnet == 2) ? NULL : "127.0.0.1";
+        if(getaddrinfo(node, path, &hints, &res) != 0){
             ERR("getaddrinfo");
         }
     }else{
@@ -128,9 +129,9 @@ int open_socket(int isserver, char *path, int isnet){
  */
 int start_socket(int isserver){
     char *path = NULL;
-    int isnet = FALSE;
+    int isnet = 0;
     if(GP->path) path = GP->path;
-    else if(GP->port){ path = GP->port; isnet = TRUE; }
+    else if(GP->port){ path = GP->port; isnet = 1; }
     else ERRX("Point network port or UNIX-socket path");
     int sock = open_socket(isserver, path, isnet), imsock = -1;
     if(sock < 0){
@@ -138,7 +139,7 @@ int start_socket(int isserver){
         ERRX("start_socket(): can't open socket");
     }
     if(isserver){
-        imsock = open_socket(TRUE, GP->imageport, TRUE);
+        imsock = open_socket(TRUE, GP->imageport, 2); // image socket should be networked
         server(sock, imsock);
     }else{
 #ifdef IMAGEVIEW
@@ -275,4 +276,52 @@ int canberead(int fd){
         return 1;
     }
     return 0;
+}
+
+/**
+ * @brief getshm - get shared memory segment for image
+ * @param imsize - size of image data (in bytes): if !=0 allocate as server, else - as client (readonly)
+ * @return pointer to shared memory region or NULL if failed
+ */
+IMG *getshm(key_t key, size_t imsize){
+    size_t shmsize = sizeof(IMG) + imsize;
+    shmsize = 1024 * (1 + shmsize / 1024);
+    DBG("Allocate %zd bytes in shared memory", shmsize);
+    int shmid = -1;
+    int flags = (imsize) ? IPC_CREAT | 0666 : 0;
+    shmid = shmget(key, 0, flags);
+    if(shmid < 0){
+        if(imsize) WARN("Can't get shared memory segment %d", key); // suppress warnings for client
+        return NULL;
+    }
+    if(imsize){ // check if segment exists and its size equal to needs
+        struct shmid_ds buf;
+        if(shmctl(shmid, IPC_STAT, &buf) > -1 && shmsize != buf.shm_segsz){ // remove already existing segment
+            DBG("Need to remove already existing segment");
+            shmctl(shmid, IPC_RMID, NULL);
+        }
+        shmid = shmget(key, shmsize, flags);
+        if(shmid < 0){
+            WARN("Can't create shared memory segment %d", key);
+            return NULL;
+        }
+    }
+    flags = (imsize) ? 0 : SHM_RDONLY; // client opens memory in readonly mode
+    IMG *ptr = shmat(shmid, NULL, flags);
+    if(ptr == (void*)-1){
+        if(imsize) WARN("Can't attach SHM segment %d", key);
+        return NULL;
+    }
+    if(!imsize){
+        if(ptr->MAGICK != SHM_MAGIC){
+            WARNX("Shared memory %d isn't belongs to image server", key);
+            shmdt(ptr);
+            return NULL;
+        }
+        return ptr;
+    }
+    bzero(ptr, sizeof(IMG));
+    ptr->data = (void*)((uint8_t*)ptr + sizeof(IMG));
+    ptr->MAGICK = SHM_MAGIC;
+    return ptr;
 }
