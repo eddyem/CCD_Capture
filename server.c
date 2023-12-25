@@ -37,7 +37,7 @@ static _Atomic camera_state camstate = CAMERA_IDLE;
 #define FLAG_STARTCAPTURE       (1<<0)
 #define FLAG_CANCEL             (1<<1)
 #define FLAG_RESTARTSERVER      (1<<2)
-static atomic_int camflags = 0, camfanspd = 0, confio = 0, nflushes;
+static atomic_int camflags = 0, camfanspd = 0, confio = 0, nflushes, infty = 0;
 static char *outfile = NULL, *lastfile = NULL; // current output file name/prefix; last name of saved file
 static frameformat frmformatmax = {0}, curformat = {0}; // maximal format
 static void *camdev = NULL, *focdev = NULL, *wheeldev = NULL;
@@ -80,6 +80,7 @@ strpair allcommands[] = {
     { CMD_IMHEIGHT,     "last image height" },
     { CMD_IMWIDTH,      "last image width" },
     { CMD_INFO,         "connected devices state" },
+    { CMD_INFTY,        "an infinity loop taking images until there's connected clients" },
     { CMD_INSTRUMENT,   "FITS 'INSTRUME' field" },
     { CMD_IO,           "get/set camera IO" },
     { CMD_LASTFNAME,    "path to last saved file"},
@@ -107,7 +108,7 @@ static pthread_mutex_t locmutex = PTHREAD_MUTEX_INITIALIZER; // mutex for wheel/
 // return TRUE if `locmutex` can be locked
 static int lock(){
     if(pthread_mutex_trylock(&locmutex)){
-        DBG("\n\nAlready locked");
+        //DBG("\n\nAlready locked");
         return FALSE;
     }
     return TRUE;
@@ -152,14 +153,6 @@ static inline void cameraidlestate(){ // idle - wait for capture commands
     }
 }
 static inline void cameracapturestate(){ // capturing - wait for exposition ends
-    if(camflags & FLAG_CANCEL){ // cancel all expositions
-        DBG("Cancel exposition");
-        LOGMSG("User canceled exposition");
-        camflags &= ~(FLAG_STARTCAPTURE | FLAG_CANCEL);
-        camera->cancel();
-        camstate = CAMERA_IDLE;
-        return;
-    }
     capture_status cs;
     if(camera->pollcapture(&cs, &tremain)){
         if(cs != CAPTURE_PROCESS){
@@ -216,6 +209,16 @@ static void* processCAM(_U_ void *d){
                 if(camera->getTbody(&t)){
                    LOGMSG("BODYTEMP=%.1f", t);
                 }
+            }
+            if(camflags & FLAG_CANCEL){ // cancel all expositions
+                DBG("Cancel exposition");
+                LOGMSG("User canceled exposition");
+                camflags &= ~(FLAG_STARTCAPTURE | FLAG_CANCEL);
+                camera->cancel();
+                camstate = CAMERA_IDLE;
+                infty = 0; // also cancel infinity loop
+                unlock();
+                continue;
             }
             camera_state curstate = camstate;
             switch(curstate){
@@ -603,7 +606,7 @@ static hresult expstatehandler(_U_ int fd, _U_ const char *key, _U_ const char *
             return RESULT_OK;
         }
         else if(n == CAMERA_CAPTURE){ // start exposition
-            TIMESTAMP("End of cycle - start new");
+            TIMESTAMP("Get FLAG_STARTCAPTURE");
             TIMEINIT();
             camflags |= FLAG_STARTCAPTURE;
             return RESULT_OK;
@@ -939,6 +942,18 @@ static hresult shmemkeyhandler(int fd, _U_ const char *key, _U_ const char *val)
     return RESULT_SILENCE;
 }
 
+// infinity loop
+static hresult inftyhandler(int fd, _U_ const char *key, const char *val){
+    char buf[64];
+    if(val){
+        int i = atoi(val);
+        infty = (i) ? 1 : 0;
+    }
+    snprintf(buf, 63, CMD_INFTY "=%d", infty);
+    if(!sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
+    return RESULT_SILENCE;
+}
+
 // for setters: do nothing when camera not in idle state
 static int CAMbusy(){
     if(camera && camstate != CAMERA_IDLE){
@@ -999,6 +1014,7 @@ static handleritem items[] = {
     {chkcc,  _8bithandler, CMD_8BIT},
     {chkcc,  fastspdhandler, CMD_FASTSPD},
     {chkcc,  darkhandler, CMD_DARK},
+    {chkcc,  inftyhandler, CMD_INFTY},
     {NULL,   tremainhandler, CMD_TREMAIN},
     {NULL,   FITSparhandler, CMD_AUTHOR},
     {NULL,   FITSparhandler, CMD_INSTRUMENT},
@@ -1056,7 +1072,7 @@ void server(int sock, int imsock){
     if(camera){
         if(pthread_create(&camthread, NULL, processCAM, NULL)) ERR("pthread_create()");
     }
-    int nfd = 2; // only one socket @start
+    int nfd = 2; // only two listening sockets @start: command and image
     struct pollfd poll_set[MAXCLIENTS+2];
     char buffers[MAXCLIENTS][CLBUFSZ]; // buffers for data reading
     bzero(poll_set, sizeof(poll_set));
@@ -1105,7 +1121,10 @@ void server(int sock, int imsock){
         }
         // process some data & send messages to ALL
         if(camstate == CAMERA_FRAMERDY || camstate == CAMERA_ERROR){
-            if(camstate == CAMERA_FRAMERDY) ima->timestamp = dtime(); // set timestamp
+            if(camstate == CAMERA_FRAMERDY){
+                ima->timestamp = dtime(); // set timestamp
+                ++ima->imnumber; // increment counter
+            }
             char buff[PATH_MAX+32];
             snprintf(buff, PATH_MAX, CMD_EXPSTATE "=%d", camstate);
             DBG("Send %s to %d clients", buff, nfd - 2);
@@ -1133,6 +1152,13 @@ void server(int sock, int imsock){
                 poll_set[fdidx] = poll_set[nfd - 1];
                 --nfd;
             }
+        }
+        // check `infty`
+        if(camstate == CAMERA_IDLE && infty){ // start new exposition
+            // mark to start new capture in infinity loop when at least one client connected
+            if(nfd > 2) camflags |= FLAG_STARTCAPTURE;
+            TIMESTAMP("start new capture due to `infty`");
+            TIMEINIT();
         }
     }
     focclose(focdev);

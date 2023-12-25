@@ -101,7 +101,7 @@ static int parseans(char *ans){
         sscanf(val, "%d,%d,%d,%d", &xc0, &yc0, &xc1, &yc1);
         DBG("Got current format: %d,%d,%d,%d", xc0, yc0, xc1, yc1);
         return TRUE;
-    }
+    }else if(0 == strcmp(CMD_INFTY, ans)) return TRUE;
     /*
 #ifdef IMAGEVIEW
     else if(0 == strcmp(CMD_IMWIDTH, ans)){
@@ -245,6 +245,7 @@ void client(int sock){
         SENDCMDW(CMD_RESTART);
         return;
     }
+    if(GP->infty > -1) SENDMSGW(CMD_INFTY, "=%d", GP->infty);
     send_headers(sock);
     double t0 = dtime(), tw = t0;
     int Nremain = 0, nframe = 1;
@@ -255,7 +256,9 @@ void client(int sock){
         else GP->waitexpend = TRUE; // N>1 - wait for exp ends
         SENDMSGW(CMD_EXPSTATE, "=%d", CAMERA_CAPTURE);
     }else{
-        getans(sock, NULL);
+        int cntr = 0;
+        while(dtime() - t0 < WAIT_TIMEOUT && cntr < 10)
+            if(!getans(sock, NULL)) ++cntr;
         DBG("RETURN: no more data");
         return;
     }
@@ -389,8 +392,8 @@ static void getimage(){
     }
     if(ima.timestamp != oldtimestamp){ // test if image is really new
         oldtimestamp = ima.timestamp;
-        TIMESTAMP("Got image");
-        ++grabno;
+        grabno = ima.imnumber;
+        TIMESTAMP("Got image #%zd", ima.imnumber);
     }else WARNX("Still got old image");
 eofg:
     if(!shmima) close(imsock);
@@ -403,7 +406,7 @@ static void *grabnext(void _U_ *arg){ // daemon grabbing images through the net
     while(1){
         if(!getWin()) exit(1);
         expstate = CAMERA_CAPTURE;
-        TIMESTAMP("End of cycle, start new #%d", grabno+1);
+        TIMESTAMP("End of cycle, start new");
         TIMEINIT();
         SENDMSGW(CMD_EXPSTATE, "=%d", CAMERA_CAPTURE); // start capture
         double timeout = GP->exptime + CLIENT_TIMEOUT, t0 = dtime();
@@ -443,7 +446,7 @@ static void *waitimage(void _U_ *arg){ // passive waiting for next image
             usleep(1000);
             continue;
         }
-        TIMESTAMP("End of cycle, start new #%d", grabno+1);
+        TIMESTAMP("End of cycle, start new");
         TIMEINIT();
         getimage();
         expstate = CAMERA_IDLE;
@@ -487,7 +490,9 @@ int sockcaptured(IMG **imgptr){
         if(grabno != oldgrabno){ // image is ready
             TIMESTAMP("Image #%d ready", grabno);
             if(*imgptr && (*imgptr != &ima)) free(*imgptr);
-            *imgptr = &ima;
+            *imgptr = &ima; /*
+            ssize_t delta = ima.imnumber - oldgrabno;
+            if(delta > 0 && delta != 1) WARNX("sockcaptured(): missed %zd images", delta-1);*/
             oldgrabno = grabno;
             framerate();
             //TIMESTAMP("sockcaptured() end, return TRUE");

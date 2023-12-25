@@ -70,6 +70,7 @@ char *makeabspath(const char *path, int shouldbe);
 #define CMD_8BIT        "8bit"
 #define CMD_FASTSPD     "fastspeed"
 #define CMD_DARK        "dark"
+#define CMD_INFTY       "infty"
 // FITS file keywords
 #define CMD_AUTHOR      "author"
 #define CMD_INSTRUMENT  "instrument"

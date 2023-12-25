@@ -898,13 +898,14 @@ void framerate(){
     tlast = t;
 }
 
-static volatile int grabno = 0, lastgrabno = 0, exitgrab = FALSE;
+static volatile int exitgrab = FALSE;
+static volatile size_t lastgrabno = 0;
 static void *grabnext(void *arg){
     FNAME();
     IMG *ima = (IMG*) arg;
     do{
         if(exitgrab) return NULL;
-        TIMESTAMP("Start exp #%d", grabno+1);
+        TIMESTAMP("Start next exp");
         TIMEINIT();
         if(!ima || !camera) return NULL;
         if(!camera->startexposition()){
@@ -922,9 +923,9 @@ static void *grabnext(void *arg){
         if(cs != CAPTURE_READY){ WARNX(_("Some error when capture")); return NULL;}
         TIMESTAMP("get");
         if(!camera->capture(ima)){ WARNX(_("Can't grab image")); continue; }
+        ++ima->imnumber;
         //calculate_stat(ima);
         TIMESTAMP("OK");
-        ++grabno;
     }while(1);
 }
 
@@ -973,9 +974,11 @@ int ccdcaptured(IMG **imgptr){
             grabthread = 0;
         }
     }else{ // grab in process
-        if(grabno != lastgrabno){ // done
-            lastgrabno = grabno;
-            TIMESTAMP("Got exp #%d", grabno);
+        if(ima->imnumber != lastgrabno){ // done
+            /*ssize_t delta = ima->imnumber - lastgrabno;
+            if(delta > 0 && delta != 1) WARNX("ccdcaptured(): missed %zd images", delta-1);*/
+            lastgrabno = ima->imnumber;
+            TIMESTAMP("Got exp #%zd", lastgrabno);
             framerate();
             return TRUE;
         }

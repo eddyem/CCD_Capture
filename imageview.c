@@ -28,7 +28,7 @@
 #include "imageview.h"
 #include "events.h"
 #include "omp.h"
-//#include "socket.h" // for timestamp
+#include "socket.h" // for timestamp
 
 windowData *win = NULL; // main window (common variable for events.c)
 static pthread_t GLUTthread = 0; // main GLUT thread
@@ -198,9 +198,10 @@ static void renderBitmapString(float x, float y, void *font, char *string, GLuby
 }*/
 
 static void RedrawWindow(){
+//double t0 = dtime();
     //DBG("ini=%d, win=%s", initialized, win ? "yes" : "no");
     if(!initialized || !win || win->killthread) return;
-    if(pthread_mutex_trylock(&win->mutex)) return;
+    //if(pthread_mutex_trylock(&win->mutex)) return;
     GLfloat w = win->image->w, h = win->image->h;
     glutSetWindow(win->ID);
     glClearColor(0.0, 0.0, 0.5, 1.0);
@@ -211,6 +212,7 @@ static void RedrawWindow(){
     glEnable(GL_TEXTURE_2D);
     glBindTexture(GL_TEXTURE_2D, win->Tex);
     if(win->image->changed){
+        pthread_mutex_lock(&win->mutex);
         DBG("Image changed!");
         glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, win->image->w, win->image->h, 0,
@@ -218,6 +220,7 @@ static void RedrawWindow(){
        /* glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, win->image->w, win->image->h,
                         GL_RGB, GL_UNSIGNED_BYTE, win->image->rawdata);*/
         win->image->changed = 0;
+        pthread_mutex_unlock(&win->mutex);
     }
     w /= 2.f; h /= 2.f;
     float lr = 1., ud = -1.; // flipping coefficients (mirror image around Y by default)
@@ -232,7 +235,8 @@ static void RedrawWindow(){
     glDisable(GL_TEXTURE_2D);
     glFinish();
     glutSwapBuffers();
-    pthread_mutex_unlock(&win->mutex);
+    //pthread_mutex_unlock(&win->mutex);
+//DBG("redraw: %gs", dtime()-t0);
     usleep(1000);
 }
 
@@ -520,6 +524,7 @@ static uint8_t *mkcuts(IMG *img, int w, int h){
     int s = w*h;
     double sum = 0., sum2 = 0.;
     int bytes = getNbytes(img);
+    TIMESTAMP("Make histogram");
     if(bytes == 1){
         uint8_t *data = (uint8_t*) img->data;
 #pragma omp parallel
@@ -561,7 +566,7 @@ static uint8_t *mkcuts(IMG *img, int w, int h){
     }
 }
     }
-
+    TIMESTAMP("Calculate stat");
 //WARNX("histo: %gs", dtime()-t0);
     // get median level
     int counts = s/2, median = 0, max = (bytes == 1) ? 0xff : 0xffff;
@@ -578,6 +583,7 @@ static uint8_t *mkcuts(IMG *img, int w, int h){
     // now we can recalculate values: new = (old - low)*A
 //WARNX("stat: %gs", dtime()-t0);
 // DEBUG: 2ms without OMP; 0.7ms with
+    TIMESTAMP("apply cuts");
     if(bytes == 1){
         uint8_t *data = (uint8_t*) img->data;
         OMP_FOR()
@@ -603,18 +609,26 @@ static uint8_t *mkcuts(IMG *img, int w, int h){
 
 static void change_displayed_image(IMG *img){
     if(!win || !img) return;
-    pthread_mutex_lock(&win->mutex);
+    static size_t lastN = 0;
+    ssize_t delta = img->imnumber - lastN;
+    TIMESTAMP("Got image #%zd", img->imnumber);
+    if(delta > 0 && delta != 1) WARNX("Missed %zd images", delta-1);
+    lastN = img->imnumber;
+    //pthread_mutex_lock(&win->mutex);
     rawimage *im = win->image;
     DBG("imh=%d, imw=%d, ch=%u, cw=%u", im->h, im->w, img->h, img->w);
     int w = img->w, h = img->h, s = w*h;
     if(!im || (im->h != h) || (im->w != w)){ // realloc image to new size
+        pthread_mutex_lock(&win->mutex);
         DBG("\n\nRealloc rawdata");
         if(!im) im = MALLOC(rawimage, 1);
         if(im->h*im->w < s) im->rawdata = realloc(im->rawdata, s*3);
         im->h = h; im->w = w;
         win->image = im;
         DBG("win->image changed");
+        pthread_mutex_unlock(&win->mutex);
     }
+    TIMESTAMP("level correction");
     uint8_t *newima;
     if(imequalize){
         DBG("equalize");
@@ -624,6 +638,7 @@ static void change_displayed_image(IMG *img){
         newima = mkcuts(img, w, h);
     }
     GLubyte *dst = im->rawdata;
+    TIMESTAMP("colorfun");
 //double t0 = dtime();
     if(ft < COLORFN_LINEAR){ // gray
         // without OMP: 1.8ms; with OMP: 0.8ms
@@ -657,7 +672,7 @@ static void change_displayed_image(IMG *img){
 }*/
     DBG("Unlock");
     win->image->changed = 1;
-    pthread_mutex_unlock(&win->mutex);
+    //pthread_mutex_unlock(&win->mutex);
 }
 
 void closeGL(){ // killed by external signal or ctrl+c
@@ -703,10 +718,10 @@ int viewer(imagefunc newimage){
         if((win->winevt & WINEVT_GETIMAGE) || !(win->winevt & WINEVT_PAUSE)){
             //DBG("CHK new image, t=%g", dtime()-t0);
             if(newimage(&img)){
-                //TIMESTAMP("got image -> change");
+                TIMESTAMP("got image -> change");
                 win->winevt &= ~WINEVT_GETIMAGE;
                 change_displayed_image(img); // change image if refreshed
-                //TIMESTAMP("changed");
+                TIMESTAMP("changed");
             }
             //DBG("Next cycle, t=%g", dtime()-t0);
         }

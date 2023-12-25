@@ -30,7 +30,8 @@ static glob_pars  G = {
     .brightness = NAN, .gain = NAN,
     .setwheel = -1,
     .fanspeed = -1,
-    .shmkey = 7777777
+    .shmkey = 7777777,
+    .infty = -1
 };
 
 /*
@@ -105,6 +106,7 @@ myoption cmdlnopts[] = {
 
     {"shmkey", NEED_ARG,    NULL,   'k',    arg_int,    APTR(&G.shmkey),    N_("shared memory (with image data) key (default: 7777777")},
     {"forceimsock",NO_ARGS, &G.forceimsock,1, arg_none, NULL,               N_("force using image through socket transition even if can use SHM")},
+    {"infty", NEED_ARG,     NULL,   0,      arg_int,    APTR(&G.infty),     N_("start (!=0) or stop(==0) infinity capturing loop")},
 
 #ifdef IMAGEVIEW
     {"display", NO_ARGS,    NULL,   'D',    arg_int,   APTR(&G.showimage),  N_("Display image in OpenGL window")},

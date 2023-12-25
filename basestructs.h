@@ -32,6 +32,7 @@ typedef struct __attribute__((packed, aligned(4))){
     uint16_t max, min;          // min/max values
     float avr, std;             // statistics
     size_t bytelen;             // size of image in bytes
+    size_t imnumber;            // counter of images captured from server's start
     void *data;                 // pointer to data (next byte after this struct) - only for server
     /* `data` is uint8_t or uint16_t depending on `bitpix` */
 } IMG;

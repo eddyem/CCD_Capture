@@ -7,7 +7,7 @@
 msgid   ""
 msgstr  "Project-Id-Version: PACKAGE VERSION\n"
         "Report-Msgid-Bugs-To: \n"
-        "POT-Creation-Date: 2023-12-21 16:40+0300\n"
+        "POT-Creation-Date: 2023-12-25 15:48+0300\n"
         "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
         "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
         "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -22,7 +22,7 @@ msgid   "%.1f seconds till exposition ends"
 msgstr  "%.1f секунд до окончания экспозиции"
 
 #. %d я│п╣п╨я┐п╫п╢ п╢п╬ п╬п╨п╬п╫я┤п╟п╫п╦я▐ п©п╟я┐п╥я▀\n
-#: ccdfunc.c:850 client.c:294
+#: ccdfunc.c:850 client.c:297
 #, c-format
 msgid   "%d seconds till pause ends\n"
 msgstr  "%d секунд до окончания паузы\n"
@@ -31,11 +31,11 @@ msgstr  "%d секунд до окончания паузы\n"
 msgid   "Already initialized!"
 msgstr  "Уже инициализировано!"
 
-#: cmdlnopts.c:96
+#: cmdlnopts.c:97
 msgid   "CMOS brightness level"
 msgstr  "уровень яркости CMOS"
 
-#: cmdlnopts.c:95
+#: cmdlnopts.c:96
 msgid   "CMOS gain level"
 msgstr  "уровень Gain CMOS"
 
@@ -105,7 +105,7 @@ msgstr  "Не могу определить предельную позицию фокусера"
 msgid   "Can't get max wheel position"
 msgstr  "Не могу определить предельную позицию колеса"
 
-#: ccdfunc.c:838 ccdfunc.c:924
+#: ccdfunc.c:838 ccdfunc.c:925
 msgid   "Can't grab image"
 msgstr  "Не могу захватить изображение"
 
@@ -113,15 +113,15 @@ msgstr  "Не могу захватить изображение"
 msgid   "Can't home focuser"
 msgstr  "Не могу установить фокусер в нуль"
 
-#: imageview.c:308
+#: imageview.c:312
 msgid   "Can't init mutex!"
 msgstr  "Не могу инициализировать мьютекс!"
 
-#: client.c:279
+#: client.c:282
 msgid   "Can't make exposition"
 msgstr  "Не могу выполнить экспозицию"
 
-#: imageview.c:689
+#: imageview.c:704
 msgid   "Can't open OpenGL window, image preview will be inaccessible"
 msgstr  "Не могу открыть окно OpenGL, отображение будет недоступно"
 
@@ -162,7 +162,7 @@ msgstr  "Не могу установить номер активного фокусера"
 msgid   "Can't set active wheel number"
 msgstr  "Не могу установить номер активного колеса"
 
-#: ccdfunc.c:767 server.c:262
+#: ccdfunc.c:767 server.c:265
 #, c-format
 msgid   "Can't set binning %dx%d"
 msgstr  "Не могу установить биннинг %dx%d"
@@ -190,7 +190,7 @@ msgstr  "Не могу установить скорость вентиляторов"
 msgid   "Can't set gain to %g"
 msgstr  "Не могу установить Gain в %g"
 
-#: ccdfunc.c:779 server.c:263
+#: ccdfunc.c:779 server.c:266
 msgid   "Can't set given geometry"
 msgstr  "Не могу установить геометрию"
 
@@ -213,7 +213,7 @@ msgstr  "Не могу установить скорость считывания"
 msgid   "Can't set wheel position %d"
 msgstr  "Не могу установить положение колеса %d"
 
-#: ccdfunc.c:826 ccdfunc.c:911 server.c:148
+#: ccdfunc.c:826 ccdfunc.c:912 server.c:149
 msgid   "Can't start exposition"
 msgstr  "Не могу начать экспозицию"
 
@@ -228,11 +228,11 @@ msgstr  "Захват кадра %d"
 msgid   "Current format: %s"
 msgstr  ""
 
-#: cmdlnopts.c:110
+#: cmdlnopts.c:112
 msgid   "Display image in OpenGL window"
 msgstr  "Отображение изображения в окне OpenGL"
 
-#: imageview.c:731
+#: imageview.c:746
 #, c-format
 msgid   "Equalization of histogram: %s"
 msgstr  "Эквализация гистограммы: %s"
@@ -275,12 +275,12 @@ msgstr  "Обнаружено %d колес, вы указали %d"
 msgid   "Full array: %s"
 msgstr  "Полный формат: %s"
 
-#: imageview.c:421
+#: imageview.c:425
 #, c-format
 msgid   "Histogram conversion: %s"
 msgstr  "Преобразование гистограммы: %s"
 
-#: cmdlnopts.c:101
+#: cmdlnopts.c:102
 #, fuzzy
 msgid   "INET image socket port"
 msgstr  "порт локального сетевого сокета"
@@ -290,11 +290,11 @@ msgstr  "порт локального сетевого сокета"
 msgid   "Image stat:\n"
 msgstr  "Статистика по изображению: \n"
 
-#: cmdlnopts.c:68
+#: cmdlnopts.c:69
 msgid   "N flushes before exposing (default: 1)"
 msgstr  "N засвечиваний перед экспозицией (по умолчанию: 1)"
 
-#: server.c:196
+#: server.c:189
 msgid   "No camera device"
 msgstr  "Не указано устройство камеры"
 
@@ -328,7 +328,7 @@ msgstr  "Считывание изображения"
 msgid   "Readout mode: %s"
 msgstr  "Режим считывания: %s"
 
-#: client.c:310
+#: client.c:313
 msgid   "Server timeout"
 msgstr  "Таймаут сервера"
 
@@ -352,7 +352,7 @@ msgstr  "Установить Gain в %g"
 msgid   "Shutter command: %s\n"
 msgstr  "Команда затвора: %s\n"
 
-#: ccdfunc.c:922
+#: ccdfunc.c:923
 msgid   "Some error when capture"
 msgstr  ""
 
@@ -368,7 +368,7 @@ msgstr  "Попытка сконфигурировать порт I/O как %d"
 msgid   "Try to write %d to I/O port"
 msgstr  "Попытка записи %d в порт I/O"
 
-#: cmdlnopts.c:99
+#: cmdlnopts.c:100
 #, fuzzy
 msgid   "UNIX socket name (command socket)"
 msgstr  "Имя UNIX-сокета"
@@ -382,229 +382,233 @@ msgstr  "Устройство турели не указано"
 msgid   "Wheel position should be from 0 to %d"
 msgstr  "Позиция колеса должна быть от 0 до %d"
 
-#: cmdlnopts.c:75
+#: cmdlnopts.c:76
 msgid   "absolute (not divided by binning!) frame X0 coordinate (-1 - all "
         "with overscan)"
 msgstr  "абсолютная (не деленная на биннинг!) координата X0 (-1 - включая "
         "оверскан)"
 
-#: cmdlnopts.c:77
+#: cmdlnopts.c:78
 msgid   "absolute frame X1 coordinate (-1 - all with overscan)"
 msgstr  "абсолютная координата X1 (-1 - включая оверскан)"
 
-#: cmdlnopts.c:76
+#: cmdlnopts.c:77
 msgid   "absolute frame Y0 coordinate (-1 - all with overscan)"
 msgstr  "абсолютная координата Y0 (-1 - включая оверскан)"
 
-#: cmdlnopts.c:78
+#: cmdlnopts.c:79
 msgid   "absolute frame Y1 coordinate (-1 - all with overscan)"
 msgstr  "абсолютная координата Y1 (-1 - включая оверскан)"
 
-#: cmdlnopts.c:64
+#: cmdlnopts.c:65
 msgid   "add records to header from given file[s]"
 msgstr  "добавить записи к шапке FITS-файла из заданных файлов"
 
-#: cmdlnopts.c:46
+#: cmdlnopts.c:47
 msgid   "camera device number (if many: 0, 1, 2 etc)"
 msgstr  "номер устройства камеры"
 
-#: cmdlnopts.c:42
+#: cmdlnopts.c:43
 msgid   "camera device plugin (e.g. devfli.so)"
 msgstr  "плагин камеры (например, devfli.so)"
 
-#: cmdlnopts.c:74
+#: cmdlnopts.c:75
 msgid   "cancel current exposition"
 msgstr  "отмена текущей экспозиции"
 
-#: cmdlnopts.c:81
+#: cmdlnopts.c:82
 msgid   "close shutter"
 msgstr  "закрыть затвор"
 
-#: cmdlnopts.c:41
+#: cmdlnopts.c:42
 msgid   "common device plugin (e.g devfli.so)"
 msgstr  "общий плагин для всех устройств (например, devfli.so)"
 
-#: cmdlnopts.c:88
+#: cmdlnopts.c:89
 msgid   "configure I/O port pins to given value (decimal number, pin1 is LSB, "
         "1 == output, 0 == input)"
 msgstr  "сконфигурировать порт I/O в заданное состояние (десятичное число, "
         "pin1 - младший бит, 1 - выход, 0 - вход)"
 
-#: cmdlnopts.c:54
+#: cmdlnopts.c:55
 msgid   "fast readout mode"
 msgstr  "быстрый режим считывания"
 
-#: cmdlnopts.c:47
+#: cmdlnopts.c:48
 msgid   "filter wheel device number (if many: 0, 1, 2 etc)"
 msgstr  "номер устройства турели"
 
-#: cmdlnopts.c:48
+#: cmdlnopts.c:49
 msgid   "focuser device number (if many: 0, 1, 2 etc)"
 msgstr  "номер устройства фокусера"
 
-#: cmdlnopts.c:43
+#: cmdlnopts.c:44
 msgid   "focuser device plugin (e.g. devzwo.so)"
 msgstr  "плагин фокусера (например, devzwo.so)"
 
-#: cmdlnopts.c:107
+#: cmdlnopts.c:108
 msgid   "force using image through socket transition even if can use SHM"
 msgstr  ""
 
-#: cmdlnopts.c:84
+#: cmdlnopts.c:85
 msgid   "get value of I/O port pins"
 msgstr  "получить значение порта I/O"
 
-#: cmdlnopts.c:69
+#: cmdlnopts.c:70
 msgid   "horizontal binning to N pixels"
 msgstr  "горизонтальный биннинг в N пикселей"
 
-#: cmdlnopts.c:60
+#: cmdlnopts.c:61
 msgid   "instrument name"
 msgstr  "название прибора"
 
-#: cmdlnopts.c:45
+#: cmdlnopts.c:46
 msgid   "list connected devices"
 msgstr  "список подключенных устройств"
 
-#: cmdlnopts.c:100
+#: cmdlnopts.c:101
 #, fuzzy
 msgid   "local INET command socket port"
 msgstr  "порт локального сетевого сокета"
 
-#: cmdlnopts.c:98
+#: cmdlnopts.c:99
 msgid   "logging file name (if run as server)"
 msgstr  "имя файла логгирования (если запущен сервер)"
 
-#: cmdlnopts.c:72
+#: cmdlnopts.c:73
 msgid   "make pause for N seconds between expositions"
 msgstr  "пауза в N секунд между экспозициями"
 
-#: cmdlnopts.c:71
+#: cmdlnopts.c:72
 msgid   "make series of N frames"
 msgstr  "последовательность из N кадров"
 
-#: cmdlnopts.c:90
+#: cmdlnopts.c:91
 msgid   "move focuser to absolute position, mm"
 msgstr  "переместить фокусер в абсолютное положение, мм"
 
-#: cmdlnopts.c:91
+#: cmdlnopts.c:92
 msgid   "move focuser to relative position, mm (only for standalone)"
 msgstr  "переместить фокусер в относительное положение, мм (не для сервер/"
         "клиент)"
 
-#: cmdlnopts.c:85
+#: cmdlnopts.c:86
 msgid   "move stepper motor asynchronous"
 msgstr  "асинхронное движение шагового двигателя"
 
-#: cmdlnopts.c:52
+#: cmdlnopts.c:53
 msgid   "not open shutter, when exposing (\"dark frames\")"
 msgstr  "не открывать затвор при экспозиции (\"темновые\")"
 
-#: cmdlnopts.c:61
+#: cmdlnopts.c:62
 msgid   "object name"
 msgstr  "название объекта"
 
-#: cmdlnopts.c:59
+#: cmdlnopts.c:60
 msgid   "object type (neon, object, flat etc)"
 msgstr  "тип объекта (neon, object, flat и т.д.)"
 
-#: cmdlnopts.c:62
+#: cmdlnopts.c:63
 msgid   "observers' names"
 msgstr  "имена наблюдателей"
 
-#: cmdlnopts.c:63
+#: cmdlnopts.c:64
 msgid   "observing program name"
 msgstr  "название программы"
 
-#: imageview.c:731
+#: imageview.c:746
 msgid   "off"
 msgstr  "выкл"
 
-#: imageview.c:731
+#: imageview.c:746
 msgid   "on"
 msgstr  "вкл"
 
-#: cmdlnopts.c:80
+#: cmdlnopts.c:81
 msgid   "open shutter"
 msgstr  "открыть затвор"
 
-#: cmdlnopts.c:65
+#: cmdlnopts.c:66
 msgid   "output file name"
 msgstr  "имя файла"
 
-#: cmdlnopts.c:103
+#: cmdlnopts.c:104
 msgid   "passive viewer (only get last images)"
 msgstr  ""
 
-#: cmdlnopts.c:58
+#: cmdlnopts.c:59
 msgid   "program author"
 msgstr  "автор программы"
 
-#: cmdlnopts.c:104
+#: cmdlnopts.c:105
 msgid   "restart image server"
 msgstr  "перезапуск сервера"
 
-#: cmdlnopts.c:50
+#: cmdlnopts.c:51
 msgid   "rewrite output file if exists"
 msgstr  "перезапись выходного файла"
 
-#: cmdlnopts.c:102
+#: cmdlnopts.c:103
 msgid   "run as client"
 msgstr  "запустить клиент"
 
-#: cmdlnopts.c:83
+#: cmdlnopts.c:84
 msgid   "run exposition on HIGH @ pin5 I/O port"
 msgstr  ""
 
-#: cmdlnopts.c:82
+#: cmdlnopts.c:83
 msgid   "run exposition on LOW @ pin5 I/O port"
 msgstr  ""
 
-#: cmdlnopts.c:53
+#: cmdlnopts.c:54
 msgid   "run in 8-bit mode"
 msgstr  "8-битный режим"
 
-#: cmdlnopts.c:55
+#: cmdlnopts.c:56
 msgid   "set CCD temperature to given value (degr C)"
 msgstr  "установить температуру светоприемника (градЦ)"
 
-#: cmdlnopts.c:87
+#: cmdlnopts.c:88
 msgid   "set I/O port pins to given value (decimal number, pin1 is LSB)"
 msgstr  "установить порт I/O (десятичное число, pin1 - младший бит)"
 
-#: cmdlnopts.c:73
+#: cmdlnopts.c:74
 msgid   "set exposure time to given value (seconds!)"
 msgstr  "установить время экспозиции (секунды!)"
 
-#: cmdlnopts.c:56
+#: cmdlnopts.c:57
 msgid   "set fan speed (0 - off, 1 - low, 2 - high)"
 msgstr  "установить скорость вентилятора (0 - выкл, 1 - низкая, 2 - высокая)"
 
-#: cmdlnopts.c:93
+#: cmdlnopts.c:94
 msgid   "set wheel position"
 msgstr  "установить положение колеса"
 
-#: cmdlnopts.c:106
+#: cmdlnopts.c:107
 msgid   "shared memory (with image data) key (default: 7777777"
 msgstr  ""
 
-#: cmdlnopts.c:49
+#: cmdlnopts.c:50
 msgid   "show this help"
 msgstr  "отобразить эту справку"
 
-#: cmdlnopts.c:51
+#: cmdlnopts.c:109
+msgid   "start (!=0) or stop(==0) infinity capturing loop"
+msgstr  ""
+
+#: cmdlnopts.c:52
 msgid   "verbose level (-V - messages, -VV - debug, -VVV - all shit)"
 msgstr  "уровень болтливости (-V - сообщения, -VV - отладка, -VVV - все)"
 
-#: cmdlnopts.c:70
+#: cmdlnopts.c:71
 msgid   "vertical binning to N pixels"
 msgstr  "вертикальный биннинг в N пикселей"
 
-#: cmdlnopts.c:66
+#: cmdlnopts.c:67
 msgid   "wait while exposition ends"
 msgstr  "ждать, пока не кончится экспозиция"
 
-#: cmdlnopts.c:44
+#: cmdlnopts.c:45
 msgid   "wheel device plugin (e.g. devdummy.so)"
 msgstr  "плагин устройства турели (например, devdummy.so)"
 
