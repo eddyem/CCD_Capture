@@ -1,12 +1,16 @@
 cmake_minimum_required(VERSION 3.20)
 set(PROJ ccd_capture)
+set(PROJLIB ccdcapture)
 set(MAJOR_VERSION "1")
-set(MID_VERSION "1")
-set(MINOR_VERSION "1")
+set(MID_VERSION "2")
+set(MINOR_VERSION "0")
+
+set(LIBSRC ccdcapture.c)
+set(SOURCES main.c cmdlnopts.c ccdfunc.c server.c client.c)
+set(LIBHEADER "ccdcapture.h")
+
 set(VERSION "${MAJOR_VERSION}.${MID_VERSION}.${MINOR_VERSION}")
-
 project(${PROJ} VERSION ${VERSION} LANGUAGES C)
-
 message("VER: ${VERSION}")
 
 # list of options
@@ -18,9 +22,10 @@ option(BASLER "Add support of BASLER cameras" OFF)
 option(HIKROBOT "Add support of HIKROBOT cameras" OFF)
 option(FLYCAP "Add support of Grasshopper FlyCap cameras" OFF)
 option(APOGEE "Add support of Apogee cameras" OFF)
+option(EXAMPLES "Some examples" OFF)
 
 # default flags
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -W -Wextra -std=gnu99")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -W -Wextra")
 
 # change wrong behaviour with install prefix
 if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT AND CMAKE_INSTALL_PREFIX MATCHES "/usr/local")
@@ -29,7 +34,7 @@ if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT AND CMAKE_INSTALL_PREFIX MATCHES 
 endif()
 message("Install dir prefix: ${CMAKE_INSTALL_PREFIX}")
 if(NOT DEFINED LOCALEDIR)
-    if(DEFINED DEBUG AND DEBUG STREQUAL "yes")
+    if(DEBUG)
         set(LOCALEDIR ${CMAKE_CURRENT_SOURCE_DIR}/locale)
     else()
         set(LOCALEDIR ${CMAKE_INSTALL_PREFIX}/share/locale)
@@ -43,7 +48,6 @@ add_definitions(-D_XOPEN_SOURCE=1234 -D_DEFAULT_SOURCE -D_GNU_SOURCE -DLOCALEDIR
 
 set(CMAKE_COLOR_MAKEFILE ON)
 
-set(SOURCES main.c cmdlnopts.c ccdfunc.c socket.c server.c client.c)
 
 # cmake -DDEBUG=yes -> debugging
 if(DEBUG)
@@ -62,6 +66,7 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}")
 find_package(CFITSIO REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(${PROJ} REQUIRED usefull_macros)
+pkg_check_modules(${PROJLIB} REQUIRED usefull_macros)
 
 include(FindOpenMP)
 if(OPENMP_FOUND)
@@ -101,6 +106,9 @@ endif()
 if(APOGEE)
     add_subdirectory(APOGEE_cameras)
 endif()
+if(EXAMPLES)
+    add_subdirectory(examples)
+endif()
 
 # directory should contain dir locale/ru for gettext translations
 set(LCPATH ${CMAKE_SOURCE_DIR}/locale/ru)
@@ -110,15 +118,25 @@ set(PO_FILE ${LCPATH}/messages.po)
 set(MO_FILE ${LCPATH}/LC_MESSAGES/${PROJ}.mo)
 set(RU_FILE ${LCPATH}/ru.po)
 
-# exe file
+# exe & lib files
+add_library(${PROJLIB} SHARED ${LIBSRC})
 add_executable(${PROJ} ${SOURCES} ${PO_FILE} ${MO_FILE})
-target_link_libraries(${PROJ} ${CFITSIO_LIBRARIES} ${X11_LIBRARIES} ${OPENGL_LIBRARIES} ${GLUT_LIBRARIES} ${${PROJ}_LIBRARIES} -lm ${CMAKE_DL_LIBS})
+target_link_libraries(${PROJ} ${CFITSIO_LIBRARIES} ${X11_LIBRARIES} ${OPENGL_LIBRARIES} ${GLUT_LIBRARIES} ${${PROJ}_LIBRARIES} -lm ${CMAKE_DL_LIBS} ${PROJLIB})
+target_link_libraries(${PROJLIB} ${${PROJLIB}_LIBRARIES})
 include_directories(${${PROJ}_INCLUDE_DIRS} .)
 link_directories(${${PROJ}_LIBRARY_DIRS} )
+set(PCFILE "${CMAKE_BINARY_DIR}/${PROJLIB}.pc")
+configure_file("${PROJLIB}.pc.in" ${PCFILE} @ONLY)
+set_target_properties(${PROJLIB} PROPERTIES VERSION ${VERSION})
+set_target_properties(${PROJLIB} PROPERTIES PUBLIC_HEADER ${LIBHEADER})
 
 # Installation of the program
 install(FILES ${MO_FILE} DESTINATION "share/locale/ru/LC_MESSAGES")
 install(TARGETS ${PROJ} DESTINATION "bin")
+install(TARGETS ${PROJLIB} LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(FILES ${PCFILE} DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/pkgconfig)
+
 
 find_package(Gettext REQUIRED)
 find_program(GETTEXT_XGETTEXT_EXECUTABLE xgettext)

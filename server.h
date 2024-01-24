@@ -18,13 +18,6 @@
 
 #pragma once
 
-typedef enum{
-    CAMERA_IDLE,        // idle state, client send this to cancel capture
-    CAMERA_CAPTURE,     // capturing frame, client send this to start capture
-    CAMERA_FRAMERDY,    // frame ready to be saved
-    CAMERA_ERROR        // can't do exposition
-} camera_state;
-
 // pause (seconds) between temperature logging
 #define TLOG_PAUSE  60.
 
@@ -32,60 +25,3 @@ typedef enum{
 void server(int fd, int imsock);
 char *makeabspath(const char *path, int shouldbe);
 
-// common information about everything
-#define CMD_INFO        "info"
-#define CMD_HELP        "help"
-// restart server
-#define CMD_RESTART     "restartTheServer"
-// get image size in pixels
-#define CMD_IMWIDTH     "imwidth"
-#define CMD_IMHEIGHT    "imheight"
-// get shared memory key
-#define CMD_SHMEMKEY    "shmemkey"
-
-// CCD/CMOS
-#define CMD_CAMLIST     "camlist"
-#define CMD_CAMDEVNO    "camdevno"
-#define CMD_EXPOSITION  "exptime"
-#define CMD_LASTFNAME   "lastfilename"
-#define CMD_FILENAME    "filename"
-#define CMD_FILENAMEPREFIX "filenameprefix"
-// rewrite=1 will rewrite files, =0 - not (only for `filename`)
-#define CMD_REWRITE     "rewrite"
-#define CMD_HBIN        "hbin"
-#define CMD_VBIN        "vbin"
-#define CMD_CAMTEMPER   "tcold"
-#define CMD_CAMFANSPD   "ccdfanspeed"
-#define CMD_SHUTTER     "shutter"
-#define CMD_CONFIO      "confio"
-#define CMD_IO          "io"
-#define CMD_GAIN        "gain"
-#define CMD_BRIGHTNESS  "brightness"
-#define CMD_FRAMEFORMAT "format"
-#define CMD_FRAMEMAX    "maxformat"
-#define CMD_NFLUSHES    "nflushes"
-// expstate=CAMERA_CAPTURE will start exposition, CAMERA_IDLE - cancel
-#define CMD_EXPSTATE    "expstate"
-#define CMD_TREMAIN     "tremain"
-#define CMD_8BIT        "8bit"
-#define CMD_FASTSPD     "fastspeed"
-#define CMD_DARK        "dark"
-#define CMD_INFTY       "infty"
-// FITS file keywords
-#define CMD_AUTHOR      "author"
-#define CMD_INSTRUMENT  "instrument"
-#define CMD_OBSERVER    "observer"
-#define CMD_OBJECT      "object"
-#define CMD_PROGRAM     "program"
-#define CMD_OBJTYPE     "objtype"
-#define CMD_HEADERFILES "headerfiles"
-
-// focuser
-#define CMD_FOCLIST     "foclist"
-#define CMD_FDEVNO      "focdevno"
-#define CMD_FGOTO       "focpos"
-
-// wheel
-#define CMD_WLIST       "wlist"
-#define CMD_WDEVNO      "wdevno"
-#define CMD_WPOS        "wpos"

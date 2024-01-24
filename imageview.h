@@ -82,6 +82,6 @@ void conv_mouse_to_image_coords(int x, int y, float *X, float *Y, windowData *wi
 void conv_image_to_mouse_coords(float X, float Y, int *x, int *y, windowData *window);
 windowData* getWin();
 
-typedef int (*imagefunc)(IMG**);
+typedef int (*imagefunc)(cc_IMG**);
 
 int viewer(imagefunc);

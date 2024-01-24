@@ -34,11 +34,11 @@
 
 static char sendbuf[BUFSIZ];
 // send message and wait any answer
-#define SENDMSG(...) do{DBG("SENDMSG"); snprintf(sendbuf, BUFSIZ-1, __VA_ARGS__); verbose(2, "\t> %s", sendbuf); sendstrmessage(sock, sendbuf); while(getans(sock, NULL));} while(0)
+#define SENDMSG(...) do{DBG("SENDMSG"); snprintf(sendbuf, BUFSIZ-1, __VA_ARGS__); verbose(2, "\t> %s", sendbuf); cc_sendstrmessage(sock, sendbuf); while(getans(sock, NULL));} while(0)
 // send message and wait answer starting with 'cmd'
-#define SENDMSGW(cmd, ...) do{DBG("SENDMSGW"); snprintf(sendbuf, BUFSIZ-1, cmd __VA_ARGS__); verbose(2, "\t> %s", sendbuf); sendstrmessage(sock, sendbuf);}while(!getans(sock, cmd))
+#define SENDMSGW(cmd, ...) do{DBG("SENDMSGW"); snprintf(sendbuf, BUFSIZ-1, cmd __VA_ARGS__); verbose(2, "\t> %s", sendbuf); cc_sendstrmessage(sock, sendbuf);}while(!getans(sock, cmd))
 // send command and wait for answer on it
-#define SENDCMDW(cmd) do{DBG("SENDCMDW"); strncpy(sendbuf, cmd, BUFSIZ-1); verbose(2, "\t> %s", sendbuf); sendstrmessage(sock, sendbuf);}while(!getans(sock, cmd))
+#define SENDCMDW(cmd) do{DBG("SENDCMDW"); strncpy(sendbuf, cmd, BUFSIZ-1); verbose(2, "\t> %s", sendbuf); cc_sendstrmessage(sock, sendbuf);}while(!getans(sock, cmd))
 static volatile atomic_int expstate = CAMERA_CAPTURE;
 static int xm0,ym0,xm1,ym1; // max format
 static int xc0,yc0,xc1,yc1; // current format
@@ -46,35 +46,27 @@ static int xc0,yc0,xc1,yc1; // current format
 #ifdef IMAGEVIEW
 static volatile atomic_int grabno = 0, oldgrabno = 0;
 // IPC key for shared memory
-static IMG ima = {0}, *shmima = NULL; // ima - local storage, shmima - shm (if available)
+static cc_IMG ima = {0}, *shmima = NULL; // ima - local storage, shmima - shm (if available)
 static size_t imbufsz = 0; // image buffer for allocated `ima`
 static uint8_t *imbuf = NULL;
 #endif
 
 static char *readmsg(int fd){
-    static char buf[BUFSIZ] = {0}, line[BUFSIZ];
-    int curlen = strlen(buf);
-    if(curlen == BUFSIZ-1) curlen = 0; // buffer overflow - clear old content
-    ssize_t rd = 0;
-    if(1 == canberead(fd)){
-        rd = read(fd, buf + curlen, BUFSIZ-1 - curlen);
-            if(rd <= 0){
-                WARNX("Server disconnected");
-                signals(1);
+    static cc_charbuff *buf = NULL;
+    static char line[BUFSIZ];
+    if(!buf) buf = cc_bufnew(BUFSIZ);
+    if(1 == cc_canberead(fd)){
+        if(cc_read2buf(fd, buf)){
+            size_t got = cc_getline(buf, line, BUFSIZ);
+            if(got >= BUFSIZ){
+                DBG("Client fd=%d gave buffer overflow", fd);
+                LOGMSG("SERVER client fd=%d buffer overflow", fd);
+            }else if(got){
+                return line;
             }
+        }else ERRX("Server disconnected");
     }
-    curlen += rd;
-    buf[curlen] = 0;
-    if(curlen == 0) return NULL;
-    //DBG("cur buffer: ----%s----", buf);
-    char *nl = strchr(buf, '\n');
-    if(!nl) return NULL;
-    *nl++ = 0;
-    strcpy(line, buf);
-    int rest = curlen - (int)(nl-buf);
-    if(rest > 0) memmove(buf, nl, rest+1);
-    else *buf = 0;
-    return line;
+    return NULL;
 }
 
 // parser of CCD server messages; return TRUE to exit from polling cycle of `getans` (if receive 'FAIL', 'OK' or 'BUSY')
@@ -82,41 +74,26 @@ static int parseans(char *ans){
     if(!ans) return FALSE;
     //TIMESTAMP("parseans() begin");
     //DBG("Parsing of '%s'", ans);
-    if(0 == strcmp(hresult2str(RESULT_BUSY), ans)){
+    if(0 == strcmp(cc_hresult2str(RESULT_BUSY), ans)){
         WARNX("Server busy");
         return FALSE;
     }
-    if(0 == strcmp(hresult2str(RESULT_FAIL), ans)) return TRUE;
-    if(0 == strcmp(hresult2str(RESULT_OK), ans)) return TRUE;
-    char *val = get_keyval(ans); // now `ans` is a key and `val` its value
-    if(0 == strcmp(CMD_EXPSTATE, ans)){
+    if(0 == strcmp(cc_hresult2str(RESULT_FAIL), ans)) return TRUE;
+    if(0 == strcmp(cc_hresult2str(RESULT_OK), ans)) return TRUE;
+    char *val = cc_get_keyval(ans); // now `ans` is a key and `val` its value
+    if(0 == strcmp(CC_CMD_EXPSTATE, ans)){
         expstate = atoi(val);
         DBG("Exposition state: %d", expstate);
         return TRUE;
-    }else if(0 == strcmp(CMD_FRAMEMAX, ans)){
+    }else if(0 == strcmp(CC_CMD_FRAMEMAX, ans)){
         sscanf(val, "%d,%d,%d,%d", &xm0, &ym0, &xm1, &ym1);
         DBG("Got maxformat: %d,%d,%d,%d", xm0, ym0, xm1, ym1);
         return TRUE;
-    }else if(0 == strcmp(CMD_FRAMEFORMAT, ans)){
+    }else if(0 == strcmp(CC_CMD_FRAMEFORMAT, ans)){
         sscanf(val, "%d,%d,%d,%d", &xc0, &yc0, &xc1, &yc1);
         DBG("Got current format: %d,%d,%d,%d", xc0, yc0, xc1, yc1);
         return TRUE;
-    }else if(0 == strcmp(CMD_INFTY, ans)) return TRUE;
-    /*
-#ifdef IMAGEVIEW
-    else if(0 == strcmp(CMD_IMWIDTH, ans)){
-        ima.w = atoi(val);
-        DBG("Get width: %d", ima.w);
-        imdatalen = ima.w * ima.h * 2;
-        return TRUE;
-    }else if(0 == strcmp(CMD_IMHEIGHT, ans)){
-        ima.h = atoi(val);
-        DBG("Get height: %d", ima.h);
-        imdatalen = ima.w * ima.h * 2;
-        return TRUE;
-    }
-#endif
-*/
+    }else if(0 == strcmp(CC_CMD_INFTY, ans)) return TRUE;
     //TIMESTAMP("parseans() end");
     return FALSE;
 }
@@ -126,13 +103,9 @@ static int parseans(char *ans){
 static int getans(int sock, const char *msg){
     double t0 = dtime();
     char *ans = NULL;
-    while(dtime() - t0 < ANSWER_TIMEOUT){
+    while(dtime() - t0 < CC_ANSWER_TIMEOUT){
         char *s = readmsg(sock);
         if(!s) continue;
-        /*if(!s){ // buffer is empty, return last message or wait for it
-            if(ans) return (msg ? FALSE : TRUE);
-            else continue;
-        }*/
         t0 = dtime();
         ans = s;
         TIMESTAMP("Got from server: %s", ans);
@@ -145,7 +118,7 @@ DBG("1 msg-> %s, ans -> %s", msg, ans);
             break;
         }
     }
-    DBG("GETANS: %s, %s", ans, (dtime()-t0 > ANSWER_TIMEOUT) ? "timeout" : "got answer");
+    //DBG("GETANS: %s, %s", ans, (dtime()-t0 > CC_ANSWER_TIMEOUT) ? "timeout" : "got answer");
     return ((ans) ? TRUE : FALSE);
 }
 
@@ -154,22 +127,22 @@ DBG("1 msg-> %s, ans -> %s", msg, ans);
  */
 static void send_headers(int sock){
     // common information
-    SENDMSG(CMD_INFO);
+    SENDMSG(CC_CMD_INFO);
     // focuser
-    if(GP->listdevices) SENDMSG(CMD_FOCLIST);
-    if(GP->focdevno > -1) SENDMSG(CMD_FDEVNO "=%d", GP->focdevno);
+    if(GP->listdevices) SENDMSG(CC_CMD_FOCLIST);
+    if(GP->focdevno > -1) SENDMSG(CC_CMD_FDEVNO "=%d", GP->focdevno);
     if(!isnan(GP->gotopos)){
-        SENDMSGW(CMD_FGOTO, "=%g", GP->gotopos);
+        SENDMSGW(CC_CMD_FGOTO, "=%g", GP->gotopos);
     }
     // wheel
-    if(GP->listdevices) SENDCMDW(CMD_WLIST);
-    if(GP->whldevno > -1) SENDMSGW(CMD_WDEVNO, "=%d", GP->whldevno);
-    if(GP->setwheel > -1) SENDMSGW(CMD_WPOS, "=%d", GP->setwheel);
+    if(GP->listdevices) SENDCMDW(CC_CMD_WLIST);
+    if(GP->whldevno > -1) SENDMSGW(CC_CMD_WDEVNO, "=%d", GP->whldevno);
+    if(GP->setwheel > -1) SENDMSGW(CC_CMD_WPOS, "=%d", GP->setwheel);
     DBG("nxt");
     // CCD/CMOS
     if(GP->X0 > INT_MIN || GP->Y0 > INT_MIN || GP->X1 > INT_MIN || GP->Y1 > INT_MIN){ // set format
-        SENDCMDW(CMD_FRAMEMAX);
-        SENDCMDW(CMD_FRAMEFORMAT);
+        SENDCMDW(CC_CMD_FRAMEMAX);
+        SENDCMDW(CC_CMD_FRAMEFORMAT);
         // default values
         if(GP->X0 == INT_MIN) GP->X0 = xc0;
         if(GP->X1 == INT_MIN) GP->X1 = xc1;
@@ -183,47 +156,47 @@ static void send_headers(int sock){
         if(GP->X1 < GP->X0+1 || GP->X1 > xm1) GP->X1 = xm1;
         if(GP->Y1 < GP->Y0+1 || GP->Y1 > ym1) GP->Y1 = ym1;
         DBG("set format: (%d,%d)x(%d,%d)", GP->X0,GP->X1,GP->Y0,GP->Y1);
-        SENDMSGW(CMD_FRAMEFORMAT, "=%d,%d,%d,%d", GP->X0, GP->Y0, GP->X1, GP->Y1);
+        SENDMSGW(CC_CMD_FRAMEFORMAT, "=%d,%d,%d,%d", GP->X0, GP->Y0, GP->X1, GP->Y1);
     }
-    if(GP->cancelexpose) SENDMSGW(CMD_EXPSTATE, "=%d", CAMERA_IDLE);
-    if(GP->listdevices) SENDCMDW(CMD_CAMLIST);
-    if(GP->camdevno > -1) SENDMSGW(CMD_CAMDEVNO, "=%d", GP->camdevno);
-    if(GP->hbin) SENDMSGW(CMD_HBIN, "=%d", GP->hbin);
-    if(GP->vbin) SENDMSGW(CMD_VBIN, "=%d", GP->vbin);
-    if(!isnan(GP->temperature)) SENDMSGW(CMD_CAMTEMPER, "=%g", GP->temperature);
-    if(GP->shtr_cmd > -1) SENDMSGW(CMD_SHUTTER, "=%d", GP->shtr_cmd);
-    if(GP->confio > -1) SENDMSGW(CMD_CONFIO, "=%d", GP->confio);
-    if(GP->setio > -1) SENDMSGW(CMD_IO, "=%d", GP->setio);\
-    if(!isnan(GP->gain)) SENDMSGW(CMD_GAIN, "=%g", GP->gain);
-    if(!isnan(GP->brightness)) SENDMSGW(CMD_BRIGHTNESS, "=%g", GP->brightness);
-    if(GP->nflushes > 0) SENDMSGW(CMD_NFLUSHES, "=%d", GP->nflushes);
+    if(GP->cancelexpose) SENDMSGW(CC_CMD_EXPSTATE, "=%d", CAMERA_IDLE);
+    if(GP->listdevices) SENDCMDW(CC_CMD_CAMLIST);
+    if(GP->camdevno > -1) SENDMSGW(CC_CMD_CAMDEVNO, "=%d", GP->camdevno);
+    if(GP->hbin) SENDMSGW(CC_CMD_HBIN, "=%d", GP->hbin);
+    if(GP->vbin) SENDMSGW(CC_CMD_VBIN, "=%d", GP->vbin);
+    if(!isnan(GP->temperature)) SENDMSGW(CC_CMD_CAMTEMPER, "=%g", GP->temperature);
+    if(GP->shtr_cmd > -1) SENDMSGW(CC_CMD_SHUTTER, "=%d", GP->shtr_cmd);
+    if(GP->confio > -1) SENDMSGW(CC_CMD_CONFIO, "=%d", GP->confio);
+    if(GP->setio > -1) SENDMSGW(CC_CMD_IO, "=%d", GP->setio);\
+    if(!isnan(GP->gain)) SENDMSGW(CC_CMD_GAIN, "=%g", GP->gain);
+    if(!isnan(GP->brightness)) SENDMSGW(CC_CMD_BRIGHTNESS, "=%g", GP->brightness);
+    if(GP->nflushes > 0) SENDMSGW(CC_CMD_NFLUSHES, "=%d", GP->nflushes);
     if(GP->exptime > -DBL_EPSILON){ // exposition and reading control: only if start of exposition
-        if(GP->_8bit) SENDMSGW(CMD_8BIT, "=1");
-        else SENDMSGW(CMD_8BIT, "=0");
-        if(GP->fast) SENDMSGW(CMD_FASTSPD, "=1");
-        else SENDMSGW(CMD_FASTSPD, "=0");
-        if(GP->dark) SENDMSGW(CMD_DARK, "=1");
-        else SENDMSGW(CMD_DARK, "=0");
+        if(GP->_8bit) SENDMSGW(CC_CMD_8BIT, "=1");
+        else SENDMSGW(CC_CMD_8BIT, "=0");
+        if(GP->fast) SENDMSGW(CC_CMD_FASTSPD, "=1");
+        else SENDMSGW(CC_CMD_FASTSPD, "=0");
+        if(GP->dark) SENDMSGW(CC_CMD_DARK, "=1");
+        else SENDMSGW(CC_CMD_DARK, "=0");
     }
     if(GP->outfile){
-        if(!*GP->outfile) SENDMSGW(CMD_FILENAME, "=");
-        else SENDMSGW(CMD_FILENAME, "=%s", makeabspath(GP->outfile, FALSE));
-        if(GP->rewrite) SENDMSGW(CMD_REWRITE, "=1");
-        else SENDMSGW(CMD_REWRITE, "=0");
+        if(!*GP->outfile) SENDMSGW(CC_CMD_FILENAME, "=");
+        else SENDMSGW(CC_CMD_FILENAME, "=%s", makeabspath(GP->outfile, FALSE));
+        if(GP->rewrite) SENDMSGW(CC_CMD_REWRITE, "=1");
+        else SENDMSGW(CC_CMD_REWRITE, "=0");
     }
     if(GP->outfileprefix){
-        if(!*GP->outfileprefix) SENDMSGW(CMD_FILENAMEPREFIX, "=");
-        else SENDMSGW(CMD_FILENAMEPREFIX, "=%s", makeabspath(GP->outfileprefix, FALSE));
+        if(!*GP->outfileprefix) SENDMSGW(CC_CMD_FILENAMEPREFIX, "=");
+        else SENDMSGW(CC_CMD_FILENAMEPREFIX, "=%s", makeabspath(GP->outfileprefix, FALSE));
     }
-    if(GP->exptime > -DBL_EPSILON) SENDMSGW(CMD_EXPOSITION, "=%g", GP->exptime);
+    if(GP->exptime > -DBL_EPSILON) SENDMSGW(CC_CMD_EXPOSITION, "=%g", GP->exptime);
     // FITS header keywords:
 #define CHKHDR(x, cmd)   do{if(x) SENDMSG(cmd "=%s", x);}while(0)
-    CHKHDR(GP->author, CMD_AUTHOR);
-    CHKHDR(GP->instrument, CMD_INSTRUMENT);
-    CHKHDR(GP->observers, CMD_OBSERVER);
-    CHKHDR(GP->objname, CMD_OBJECT);
-    CHKHDR(GP->prog_id, CMD_PROGRAM);
-    CHKHDR(GP->objtype, CMD_OBJTYPE);
+    CHKHDR(GP->author, CC_CMD_AUTHOR);
+    CHKHDR(GP->instrument, CC_CMD_INSTRUMENT);
+    CHKHDR(GP->observers, CC_CMD_OBSERVER);
+    CHKHDR(GP->objname, CC_CMD_OBJECT);
+    CHKHDR(GP->prog_id, CC_CMD_PROGRAM);
+    CHKHDR(GP->objtype, CC_CMD_OBJTYPE);
 #undef CHKHDR
     if(GP->addhdr){
         char buf[1024], *ptr = buf, **sptr = GP->addhdr;
@@ -236,16 +209,16 @@ static void send_headers(int sock){
             int N = snprintf(ptr, L-1, "%s,", *sptr++);
             L -= N; ptr += N;
         }
-        SENDMSGW(CMD_HEADERFILES, "=%s", buf);
+        SENDMSGW(CC_CMD_HEADERFILES, "=%s", buf);
     }
 }
 
 void client(int sock){
     if(GP->restart){
-        SENDCMDW(CMD_RESTART);
+        SENDCMDW(CC_CMD_RESTART);
         return;
     }
-    if(GP->infty > -1) SENDMSGW(CMD_INFTY, "=%d", GP->infty);
+    if(GP->infty > -1) SENDMSGW(CC_CMD_INFTY, "=%d", GP->infty);
     send_headers(sock);
     double t0 = dtime(), tw = t0;
     int Nremain = 0, nframe = 1;
@@ -254,26 +227,26 @@ void client(int sock){
         Nremain = GP->nframes - 1;
         if(Nremain < 1) Nremain = 0;
         else GP->waitexpend = TRUE; // N>1 - wait for exp ends
-        SENDMSGW(CMD_EXPSTATE, "=%d", CAMERA_CAPTURE);
+        SENDMSGW(CC_CMD_EXPSTATE, "=%d", CAMERA_CAPTURE);
     }else{
         int cntr = 0;
-        while(dtime() - t0 < WAIT_TIMEOUT && cntr < 10)
+        while(dtime() - t0 < CC_WAIT_TIMEOUT && cntr < 3)
             if(!getans(sock, NULL)) ++cntr;
         DBG("RETURN: no more data");
         return;
     }
-    double timeout = GP->waitexpend ? CLIENT_TIMEOUT : WAIT_TIMEOUT;
+    double timeout = GP->waitexpend ? CC_CLIENT_TIMEOUT : CC_WAIT_TIMEOUT;
     verbose(1, "Exposing frame 1...");
     if(GP->waitexpend){
         expstate = CAMERA_CAPTURE; // could be changed earlier
         verbose(2, "Wait for exposition end");
     }
     while(dtime() - t0 < timeout){
-        if(GP->waitexpend && dtime() - tw > WAIT_TIMEOUT){
-            SENDCMDW(CMD_TREMAIN); // get remained time
+        if(GP->waitexpend && dtime() - tw > CC_WAIT_TIMEOUT){
+            SENDCMDW(CC_CMD_TREMAIN); // get remained time
             tw = dtime();
-            sprintf(sendbuf, "%s", CMD_EXPSTATE);
-            sendstrmessage(sock, sendbuf);
+            sprintf(sendbuf, "%s", CC_CMD_EXPSTATE);
+            cc_sendstrmessage(sock, sendbuf);
         }
         if(getans(sock, NULL)){ // got next portion of data
             DBG("server message");
@@ -291,7 +264,7 @@ void client(int sock){
                     if(GP->pause_len > 0){
                         double delta, time1 = dtime() + GP->pause_len;
                         while(1){
-                            SENDCMDW(CMD_CAMTEMPER);
+                            SENDCMDW(CC_CMD_CAMTEMPER);
                             if((delta = time1 - dtime()) < __FLT_EPSILON__) break;
                             // %d секунд до окончания паузы\n
                             if(delta > 1.) verbose(1, _("%d seconds till pause ends\n"), (int)delta);
@@ -302,10 +275,10 @@ void client(int sock){
                     }
                     verbose(1, "Exposing frame %d...", ++nframe);
                     --Nremain;
-                    SENDMSGW(CMD_EXPSTATE, "=%d", CAMERA_CAPTURE);
+                    SENDMSGW(CC_CMD_EXPSTATE, "=%d", CAMERA_CAPTURE);
                 }else{
                     GP->waitexpend = 0;
-                    timeout = ANSWER_TIMEOUT; // wait for last file name
+                    timeout = CC_ANSWER_TIMEOUT; // wait for last file name
                 }
             }
         }
@@ -321,7 +294,7 @@ void init_grab_sock(int sock){
     controlfd = sock;
     send_headers(sock);
     if(!GP->forceimsock && !shmima){ // init shm buffer if user don't ask to work through image socket
-        shmima = getshm(GP->shmkey, 0); // try to init client shm
+        shmima = cc_getshm(GP->shmkey, 0); // try to init client shm
     }
 }
 
@@ -332,7 +305,7 @@ void init_grab_sock(int sock){
 static int readNbytes(int fd, size_t N, uint8_t *buf){
     size_t got = 0, need = N;
     double t0 = dtime();
-    while(dtime() - t0 < CLIENT_TIMEOUT /*&& canberead(fd)*/ && need){
+    while(dtime() - t0 < CC_CLIENT_TIMEOUT /*&& cc_canberead(fd)*/ && need){
         ssize_t rd = read(fd, buf + got, need);
         if(rd <= 0){
             WARNX("Server disconnected");
@@ -352,15 +325,15 @@ static void getimage(){
     int imsock = -1;
     static double oldtimestamp = -1.;
     TIMESTAMP("Get image sizes");
-    /*SENDCMDW(CMD_IMWIDTH);
-    SENDCMDW(CMD_IMHEIGHT);*/
+    /*SENDCMDW(CC_CMD_IMWIDTH);
+    SENDCMDW(CC_CMD_IMHEIGHT);*/
     if(shmima){ // read image from shared memory
-        memcpy(&ima, shmima, sizeof(IMG));
+        memcpy(&ima, shmima, sizeof(cc_IMG));
     }else{ // get image by socket
-        imsock = open_socket(FALSE, GP->imageport, TRUE);
+        imsock = cc_open_socket(FALSE, GP->imageport, TRUE);
         if(imsock < 0) ERRX("getimage(): can't open image transport socket");
         // get image size
-        if(!readNbytes(imsock, sizeof(IMG), (uint8_t*)&ima)){
+        if(!readNbytes(imsock, sizeof(cc_IMG), (uint8_t*)&ima)){
             WARNX("Can't read image header");
             goto eofg;
         }
@@ -380,7 +353,7 @@ static void getimage(){
     ima.data = imbuf; // renew this value each time after getting `ima` from server
     TIMESTAMP("Start of data read");
     if(shmima){
-        uint8_t *datastart = (uint8_t*)shmima + sizeof(IMG);
+        uint8_t *datastart = (uint8_t*)shmima + sizeof(cc_IMG);
         memcpy(imbuf, datastart, ima.bytelen);
         TIMESTAMP("Got by shared memory");
     }else{
@@ -390,6 +363,7 @@ static void getimage(){
         }
         TIMESTAMP("Got by socket");
     }
+    DBG("timestamps old-new=%g; imno: %zd", oldtimestamp-ima.timestamp, ima.imnumber);
     if(ima.timestamp != oldtimestamp){ // test if image is really new
         oldtimestamp = ima.timestamp;
         grabno = ima.imnumber;
@@ -405,11 +379,11 @@ static void *grabnext(void _U_ *arg){ // daemon grabbing images through the net
     int sock = controlfd;
     while(1){
         if(!getWin()) exit(1);
-        expstate = CAMERA_CAPTURE;
         TIMESTAMP("End of cycle, start new");
+        expstate = CAMERA_CAPTURE;
         TIMEINIT();
-        SENDMSGW(CMD_EXPSTATE, "=%d", CAMERA_CAPTURE); // start capture
-        double timeout = GP->exptime + CLIENT_TIMEOUT, t0 = dtime();
+        SENDMSGW(CC_CMD_EXPSTATE, "=%d", CAMERA_CAPTURE); // start capture
+        double timeout = GP->exptime + CC_CLIENT_TIMEOUT, t0 = dtime();
         useconds_t sleept = 500000; // 0.5s
         if(GP->exptime < 0.5){
             sleept = (useconds_t)(GP->exptime * 500000.);
@@ -455,7 +429,7 @@ static void *waitimage(void _U_ *arg){ // passive waiting for next image
 }
 
 // try to capture images through socket
-int sockcaptured(IMG **imgptr){
+int sockcaptured(cc_IMG **imgptr){
     //TIMESTAMP("sockcaptured() start");
     if(!imgptr) return FALSE;
     static pthread_t grabthread = 0;

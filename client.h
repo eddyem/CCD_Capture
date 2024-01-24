@@ -18,11 +18,11 @@
 
 #pragma once
 
-#include "basestructs.h"
+#include "ccdcapture.h"
 
 // client-side functions
 void client(int fd);
 #ifdef IMAGEVIEW
 void init_grab_sock(int sock);
-int sockcaptured(IMG **img);
+int sockcaptured(cc_IMG **img);
 #endif

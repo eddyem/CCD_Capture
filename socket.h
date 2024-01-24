@@ -23,61 +23,14 @@
 #include <sys/shm.h>
 #include <usefull_macros.h>
 
-#include "basestructs.h"
-
-// max & min TCP socket port number
-#define PORTN_MAX   (65535)
-#define PORTN_MIN   (1024)
-
-#define BUFLEN      (1024)
-// Max amount of connections
-#define MAXCLIENTS  (30)
-
-// wait for mutex locking
-#define BUSY_TIMEOUT    (1.0)
-// waiting for answer timeout
-#define ANSWER_TIMEOUT  (0.01)
-// wait for exposition ends (between subsequent check calls)
-#define WAIT_TIMEOUT    (2.0)
-// client will disconnect after this time from last server message
-#define CLIENT_TIMEOUT  (3.0)
+#include "ccdcapture.h"
 
 #ifdef EBUG
 extern double __t0;
 #define TIMEINIT()  do{__t0 = dtime();}while(0)
-#define TIMESTAMP(...) do{DBG(__VA_ARGS__); fprintf(stderr, COLOR_GREEN "%g" COLOR_OLD "\n", dtime()-__t0);}while(0)
+#define TIMESTAMP(...) do{DBG(__VA_ARGS__); green("%g\n", dtime()-__t0); fflush(stdout);}while(0)
 #else
 #define TIMEINIT()
 #define TIMESTAMP(...)
 #endif
 
-typedef enum{
-    RESULT_OK,          // 0: all OK
-    RESULT_BUSY,        // 1: camera busy and no setters can be done
-    RESULT_FAIL,        // 2: failed running command
-    RESULT_BADVAL,      // 3: bad key's value
-    RESULT_BADKEY,      // 4: bad key
-    RESULT_SILENCE,     // 5: send nothing to client
-    RESULT_DISCONNECTED,// 6: client disconnected
-    RESULT_NUM
-} hresult;
-
-const char *hresult2str(hresult r);
-
-// fd - socket fd to send private messages, key, val - key and its value
-typedef hresult (*mesghandler)(int fd, const char *key, const char *val);
-
-typedef struct{
-    hresult (*chkfunction)(char *val);  // function to check device is ready
-    mesghandler handler;                // handler function
-    const char *key;                    // keyword
-} handleritem;
-
-int open_socket(int isserver, char *path, int isnet);
-int start_socket(int server);
-int senddata(int fd, void *data, size_t l);
-int sendmessage(int fd, const char *msg, int l);
-int sendstrmessage(int fd, const char *msg);
-char *get_keyval(char *keyval);
-IMG *getshm(key_t key, size_t imsize);
-int canberead(int fd);

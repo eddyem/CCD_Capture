@@ -8,7 +8,7 @@
 #include <usefull_macros.h>
 
 #include "cmdlnopts.h"
-#include "basestructs.h"
+#include "ccdcapture.h"
 
 static int help;
 glob_pars *GP = NULL;
@@ -104,8 +104,8 @@ myoption cmdlnopts[] = {
     {"viewer",  NO_ARGS,    &G.viewer,1,    arg_none,   NULL,               N_("passive viewer (only get last images)")},
     {"restart", NO_ARGS,    &G.restart,1,   arg_none,   NULL,               N_("restart image server")},
 
-    {"shmkey", NEED_ARG,    NULL,   'k',    arg_int,    APTR(&G.shmkey),    N_("shared memory (with image data) key (default: 7777777")},
-    {"forceimsock",NO_ARGS, &G.forceimsock,1, arg_none, NULL,               N_("force using image through socket transition even if can use SHM")},
+    {"shmkey", NEED_ARG,    NULL,   'k',    arg_int,    APTR(&G.shmkey),    N_("shared memory (with image data) key (default: 7777777)")},
+    {"forceimsock",NO_ARGS, &G.forceimsock,1, arg_none, NULL,               N_("force using image through socket transition even if can use SHM)")},
     {"infty", NEED_ARG,     NULL,   0,      arg_int,    APTR(&G.infty),     N_("start (!=0) or stop(==0) infinity capturing loop")},
 
 #ifdef IMAGEVIEW
@@ -125,7 +125,7 @@ myoption cmdlnopts[] = {
  */
 glob_pars *parse_args(int argc, char **argv){
     // format of help: "Usage: progname [args]\n"
-    change_helpstring("Usage: %s [args] [output file prefix or file/dir name to view]\nTo restart server kill it with SIGUSR1\n\tArgs are:\n");
+    change_helpstring("Version: " PACKAGE_VERSION "\nUsage: %s [args] [output file prefix]\nTo restart server kill it with SIGUSR1\n\tArgs are:\n");
     // parse arguments
     parseargs(&argc, &argv, cmdlnopts);
     if(help) showhelp(-1, cmdlnopts);

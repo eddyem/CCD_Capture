@@ -17,30 +17,29 @@
  */
 
 #pragma once
-#include "basestructs.h"
+#include "ccdcapture.h"
 
-extern Camera *camera;
-extern Focuser *focuser;
-extern Wheel *wheel;
+extern cc_Camera *camera;
+extern cc_Focuser *focuser;
+extern cc_Wheel *wheel;
 
-void calculate_stat(IMG *image);
-int saveFITS(IMG *img, char **outp); // for imageview module
+void calculate_stat(cc_IMG *image);
+int saveFITS(cc_IMG *img, char **outp); // for imageview module
 void focusers();
 void wheels();
 int prepare_ccds();
 void ccds();
 void camstop();
 
-int getNbytes(IMG *image);
-
-int startCCD(void **dlh);
-int startWheel(void **dlh);
-int startFocuser(void **dlh);
+cc_Camera *startCCD();
+cc_Wheel *startWheel();
+cc_Focuser *startFocuser();
 void focclose();
 void closewheel();
 void closecam();
 #ifdef IMAGEVIEW
 void framerate();
-int ccdcaptured(IMG **img);
+int ccdcaptured(cc_IMG **img);
 #endif
 
+int start_socket(int isserver);

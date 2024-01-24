@@ -29,11 +29,11 @@
 #include <usefull_macros.h>
 
 
-#include "basestructs.h"
+#include "ccdcapture.h"
 //#include "omp.h"
 
 
-extern Camera camera;
+extern cc_Camera camera;
 static int ncameras = 0;
 static int isopened = FALSE;
 static int osw = 0; // overscan width
@@ -156,15 +156,15 @@ static int modelname(char *buf, int bufsz){
     return TRUE;
 }
 
-static int shutter(shutter_op cmd){
+static int shutter(cc_shutter_op cmd){
     int op = (cmd == SHUTTER_OPEN) ? 1 : 0;
     ApnGlueOpenShutter(op);
     return TRUE;
 }
 
-static int geometrylimits(frameformat *l, frameformat *s){
+static int geometrylimits(cc_frameformat *l, cc_frameformat *s){
     if(l) *l = camera.array;
-    if(s) *s = (frameformat){.w = 1, .h = 1, .xoff = 1, .yoff = 1};
+    if(s) *s = (cc_frameformat){.w = 1, .h = 1, .xoff = 1, .yoff = 1};
     return TRUE;
 }
 
@@ -173,7 +173,7 @@ static int sett(float t){
     return TRUE;
 }
 
-static int setfanspd(fan_speed s){
+static int setfanspd(cc_fan_speed s){
     ApnGlueSetFan((int) s);
     return TRUE;
 }
@@ -200,7 +200,7 @@ static int setfastspeed(int fast){
     return TRUE;
 }
 
-static int setgeometry(frameformat *f){
+static int setgeometry(cc_frameformat *f){
     if(!f) return FALSE;
     if(f->xoff > camera.field.w - 1) f->xoff = camera.field.w - 1;
     if(f->yoff > camera.field.h - 1) f->yoff = camera.field.h - 1;
@@ -287,7 +287,7 @@ static int getbin(int *h, int *v){
     return TRUE;
 }
 
-static int pollcapt(capture_status *st, float *remain){
+static int pollcapt(cc_capture_status *st, float *remain){
     if(st) *st = CAPTURE_PROCESS;
     if(ApnGlueExpDone()){
         if(st) *st = CAPTURE_READY;
@@ -312,7 +312,7 @@ static int pollcapt(capture_status *st, float *remain){
     return TRUE;
 }
 
-static int capture(IMG *ima){
+static int capture(cc_IMG *ima){
     FNAME();
     if(!ima || !ima->data) return FALSE;
     DBG("ApnGlueReadPixels(%dx%d=%d)", imW, imH, imW * imH);
@@ -334,7 +334,7 @@ static int ipfalse(_U_ int *i){ return FALSE; }
 /*
  * Global objects: camera, focuser and wheel
  */
-Camera camera = {
+cc_Camera camera = {
     .check = ndev,
     .close = disconnect,
     .pollcapture = pollcapt,

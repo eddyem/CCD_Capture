@@ -1,0 +1,10 @@
+prefix=@CMAKE_INSTALL_PREFIX@
+exec_prefix=${prefix}
+libdir=${exec_prefix}/lib
+includedir=${prefix}/include
+
+Name: @PROJLIB@
+Description: ccd_capture client library
+Version: @VERSION@
+Libs: -L${libdir} -l@PROJLIB@
+Cflags: -I${includedir}

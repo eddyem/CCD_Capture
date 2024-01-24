@@ -449,7 +449,7 @@ result: 0.0014689s
  * @param w,h      - image width and height
  * @return data allocated here
  */
-static uint8_t *equalize(IMG *img, int w, int h){
+static uint8_t *equalize(cc_IMG *img, int w, int h){
     uint8_t *retn = MALLOC(uint8_t, w*h);
     double orig_hysto[0x10000] = {0.}; // original hystogram
     uint8_t eq_levls[0x10000] = {0};   // levels to convert: newpix = eq_levls[oldpix]
@@ -469,7 +469,7 @@ static uint8_t *equalize(IMG *img, int w, int h){
         for(int i = 0; i < 0x10000; ++i) orig_hysto[i] += histogram_private[i];
     }
 }*/
-    int bytes = getNbytes(img);
+    int bytes = cc_getNbytes(img);
 
     if(bytes == 1){
         uint8_t *data = (uint8_t*) img->data;
@@ -518,12 +518,12 @@ cuts: 0.00188208s
 */
 
 // count image cuts as [median-sigma median+5sigma]
-static uint8_t *mkcuts(IMG *img, int w, int h){
+static uint8_t *mkcuts(cc_IMG *img, int w, int h){
     uint8_t *retn = MALLOC(uint8_t, w*h);
     int orig_hysto[0x10000] = {0.}; // original hystogram
     int s = w*h;
     double sum = 0., sum2 = 0.;
-    int bytes = getNbytes(img);
+    int bytes = cc_getNbytes(img);
     TIMESTAMP("Make histogram");
     if(bytes == 1){
         uint8_t *data = (uint8_t*) img->data;
@@ -607,7 +607,7 @@ static uint8_t *mkcuts(IMG *img, int w, int h){
     return retn;
 }
 
-static void change_displayed_image(IMG *img){
+static void change_displayed_image(cc_IMG *img){
     if(!win || !img) return;
     static size_t lastN = 0;
     ssize_t delta = img->imnumber - lastN;
@@ -704,7 +704,7 @@ int viewer(imagefunc newimage){
         WARNX(_("Can't open OpenGL window, image preview will be inaccessible"));
         return 1;
     }
-    IMG *img = NULL;
+    cc_IMG *img = NULL;
     //double t0 = dtime();
     while(1){
         if(!win || win->killthread){ // got kill from ctrl+q

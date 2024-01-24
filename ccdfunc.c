@@ -16,7 +16,6 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <dlfcn.h>  // dlopen/close
 #include <fitsio.h>
 #include <math.h>
 #include <signal.h> // pthread_kill
@@ -34,9 +33,9 @@
 #endif
 #include "omp.h"
 
-Camera *camera = NULL;
-Focuser *focuser = NULL;
-Wheel *wheel = NULL;
+cc_Camera *camera = NULL;
+cc_Focuser *focuser = NULL;
+cc_Wheel *wheel = NULL;
 
 static int fitserror = 0;
 
@@ -55,52 +54,6 @@ do{ int status = 0;                             \
 }while(0)
 
 #define TMBUFSIZ 40
-
-// find plugin
-static void *open_plugin(const char *name){
-    DBG("try to open lib %s", name);
-    void* dlh = dlopen(name, RTLD_NOLOAD); // library may be already opened
-    if(!dlh) dlh = dlopen(name, RTLD_NOW);
-    if(!dlh){
-        WARNX(_("Can't find plugin %s: %s"), name, dlerror());
-        return NULL;
-    }
-    return dlh;
-}
-
-static void *init_focuser(const char *pluginname){
-    FNAME();
-    void* dlh = open_plugin(pluginname);
-    if(!dlh) return NULL;
-    focuser = (Focuser*) dlsym(dlh, "focuser");
-    if(!focuser){
-        WARNX(_("Can't find focuser in plugin %s: %s"), pluginname, dlerror());
-        return NULL;
-    }
-    return dlh;
-}
-static void *init_camera(const char *pluginname){
-    FNAME();
-    void* dlh = open_plugin(pluginname);
-    if(!dlh) return NULL;
-    camera = (Camera*) dlsym(dlh, "camera");
-    if(!camera){
-        WARNX(_("Can't find camera in plugin %s: %s"), pluginname, dlerror());
-        return NULL;
-    }
-    return dlh;
-}
-static void *init_wheel(const char *pluginname){
-    FNAME();
-    void* dlh = open_plugin(pluginname);
-    if(!dlh) return NULL;
-    wheel = (Wheel*) dlsym(dlh, "wheel");
-    if(!wheel){
-        WARNX(_("Can't find wheel in plugin %s: %s"), pluginname, dlerror());
-        return NULL;
-    }
-    return dlh;
-}
 
 /*
 static size_t curtime(char *s_time){ // current date/time
@@ -178,7 +131,7 @@ static void addrec(fitsfile *f, char *filename){
 // save FITS file `img` into GP->outfile or GP->outfileprefix_XXXX.fits
 // if outp != NULL, put into it strdup() of last file name
 // return FALSE if failed
-int saveFITS(IMG *img, char **outp){
+int saveFITS(cc_IMG *img, char **outp){
     int ret = FALSE;
     if(!camera){
         LOGERR("Can't save image: no camera device");
@@ -225,7 +178,7 @@ int saveFITS(IMG *img, char **outp){
     fitserror = 0;
     TRYFITS(fits_create_file, &fp, fnam);
     if(fitserror) goto cloerr;
-    int nbytes = getNbytes(img);
+    int nbytes = cc_getNbytes(img);
     if(nbytes == 1) TRYFITS(fits_create_img, fp, BYTE_IMG, 2, naxes);
     else TRYFITS(fits_create_img, fp, USHORT_IMG, 2, naxes);
     if(fitserror) goto cloerr;
@@ -374,7 +327,7 @@ cloerr:
     return ret;
 }
 
-static void stat8(IMG *image){
+static void stat8(cc_IMG *image){
     double sum = 0., sum2 = 0.;
     size_t size = image->w * image->h;
     uint8_t max = 0, min = UINT8_MAX;
@@ -406,7 +359,7 @@ static void stat8(IMG *image){
     image->std = sqrt(fabs(sum2/sz - avr*avr));
     image->max = max; image->min = min;
 }
-static void stat16(IMG *image){
+static void stat16(cc_IMG *image){
     double sum = 0., sum2 = 0.;
     size_t size = image->w * image->h;
     uint16_t max = 0, min = UINT16_MAX;
@@ -440,7 +393,7 @@ static void stat16(IMG *image){
 }
 
 
-void calculate_stat(IMG *image){
+void calculate_stat(cc_IMG *image){
     int nbytes = ((7 + image->bitpix) / 8);
     if(nbytes == 1) stat8(image);
     else stat16(image);
@@ -451,20 +404,20 @@ void calculate_stat(IMG *image){
     }
 }
 
-int startFocuser(void **dlh){
+cc_Focuser *startFocuser(){
     if(!GP->focuserdev && !GP->commondev){
         verbose(3, _("Focuser device not pointed"));
-        return FALSE;
+        return NULL;
     }else{
         char *plugin = GP->commondev ? GP->commondev : GP->focuserdev;
-        if(!(*dlh = init_focuser(plugin))) return FALSE;
+        if(!(focuser = open_focuser(plugin))) return NULL;
     }
     if(!focuser->check()){
         verbose(3, _("No focusers found"));
         focuser = NULL;
-        return FALSE;
+        return NULL;
     }
-    return TRUE;
+    return focuser;
 }
 
 void focclose(){
@@ -542,20 +495,20 @@ retn:
     focclose();
 }
 
-int startWheel(void **dlh){
+cc_Wheel *startWheel(){
     if(!GP->wheeldev && !GP->commondev){
-        verbose(3, _("Wheel device not pointed"));
-        return FALSE;
+        verbose(3, _("cc_Wheel device not pointed"));
+        return NULL;
     }else{
         char *plugin = GP->commondev ? GP->commondev : GP->wheeldev;
-        if(!(*dlh = init_wheel(plugin))) return FALSE;
+        if(!(wheel = open_wheel(plugin))) return NULL;
     }
     if(!wheel->check()){
         verbose(3, _("No wheels found"));
         wheel = NULL;
-        return FALSE;
+        return NULL;
     }
-    return TRUE;
+    return wheel;
 }
 
 void closewheel(){
@@ -591,7 +544,7 @@ void wheels(){
     }
     char buf[BUFSIZ];
     if(wheel->getModelName(buf, BUFSIZ)){
-        verbose(2, "Wheel model: %s", buf);
+        verbose(2, "cc_Wheel model: %s", buf);
     }
     float t;
     if(wheel->getTbody(&t)){
@@ -609,7 +562,7 @@ void wheels(){
     pos = GP->setwheel;
     if(pos == -1) goto retn; // no wheel commands
     if(pos < 0 || pos > maxpos){
-        WARNX(_("Wheel position should be from 0 to %d"), maxpos);
+        WARNX(_("cc_Wheel position should be from 0 to %d"), maxpos);
         goto retn;
     }
     if(!wheel->setPos(pos))
@@ -624,8 +577,8 @@ static void closeall(){
     if(wheel){wheel->close(); wheel = NULL;}
 }*/
 
-static capture_status capt(){
-    capture_status cs;
+static cc_capture_status capt(){
+    cc_capture_status cs;
     float tremain, tmpf;
     while(camera->pollcapture(&cs, &tremain)){
         if(cs != CAPTURE_PROCESS) break;
@@ -643,20 +596,20 @@ static capture_status capt(){
     return cs;
 }
 
-int startCCD(void **dlh){
+cc_Camera *startCCD(){
     if(!GP->cameradev && !GP->commondev){
         verbose(3, _("Camera device not pointed"));
-        return FALSE;
+        return NULL;
     }else{
         char *plugin = GP->commondev ? GP->commondev : GP->cameradev;
-        if(!(*dlh = init_camera(plugin))) return FALSE;
+        if(!(camera = open_camera(plugin))) return NULL;
     }
     if(!camera->check()){
         verbose(3, _("No cameras found"));
         LOGWARN(_("No cameras found"));
-        return FALSE;
+        return NULL;
     }
-    return TRUE;
+    return camera;
 }
 
 void closecam(){
@@ -692,7 +645,7 @@ int prepare_ccds(){
     }
     if(GP->fanspeed > -1){
         if(GP->fanspeed > FAN_HIGH) GP->fanspeed = FAN_HIGH;
-        if(!camera->setfanspeed((fan_speed)GP->fanspeed))
+        if(!camera->setfanspeed((cc_fan_speed)GP->fanspeed))
             WARNX(_("Can't set fan speed"));
         else verbose(0, _("Set fan speed to %d"), GP->fanspeed);
     }
@@ -724,7 +677,7 @@ int prepare_ccds(){
     if(GP->shtr_cmd > -1 && GP->shtr_cmd < SHUTTER_AMOUNT){
         const char *str[] = {"open", "close", "expose @high", "expose @low"};
         verbose(1, _("Shutter command: %s\n"), str[GP->shtr_cmd]);
-        if(!camera->shuttercmd((shutter_op)GP->shtr_cmd))
+        if(!camera->shuttercmd((cc_shutter_op)GP->shtr_cmd))
             WARNX(_("Can't run shutter command %s (unsupported?)"), str[GP->shtr_cmd]);
     }
     if(GP->confio > -1){
@@ -774,7 +727,7 @@ int prepare_ccds(){
     if(GP->X1 < GP->X0+1 || GP->X1 > x1) GP->X1 = x1;
     if(GP->Y1 < GP->Y0+1 || GP->Y1 > y1) GP->Y1 = y1;
     DBG("x1/x0: %d/%d", GP->X1, GP->X0);
-    frameformat fmt = {.w = GP->X1 - GP->X0, .h = GP->Y1 - GP->Y0, .xoff = GP->X0, .yoff = GP->Y0};
+    cc_frameformat fmt = {.w = GP->X1 - GP->X0, .h = GP->Y1 - GP->Y0, .xoff = GP->X0, .yoff = GP->Y0};
     if(!camera->setgeometry(&fmt))
         WARNX(_("Can't set given geometry"));
     verbose(3, "Geometry: off=%d/%d, wh=%d/%d", fmt.xoff, fmt.yoff, fmt.w, fmt.h);
@@ -809,13 +762,13 @@ retn:
  */
 void ccds(){
     FNAME();
-    frameformat fmt = camera->geometry;
+    cc_frameformat fmt = camera->geometry;
     int raw_width = fmt.w / GP->hbin,  raw_height = fmt.h / GP->vbin;
 DBG("w=%d, h=%d", raw_width, raw_height);
     // allocate maximum available memory - for 16bit image
     uint16_t *img = MALLOC(uint16_t, raw_width * raw_height);
     DBG("\n\nAllocated image 2x%dx%d=%d", raw_width, raw_height, 2 * raw_width * raw_height);
-    IMG ima = {.data = img, .w = raw_width, .h = raw_height};
+    cc_IMG ima = {.data = img, .w = raw_width, .h = raw_height};
     if(GP->nframes < 1) GP->nframes = 1;
     for(int j = 0; j < GP->nframes; ++j){
         TIMESTAMP("Start next cycle");
@@ -870,18 +823,6 @@ void camstop(){
     }
 }
 
-/**
- * @brief getNbytes - calculate amount of bytes to store bitpix (1/2)
- * @param image - image
- * @return 1 for bitpix<8 or 2
- */
-int getNbytes(IMG *image){
-    int n = (image->bitpix + 7) / 8;
-    if(n < 1) n = 1;
-    if(n > 2) n = 2;
-    return n;
-}
-
 #ifdef IMAGEVIEW
 #define NFRM        (10)
 void framerate(){
@@ -902,7 +843,7 @@ static volatile int exitgrab = FALSE;
 static volatile size_t lastgrabno = 0;
 static void *grabnext(void *arg){
     FNAME();
-    IMG *ima = (IMG*) arg;
+    cc_IMG *ima = (cc_IMG*) arg;
     do{
         if(exitgrab) return NULL;
         TIMESTAMP("Start next exp");
@@ -913,7 +854,7 @@ static void *grabnext(void *arg){
             usleep(10000);
             continue;
         }
-        capture_status cs = CAPTURE_ABORTED;
+        cc_capture_status cs = CAPTURE_ABORTED;
         TIMESTAMP("Poll");
         while(camera->pollcapture(&cs, NULL)){
             if(cs != CAPTURE_PROCESS) break;
@@ -933,10 +874,10 @@ static void *grabnext(void *arg){
 
 /**
  * @brief ccdcaptured - get new image data for viewer
- * @param img - pointer to IMG* (if IMG* is NULL, will be allocated here)
+ * @param img - pointer to cc_IMG* (if cc_IMG* is NULL, will be allocated here)
  * @return TRUE if new image available
  */
-int ccdcaptured(IMG **imgptr){
+int ccdcaptured(cc_IMG **imgptr){
     if(!imgptr) return FALSE;
     //TIMESTAMP("ccdcaptured() start");
     static pthread_t grabthread = 0;
@@ -952,14 +893,14 @@ int ccdcaptured(IMG **imgptr){
         DBG("OK");
         return FALSE;
     }
-    frameformat fmt = camera->geometry;
+    cc_frameformat fmt = camera->geometry;
     int raw_width = fmt.w / GP->hbin,  raw_height = fmt.h / GP->vbin;
-    IMG *ima = NULL;
+    cc_IMG *ima = NULL;
     if(*imgptr && ((*imgptr)->w != raw_width || (*imgptr)->h != raw_height)) FREE(*imgptr);
     if(!*imgptr){
         uint16_t *img = MALLOC(uint16_t, raw_width * raw_height);
         DBG("\n\nAllocated image 2x%dx%d=%d", raw_width, raw_height, 2 * raw_width * raw_height);
-        ima = MALLOC(IMG, 1);
+        ima = MALLOC(cc_IMG, 1);
         ima->data = img;
         ima->w = raw_width;
         ima->h = raw_height;
@@ -987,3 +928,45 @@ int ccdcaptured(IMG **imgptr){
     return FALSE;
 }
 #endif
+
+// common part of client-server
+#include "client.h"
+#include "server.h"
+/**
+ * @brief start_socket - create socket and run client or server
+ * @param isserver  - TRUE for server, FALSE for client
+ * @return 0 if OK
+ */
+int start_socket(int isserver){
+    char *path = NULL;
+    int isnet = 0;
+    if(GP->path) path = GP->path;
+    else if(GP->port){ path = GP->port; isnet = 1; }
+    else ERRX("Point network port or UNIX-socket path");
+    int sock = cc_open_socket(isserver, path, isnet), imsock = -1;
+    if(sock < 0){
+        LOGERR("Can't open socket");
+        ERRX("start_socket(): can't open socket");
+    }
+    if(isserver){
+        imsock = cc_open_socket(TRUE, GP->imageport, 2); // image socket should be networked
+        server(sock, imsock);
+    }else{
+#ifdef IMAGEVIEW
+        if(GP->showimage){
+            if(!GP->viewer && GP->exptime < 0.00001) ERRX("Need exposition time!");
+            init_grab_sock(sock);
+            viewer(sockcaptured); // start viewer with socket client parser
+            DBG("done");
+        }else
+#endif
+            client(sock);
+    }
+    DBG("Close socket");
+    close(sock);
+    if(isserver){
+        close(imsock);
+        signals(0);
+    }
+    return 0;
+}

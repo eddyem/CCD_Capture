@@ -24,10 +24,10 @@
 #include <string.h>
 #include <usefull_macros.h>
 
-#include "basestructs.h"
+#include "ccdcapture.h"
 #include "omp.h"
 
-extern Camera camera;
+extern cc_Camera camera;
 
 static fc2Context context;
 static fc2PGRGuid guid;
@@ -176,7 +176,7 @@ static int getbin(int *binh, int *binv){
     return TRUE;
 }
 
-static int getformat(frameformat *fmt){
+static int getformat(cc_frameformat *fmt){
     if(!fmt) return FALSE;
     unsigned int packsz; float pc;
     fc2Format7ImageSettings f7;
@@ -209,7 +209,7 @@ static int getgeom(){
     return TRUE;
 }
 
-static int geometrylimits(frameformat *max, frameformat *step){
+static int geometrylimits(cc_frameformat *max, cc_frameformat *step){
     FNAME();
     if(!isopened || !max || !step) return FALSE;
     fc2Format7Info f = {.mode = FC2_MODE_0};
@@ -247,7 +247,7 @@ static int setdevno(int N){
 }
 
 // stub function: the capture process is blocking
-static int pollcapt(capture_status *st, float *remain){
+static int pollcapt(cc_capture_status *st, float *remain){
     if(st) *st = CAPTURE_READY;
     if(remain) *remain = 0.f;
     return TRUE;
@@ -287,7 +287,7 @@ rtn:
     return ret;
 }
 
-static int capture(IMG *ima){
+static int capture(cc_IMG *ima){
     FNAME();
     if(canceled) return FALSE;
     if(!ima || !ima->data || !isopened) return FALSE;
@@ -368,7 +368,7 @@ static int setgain(float e){
     return TRUE;
 }
 
-static int changeformat(frameformat *fmt){
+static int changeformat(cc_frameformat *fmt){
     FNAME();
     if(!isopened) return FALSE;
     DBG("set geom %dx%d (off: %dx%d)", fmt->w, fmt->h, fmt->xoff, fmt->yoff);
@@ -390,7 +390,7 @@ static int changeformat(frameformat *fmt){
 }
 
 static int setbitdepth(int i){
-    frameformat fmt;
+    cc_frameformat fmt;
     if(!getformat(&fmt)) return FALSE;
     int o16bit = is16bit;
     if(i == 0) is16bit = FALSE; // 8 bit
@@ -428,10 +428,10 @@ static int gett(float *t){
     return getfloat(FC2_TEMPERATURE, t);
 }
 
-static int setfanspd(_U_ fan_speed s){
+static int setfanspd(_U_ cc_fan_speed s){
     return FALSE;
 }
-static int shutter(_U_ shutter_op cmd){
+static int shutter(_U_ cc_shutter_op cmd){
     return FALSE;
 }
 
@@ -450,7 +450,7 @@ static int ipfalse(_U_ int *i){ return FALSE; }
 /*
  * Global objects: camera, focuser and wheel
  */
-Camera camera = {
+cc_Camera camera = {
     .check = connect,
     .close = disconnect,
     .pollcapture = pollcapt,

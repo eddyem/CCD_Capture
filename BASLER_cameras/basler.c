@@ -22,11 +22,11 @@
 #include <string.h>
 #include <usefull_macros.h>
 
-#include "basestructs.h"
+#include "ccdcapture.h"
 #include "omp.h"
 //#include "socket.h" // timestamp
 
-extern Camera camera;
+extern cc_Camera camera;
 
 static PYLON_DEVICE_HANDLE hDev;
 static int isopened = FALSE, is16bit = FALSE;
@@ -247,7 +247,7 @@ static int getgeom(){
     return TRUE;
 }
 
-static int geometrylimits(frameformat *max, frameformat *step){
+static int geometrylimits(cc_frameformat *max, cc_frameformat *step){
     FNAME();
     if(!isopened || !max || !step) return FALSE;
     int64_values i;
@@ -329,13 +329,13 @@ static int setbitdepth(int depth){
 }
 
 // stub function: the capture process is blocking
-static int pollcapt(capture_status *st, float *remain){
+static int pollcapt(cc_capture_status *st, float *remain){
     if(st) *st = CAPTURE_READY;
     if(remain) *remain = 0.f;
     return TRUE;
 }
 
-static int capture(IMG *ima){
+static int capture(cc_IMG *ima){
     FNAME();
     //double __t0 = dtime();
     if(!ima || !ima->data || !imgBuf || !isopened) return FALSE;
@@ -424,7 +424,7 @@ static int setgain(float e){
     return TRUE;
 }
 
-static int changeformat(frameformat *fmt){
+static int changeformat(cc_frameformat *fmt){
     FNAME();
     if(!isopened) return FALSE;
     if(!getbin(NULL, NULL)){curhbin = 1; curvbin = 1;}
@@ -484,10 +484,10 @@ static int gett(float *t){
     return TRUE;
 }
 
-static int setfanspd(_U_ fan_speed s){
+static int setfanspd(_U_ cc_fan_speed s){
     return FALSE;
 }
-static int shutter(_U_ shutter_op cmd){
+static int shutter(_U_ cc_shutter_op cmd){
     return FALSE;
 }
 
@@ -501,7 +501,7 @@ static void vstub(){ return ;}
 /*
  * Global objects: camera, focuser and wheel
  */
-Camera camera = {
+cc_Camera camera = {
     .check = connect,
     .close = disconnect,
     .pollcapture = pollcapt,

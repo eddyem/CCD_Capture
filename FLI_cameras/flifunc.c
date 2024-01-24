@@ -21,11 +21,11 @@
 #include <string.h>
 #include <usefull_macros.h>
 
-#include "basestructs.h"
+#include "ccdcapture.h"
 
-extern Camera camera;
-extern Focuser focuser;
-extern Wheel wheel;
+extern cc_Camera camera;
+extern cc_Focuser focuser;
+extern cc_Wheel wheel;
 
 #define LIBVERSIZ 1024
 
@@ -63,7 +63,7 @@ static char camname[BUFSIZ] = {0}, whlname[BUFSIZ], focname[BUFSIZ];
 static long fli_err, tmpl;
 static cam_t *camz = NULL, *whlz = NULL, *focz = NULL;
 static flidev_t camdev = -1, whldev = -1, focdev = -1;
-static capture_status capStatus = CAPTURE_NO;
+static cc_capture_status capStatus = CAPTURE_NO;
 static int curhbin = 1, curvbin = 1;
 static long filterpos = -1, filtermax = -1;  // filter position
 static long focuserpos = -1, focmaxpos = -1; // focuser position
@@ -135,7 +135,7 @@ static int fli_findCCD(){
             return FALSE;
         }
         for(int i = 0; i < camera.Ndevices; i++){
-            DBG("Camera '%s', domain %s", camz[i].name, camz[i].dname);
+            DBG("cc_Camera '%s', domain %s", camz[i].name, camz[i].dname);
         }
     }
     return TRUE;
@@ -174,19 +174,19 @@ static int fli_setActiceCam(int n){
     TRYFUNC(FLIGetVisibleArea, camdev, &x0, &y0, &x1, &y1);
     if(!fli_err){
         DBG("Field of view: (%ld, %ld)(%ld, %ld)", x0, y0, x1, y1);
-        camera.field = (frameformat){.w = x1 - x0, .h = y1 - y0, .xoff = x0, .yoff = y0};
+        camera.field = (cc_frameformat){.w = x1 - x0, .h = y1 - y0, .xoff = x0, .yoff = y0};
     }
     TRYFUNC(FLIGetArrayArea, camdev, &x0, &y0, &x1, &y1);
     if(!fli_err){
         DBG("Array field: (%ld, %ld)(%ld, %ld)", x0, y0, x1, y1);
-        camera.array = (frameformat){.w = x1 - x0, .h = y1 - y0, .xoff = x0, .yoff = y0};
+        camera.array = (cc_frameformat){.w = x1 - x0, .h = y1 - y0, .xoff = x0, .yoff = y0};
     }
     return TRUE;
 }
 
-static int fli_geomlimits(frameformat *l, frameformat *s){
+static int fli_geomlimits(cc_frameformat *l, cc_frameformat *s){
     if(l) *l = camera.array;
-    if(s) *s = (frameformat){.w = 1, .h = 1, .xoff = 1, .yoff = 1};
+    if(s) *s = (cc_frameformat){.w = 1, .h = 1, .xoff = 1, .yoff = 1};
     return TRUE;
 }
 
@@ -203,7 +203,7 @@ static int fli_findFocuser(){
             return FALSE;
         }
         for(int i = 0; i < focuser.Ndevices; i++){
-            DBG("Focuser '%s', domain %s", focz[i].name, focz[i].dname);
+            DBG("cc_Focuser '%s', domain %s", focz[i].name, focz[i].dname);
         }
     }
     return TRUE;
@@ -237,7 +237,7 @@ static int fli_setActiceFocuser(int n){
         DBG("Not found");
         return FALSE;
     }
-    DBG("Focuser: %s", focname);
+    DBG("cc_Focuser: %s", focname);
 #ifdef EBUG
     TRYFUNC(FLIGetHWRevision, focdev, &tmpl);
     if(!fli_err) DBG("HW revision: %ld", tmpl);
@@ -315,7 +315,7 @@ static int fli_findWheel(){
         return FALSE;
     }
     for(int i = 0; i < wheel.Ndevices; i++){
-        DBG("Wheel '%s', domain %s", whlz[i].name, whlz[i].dname);
+        DBG("cc_Wheel '%s', domain %s", whlz[i].name, whlz[i].dname);
     }
     return TRUE;
 }
@@ -350,7 +350,7 @@ static int fli_setActiceWheel(int n){
         return FALSE;
     }
     TRYFUNC(FLIGetModel, whldev, whlname, BUFSIZ);
-    DBG("Wheel: %s", whlname);
+    DBG("cc_Wheel: %s", whlname);
 #ifdef EBUG
     TRYFUNC(FLIGetHWRevision, whldev, &tmpl);
     if(!fli_err) DBG("HW revision: %ld", tmpl);
@@ -422,7 +422,7 @@ static int fli_startexp(){
     return TRUE;
 }
 
-static int fli_pollcapt(capture_status *st, float *remain){
+static int fli_pollcapt(cc_capture_status *st, float *remain){
     static int errctr = 0;
     if(capStatus == CAPTURE_READY){
         DBG("Capture ends");
@@ -460,7 +460,7 @@ retn:
     return TRUE;
 }
 
-static int fli_capt(IMG *ima){
+static int fli_capt(cc_IMG *ima){
     if(!ima || !ima->data) return FALSE;
     for(int row = 0; row < ima->h; row++){
         void *ptr = (void*)((is16bit) ? ((uint16_t*)ima->data) + row * ima->w : ((uint8_t*)ima->data) + row * ima->w);
@@ -492,7 +492,7 @@ static int fli_getbin(int *h, int *v){
     return TRUE;
 }
 
-static int fli_setgeometry(frameformat *f){
+static int fli_setgeometry(cc_frameformat *f){
     if(!f) return FALSE;
     TRYFUNC(FLISetImageArea, camdev, f->xoff, f->yoff,
             f->xoff + f->w/curhbin, f->yoff + f->h/curvbin);
@@ -560,7 +560,7 @@ static void fli_cancel(){
     TRYFUNC(FLIEndExposure, camdev);
 }
 
-static int fli_shutter(shutter_op cmd){
+static int fli_shutter(cc_shutter_op cmd){
     flishutter_t shtr = FLI_SHUTTER_CLOSE;
     switch(cmd){
         case SHUTTER_OPEN:
@@ -633,7 +633,7 @@ static int fli_setfastspeed(int fast){
     return TRUE;
 }
 
-static int fli_setfanspd(fan_speed s){
+static int fli_setfanspd(cc_fan_speed s){
     long sp = (s == FAN_OFF) ? FLI_FAN_SPEED_OFF : FLI_FAN_SPEED_ON;
     TRYFUNC(FLISetFanSpeed, camdev, sp);
     if(fli_err) return FALSE;
@@ -667,7 +667,7 @@ static int fli_fpfalse(_U_ float *f){ return FALSE; }
 /*
  * Global objects: camera, focuser and wheel
  */
-__attribute__ ((visibility("default"))) Camera camera = {
+__attribute__ ((visibility("default"))) cc_Camera camera = {
     .check = fli_findCCD,
     .close = fli_closecam,
     .pollcapture = fli_pollcapt,
@@ -703,7 +703,7 @@ __attribute__ ((visibility("default"))) Camera camera = {
     .getio = fli_getio,
 };
 
-__attribute__ ((visibility("default"))) Focuser focuser = {
+__attribute__ ((visibility("default"))) cc_Focuser focuser = {
     .check = fli_findFocuser,
     .setDevNo = fli_setActiceFocuser,
     .close = fli_closefocuser,
@@ -716,7 +716,7 @@ __attribute__ ((visibility("default"))) Focuser focuser = {
     .setAbsPos = fli_fgoto,
 };
 
-__attribute__ ((visibility("default"))) Wheel wheel = {
+__attribute__ ((visibility("default"))) cc_Wheel wheel = {
     .check = fli_findWheel,
     .setDevNo = fli_setActiceWheel,
     .close = fli_closewheel,

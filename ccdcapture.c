@@ -17,6 +17,7 @@
  */
 
 #include <ctype.h> // isspace
+#include <dlfcn.h>  // dlopen/close
 #include <fcntl.h>
 #include <netdb.h>
 #include <stdio.h>
@@ -38,15 +39,17 @@
 double __t0 = 0.;
 #endif
 
+static int ntries = 2;  // amount of tries to send messages controlling the answer
+
 /**
- * @brief open_socket - create socket and open it
+ * @brief cc_open_socket - create socket and open it
  * @param isserver  - TRUE for server, FALSE for client
  * @param path      - UNIX-socket path or local INET socket port
  * @param isnet     - 1/2 for INET socket (1 - localhost, 2 - network), 0 for UNIX
  * @return socket FD or -1 if failed
  */
-int open_socket(int isserver, char *path, int isnet){
-    //DBG("isserver=%d, path=%s, isnet=%d", isserver, path, isnet);
+int cc_open_socket(int isserver, char *path, int isnet){
+    DBG("isserver=%d, path=%s, isnet=%d", isserver, path, isnet);
     if(!path) return 1;
     //DBG("path/port: %s", path);
     int sock = -1;
@@ -59,10 +62,11 @@ int open_socket(int isserver, char *path, int isnet){
         hints.ai_flags = AI_PASSIVE;
         const char *node = (isnet == 2) ? NULL : "127.0.0.1";
         if(getaddrinfo(node, path, &hints, &res) != 0){
-            ERR("getaddrinfo");
+            WARN("getaddrinfo");
+            return -1;
         }
     }else{
-        //DBG("UNIX socket");
+        DBG("UNIX socket");
         char apath[128];
         if(*path == 0){
             DBG("convert name");
@@ -73,6 +77,7 @@ int open_socket(int isserver, char *path, int isnet){
             apath[0] = 0;
             strncpy(apath+1, path+2, 126);
         }else strcpy(apath, path);
+        //unlink(apath);
         unaddr.sun_family = AF_UNIX;
         hints.ai_addr = (struct sockaddr*) &unaddr;
         hints.ai_addrlen = sizeof(unaddr);
@@ -122,47 +127,8 @@ int open_socket(int isserver, char *path, int isnet){
     return sock;
 }
 
-/**
- * @brief start_socket - create socket and run client or server
- * @param isserver  - TRUE for server, FALSE for client
- * @return 0 if OK
- */
-int start_socket(int isserver){
-    char *path = NULL;
-    int isnet = 0;
-    if(GP->path) path = GP->path;
-    else if(GP->port){ path = GP->port; isnet = 1; }
-    else ERRX("Point network port or UNIX-socket path");
-    int sock = open_socket(isserver, path, isnet), imsock = -1;
-    if(sock < 0){
-        LOGERR("Can't open socket");
-        ERRX("start_socket(): can't open socket");
-    }
-    if(isserver){
-        imsock = open_socket(TRUE, GP->imageport, 2); // image socket should be networked
-        server(sock, imsock);
-    }else{
-#ifdef IMAGEVIEW
-        if(GP->showimage){
-            if(!GP->viewer && GP->exptime < 0.00001) ERRX("Need exposition time!");
-            init_grab_sock(sock);
-            viewer(sockcaptured); // start viewer with socket client parser
-            DBG("done");
-        }else
-#endif
-            client(sock);
-    }
-    DBG("Close socket");
-    close(sock);
-    if(isserver){
-        close(imsock);
-        signals(0);
-    }
-    return 0;
-}
-
-// send image data to client
-int senddata(int fd, void *data, size_t l){
+// send data through the socket
+int cc_senddata(int fd, void *data, size_t l){
     DBG("fd=%d, l=%zd", fd, l);
     if(fd < 1 || !data || l < 1) return TRUE; // empty message
     DBG("send new data (size=%zd) to fd %d", l, fd);
@@ -174,13 +140,16 @@ int senddata(int fd, void *data, size_t l){
         return FALSE;
     }
     DBG("success");
-    if(globlog)  LOGDBG("SEND image (size=%d) to fd %d", l, fd);
+    if(globlog)  LOGDBG("SEND data (size=%d) to fd %d", l, fd);
     return TRUE;
 }
 
 // simple wrapper over write: add missed newline and log data
-int sendmessage(int fd, const char *msg, int l){
+int cc_sendmessage(int fd, const char *msg, int l){
+    FNAME();
     if(fd < 1 || !msg || l < 1) return TRUE; // empty message
+    static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER; // thread safe
+    pthread_mutex_lock(&mutex);
     static char *tmpbuf = NULL;
     static int buflen = 0;
     if(l + 1 > buflen){
@@ -193,6 +162,7 @@ int sendmessage(int fd, const char *msg, int l){
     if(l != send(fd, tmpbuf, l, MSG_NOSIGNAL)){
         WARN("write()");
         LOGWARN("write()");
+        pthread_mutex_unlock(&mutex);
         return FALSE;
     }else{
         //DBG("success");
@@ -201,35 +171,51 @@ int sendmessage(int fd, const char *msg, int l){
             LOGDBG("SEND '%s'", tmpbuf);
         }
     }
+    pthread_mutex_unlock(&mutex);
     return TRUE;
 }
-int sendstrmessage(int fd, const char *msg){
-    if(fd < 1 || !msg) return FALSE;
+int cc_sendstrmessage(int fd, const char *msg){
+    FNAME();
+    if(fd < 1 || !msg) return TRUE; // empty message
     int l = strlen(msg);
-    return sendmessage(fd, msg, l);
+    return cc_sendmessage(fd, msg, l);
 }
 
-// text messages for `hresult`
-static const char *resmessages[] = {
+// text messages for `cc_hresult`
+// WARNING! You should initialize ABSOLUTELY ALL members of `cc_hresult` or some pointers would give segfault
+static const char *resmessages[RESULT_NUM] = {
     [RESULT_OK] = "OK",
     [RESULT_BUSY] = "BUSY",
     [RESULT_FAIL] = "FAIL",
-    [RESULT_BADKEY] = "BADKEY",
     [RESULT_BADVAL] = "BADVAL",
-    [RESULT_SILENCE] = "",
+    [RESULT_BADKEY] = "BADKEY",
+//    [RESULT_SILENCE] = NULL, // nothing to send
+//    [RESULT_DISCONNECTED] = NULL, // not to send
 };
 
-const char *hresult2str(hresult r){
+const char *cc_hresult2str(cc_hresult r){
+    /*red("ALL results:\n");
+    for(cc_hresult res = 0; res < RESULT_NUM; ++res){
+        printf("%d: %s\n", res, resmessages[res]);
+    }*/
     if(r < 0 || r >= RESULT_NUM) return "BADRESULT";
     return resmessages[r];
 }
 
+cc_hresult cc_str2hresult(const char *str){
+    for(cc_hresult res = 0; res < RESULT_NUM; ++res){
+        if(!resmessages[res]) continue;
+        if(0 == strcmp(resmessages[res], str)) return res;
+    }
+    return RESULT_NUM; // didn't find
+}
+
 /**
- * @brief get_keyval - get value of `key = val`
+ * @brief cc_get_keyval - get value of `key = val`
  * @param keyval (io) - pair `key = val`, return `key`
  * @return `val`
  */
-char *get_keyval(char *keyval){
+char *cc_get_keyval(char *keyval){
     //DBG("Got string %s", keyval);
     // remove starting spaces in key
     while(isspace(*keyval)) ++keyval;
@@ -253,7 +239,7 @@ char *get_keyval(char *keyval){
  * @param fd - file descriptor
  * @return 0 in case of timeout, 1 in case of fd have data, -1 if error
  */
-int canberead(int fd){
+int cc_canberead(int fd){
     fd_set fds;
     struct timeval timeout;
     timeout.tv_sec = 0;
@@ -279,19 +265,56 @@ int canberead(int fd){
 }
 
 /**
- * @brief getshm - get shared memory segment for image
+ * @brief cc_setNtries, cc_getNtries - ntries setter and getter
+ * @param n - new amount of tries
+ * @return cc_setNtries returns TRUE if succeed, cc_getNtries returns current ntries value
+ */
+int cc_setNtries(int n){
+    if(n > 1000 || n < 1) return FALSE;
+    ntries = n;
+    return TRUE;
+}
+int cc_getNtries(){return ntries;}
+
+static cc_hresult sendstrN(int fd, const char *str){
+    for(int i = 0; i < ntries; ++i){
+        if(!cc_sendstrmessage(fd, str)) continue;
+        double t0 = dtime();
+        while(dtime() - t0 < CC_ANSWER_TIMEOUT){
+            // TODO: continue the code
+        }
+    }
+    return FALSE;
+}
+
+/**
+ * @brief cc_sendint - send integer value over socket (make 2 tries)
+ * @param fd - socket fd
+ * @param cmd - setter
+ * @param val - value
+ * @return answer received
+ */
+cc_hresult cc_sendint(int fd, const char *cmd, int val){
+#define BBUFS   (63)
+    char buf[BBUFS+1];
+    snprintf(buf, BBUFS, "%s=%d\n", cmd, val);
+    return sendstrN(fd, buf);
+}
+
+/**
+ * @brief cc_getshm - get shared memory segment for image
  * @param imsize - size of image data (in bytes): if !=0 allocate as server, else - as client (readonly)
  * @return pointer to shared memory region or NULL if failed
  */
-IMG *getshm(key_t key, size_t imsize){
-    size_t shmsize = sizeof(IMG) + imsize;
+cc_IMG *cc_getshm(key_t key, size_t imsize){
+    size_t shmsize = sizeof(cc_IMG) + imsize;
     shmsize = 1024 * (1 + shmsize / 1024);
     DBG("Allocate %zd bytes in shared memory", shmsize);
     int shmid = -1;
     int flags = (imsize) ? IPC_CREAT | 0666 : 0;
     shmid = shmget(key, 0, flags);
-    if(shmid < 0){
-        if(imsize) WARN("Can't get shared memory segment %d", key); // suppress warnings for client
+    if(shmid < 0 && imsize == 0){ // no SHM segment for client
+        WARN("Can't get shared memory segment %d", key);
         return NULL;
     }
     if(imsize){ // check if segment exists and its size equal to needs
@@ -307,21 +330,146 @@ IMG *getshm(key_t key, size_t imsize){
         }
     }
     flags = (imsize) ? 0 : SHM_RDONLY; // client opens memory in readonly mode
-    IMG *ptr = shmat(shmid, NULL, flags);
+    cc_IMG *ptr = shmat(shmid, NULL, flags);
     if(ptr == (void*)-1){
         if(imsize) WARN("Can't attach SHM segment %d", key);
         return NULL;
     }
     if(!imsize){
-        if(ptr->MAGICK != SHM_MAGIC){
+        if(ptr->MAGICK != CC_SHM_MAGIC){
             WARNX("Shared memory %d isn't belongs to image server", key);
             shmdt(ptr);
             return NULL;
         }
         return ptr;
     }
-    bzero(ptr, sizeof(IMG));
-    ptr->data = (void*)((uint8_t*)ptr + sizeof(IMG));
-    ptr->MAGICK = SHM_MAGIC;
+    bzero(ptr, sizeof(cc_IMG));
+    ptr->data = (void*)((uint8_t*)ptr + sizeof(cc_IMG));
+    ptr->MAGICK = CC_SHM_MAGIC;
     return ptr;
+}
+
+
+// find plugin
+static void *open_plugin(const char *name){
+    DBG("try to open lib %s", name);
+    void* dlh = dlopen(name, RTLD_NOLOAD); // library may be already opened
+    if(!dlh){
+        DBG("Not loaded - load");
+        dlh = dlopen(name, RTLD_NOW);
+    }
+    if(!dlh){
+        WARNX(_("Can't find plugin %s: %s"), name, dlerror());
+        return NULL;
+    }
+    return dlh;
+}
+
+cc_Focuser *open_focuser(const char *pluginname){
+    FNAME();
+    void* dlh = open_plugin(pluginname);
+    if(!dlh) return NULL;
+    cc_Focuser* f = (cc_Focuser*) dlsym(dlh, "focuser");
+    if(!f){
+        WARNX(_("Can't find focuser in plugin %s: %s"), pluginname, dlerror());
+        return NULL;
+    }
+    return f;
+}
+cc_Camera *open_camera(const char *pluginname){
+    FNAME();
+    void* dlh = open_plugin(pluginname);
+    if(!dlh) return NULL;
+    cc_Camera *c = (cc_Camera*) dlsym(dlh, "camera");
+    if(!c){
+        WARNX(_("Can't find camera in plugin %s: %s"), pluginname, dlerror());
+        return NULL;
+    }
+    return c;
+}
+cc_Wheel *open_wheel(const char *pluginname){
+    FNAME();
+    void* dlh = open_plugin(pluginname);
+    if(!dlh) return NULL;
+    cc_Wheel *w = (cc_Wheel*) dlsym(dlh, "wheel");
+    if(!w){
+        WARNX(_("Can't find wheel in plugin %s: %s"), pluginname, dlerror());
+        return NULL;
+    }
+    return w;
+}
+
+/**
+ * @brief cc_getNbytes - calculate amount of bytes to store bitpix (1/2)
+ * @param image - image
+ * @return 1 for bitpix<8 or 2
+ */
+int cc_getNbytes(cc_IMG *image){
+    int n = (image->bitpix + 7) / 8;
+    if(n < 1) n = 1;
+    if(n > 2) n = 2;
+    return n;
+}
+
+cc_charbuff *cc_bufnew(size_t size){
+    DBG("Allocate new buffer with size %zd", size);
+    cc_charbuff *b = MALLOC(cc_charbuff, 1);
+    b->bufsize = size;
+    b->buf = MALLOC(char, size);
+    return b;
+}
+
+void cc_bufdel(cc_charbuff **buf){
+    FREE((*buf)->buf);
+    FREE(*buf);
+}
+
+/**
+ * @brief cc_read2buf - try to read next data portion from POLLED socket
+ * @param fd - socket fd to read from
+ * @param buf - buffer to read
+ * @return FALSE in case of buffer overflow or client disconnect, TRUE if got 0..n bytes of data
+ */
+int cc_read2buf(int fd, cc_charbuff *buf){
+    int ret = FALSE;
+    if(!buf) return FALSE;
+    pthread_mutex_lock(&buf->mutex);
+    if(!buf->buf || buf->buflen >= buf->bufsize) goto ret;
+    size_t maxlen = buf->bufsize - buf->buflen;
+    ssize_t rd = read(fd, buf->buf + buf->buflen, maxlen);
+    if(rd <= 0) goto ret;
+    DBG("got %zd bytes", rd);
+    if(rd) buf->buflen += rd;
+    ret = TRUE;
+ret:
+    pthread_mutex_unlock(&buf->mutex);
+    return ret;
+}
+
+/**
+ * @brief cc_getline - read '\n'-terminated string from `b` and substitute '\n' by 0
+ * @param b - input charbuf
+ * @param str (allocated outside) - string-receiver
+ * @param len - length of `str` (including terminating zero)
+ * @return amount of bytes read
+ */
+size_t cc_getline(cc_charbuff *b, char *str, size_t len){
+    if(!b) return 0;
+    size_t idx = 0;
+    pthread_mutex_lock(&b->mutex);
+    if(!b->buf) goto ret;
+    --len; // for terminating zero
+    char *ptr = b->buf;
+    for(; idx < b->buflen; ++idx) if(*ptr++ == '\n') break;
+    if(idx == b->buflen) goto ret;
+    size_t minlen = (len > idx) ? idx : len; // prevent `str` overflow
+    memcpy(str, b->buf, minlen);
+    str[minlen] = 0;
+    if(++idx < b->buflen){ // move rest of data in buffer to beginning
+        memmove(b->buf, b->buf+idx, b->buflen-idx);
+        b->buflen -= idx;
+    }else b->buflen = 0;
+ret:
+    pthread_mutex_unlock(&b->mutex);
+    return idx;
 }

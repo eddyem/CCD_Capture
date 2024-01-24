@@ -25,12 +25,12 @@
 #include <unistd.h>
 #include <usefull_macros.h>
 
-#include "basestructs.h"
+#include "ccdcapture.h"
 #include "omp.h"
 
-extern Camera camera;
-extern Focuser focuser;
-extern Wheel wheel;
+extern cc_Camera camera;
+extern cc_Focuser focuser;
+extern cc_Wheel wheel;
 
 static const int filtermax = 5;
 static const float focmaxpos = 10.;
@@ -38,11 +38,11 @@ static int curhbin = 1, curvbin = 1;
 static int filterpos = 0;
 static float focuserpos = 1., brightness = 1., gain = 0.;
 static float camtemp = -30., exptime = 0.;
-static capture_status capstat = CAPTURE_NO;
+static cc_capture_status capstat = CAPTURE_NO;
 static double texpstart = 0.;
 static uint8_t bitpix = 16; // bit depth: 8 or 16
 
-static int campoll(capture_status *st, float *remain){
+static int campoll(cc_capture_status *st, float *remain){
     if(capstat != CAPTURE_PROCESS){
         if(st) *st = capstat;
         if(remain) *remain = 0.;
@@ -66,7 +66,7 @@ static int startexp(){
     return TRUE;
 }
 
-static int camcapt(IMG *ima){
+static int camcapt(cc_IMG *ima){
     static int n = 0;
     if(!ima || !ima->data) return FALSE;
 #ifdef EBUG
@@ -163,11 +163,11 @@ static int camsetbin(int h, int v){
     return TRUE;
 }
 
-static int camshutter(_U_ shutter_op s){
+static int camshutter(_U_ cc_shutter_op s){
     return TRUE;
 }
 
-static int camsetgeom(frameformat *f){
+static int camsetgeom(cc_frameformat *f){
     if(!f) return FALSE;
     camera.geometry = *f;
     return TRUE;
@@ -183,9 +183,9 @@ static int camgmg(float *mg){
     return TRUE;
 }
 
-static int camggl(frameformat *max, frameformat *step){
+static int camggl(cc_frameformat *max, cc_frameformat *step){
     if(max) *max = camera.array;
-    if(step) *step = (frameformat){1,1,1,1};
+    if(step) *step = (cc_frameformat){1,1,1,1};
     return TRUE;
 }
 
@@ -200,7 +200,7 @@ static int camgetio(int *io){
     return TRUE;
 }
 
-static int camfan(_U_ fan_speed spd){return TRUE;}
+static int camfan(_U_ cc_fan_speed spd){return TRUE;}
 
 static int focsetpos(_U_ int a, float n){
     if(n < 0. || n > focmaxpos) return FALSE;
@@ -267,7 +267,7 @@ static int istub(_U_ int N){return TRUE;}
 /*
  * Global objects: camera, focuser and wheel
  */
-__attribute__ ((visibility("default"))) Camera camera = {
+__attribute__ ((visibility("default"))) cc_Camera camera = {
     .check = stub,
     .Ndevices = 1,
     .close = vstub,
@@ -305,12 +305,12 @@ __attribute__ ((visibility("default"))) Camera camera = {
     .getio = camgetio,
     .pixX = 10.,
     .pixY = 10.,
-    .field = (frameformat){.h = 1024, .w = 1024, .xoff = 10, .yoff = 10},
-    .array = (frameformat){.h = 1050, .w = 1050, .xoff = 0, .yoff = 0},
+    .field = (cc_frameformat){.h = 1024, .w = 1024, .xoff = 10, .yoff = 10},
+    .array = (cc_frameformat){.h = 1050, .w = 1050, .xoff = 0, .yoff = 0},
     .geometry = {0},
 };
 
-__attribute__ ((visibility("default"))) Focuser focuser = {
+__attribute__ ((visibility("default"))) cc_Focuser focuser = {
     .check = stub,
     .Ndevices = 1,
     .close = vstub,
@@ -326,7 +326,7 @@ __attribute__ ((visibility("default"))) Focuser focuser = {
     .getMinPos = focmp,
 };
 
-__attribute__ ((visibility("default"))) Wheel wheel = {
+__attribute__ ((visibility("default"))) cc_Wheel wheel = {
     .check = stub,
     .Ndevices = 1,
     .close = vstub,

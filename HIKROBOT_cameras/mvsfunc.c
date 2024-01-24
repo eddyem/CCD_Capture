@@ -22,20 +22,20 @@
 #include <string.h>
 #include <usefull_macros.h>
 
-#include "basestructs.h"
+#include "ccdcapture.h"
 #include "omp.h"
 
 #ifndef FLT_EPSILON
 #define FLT_EPSILON 1.19209290E-07F
 #endif
 
-extern Camera camera;
+extern cc_Camera camera;
 
 static MV_CC_DEVICE_INFO_LIST stDeviceList;
 static void *handle = NULL;
 static char camname[BUFSIZ] = {0};
 //static long cam_err, tmpl;
-static capture_status capStatus = CAPTURE_NO;
+static cc_capture_status capStatus = CAPTURE_NO;
 static int curhbin = 1, curvbin = 1;
 static double starttime = 0.;   // time when exposure started
 static float exptime = 0.;      // exposition time (in seconds)
@@ -383,9 +383,9 @@ static int cam_setActiceCam(int n){
     return TRUE;
 }
 
-static int cam_geomlimits(frameformat *l, frameformat *s){
+static int cam_geomlimits(cc_frameformat *l, cc_frameformat *s){
     if(l) *l = camera.array;
-    if(s) *s = (frameformat){.w = 1, .h = 1, .xoff = 1, .yoff = 1};
+    if(s) *s = (cc_frameformat){.w = 1, .h = 1, .xoff = 1, .yoff = 1};
     return TRUE;
 }
 
@@ -400,7 +400,7 @@ static int cam_startexp(){
     return TRUE;
 }
 
-static int cam_pollcapt(capture_status *st, float *remain){
+static int cam_pollcapt(cc_capture_status *st, float *remain){
     if(!handle || !pdata) return FALSE;
     DBG("capStatus = %d", capStatus);
     if(capStatus == CAPTURE_READY){
@@ -442,7 +442,7 @@ retn:
     return TRUE;
 }
 
-static int cam_capt(IMG *ima){
+static int cam_capt(cc_IMG *ima){
     if(!handle || !pdata) return FALSE;
     if(!ima || !ima->data) return FALSE;
     MVCC_ENUMVALUE EnumValue;
@@ -473,7 +473,7 @@ static int cam_modelname(char *buf, int bufsz){
     return TRUE;
 }
 
-static int cam_setgeometry(frameformat *f){
+static int cam_setgeometry(cc_frameformat *f){
     FNAME();
     if(!f || !handle) return FALSE;
     DBG("getbin");
@@ -519,7 +519,7 @@ static void cam_cancel(){
     TRY(StopGrabbing);
 }
 
-static int cam_shutter(_U_ shutter_op cmd){
+static int cam_shutter(_U_ cc_shutter_op cmd){
     return FALSE;
 }
 
@@ -560,7 +560,7 @@ static int cam_setbitdepth(int i){
     return TRUE;
 }
 
-static int cam_setfanspd(_U_ fan_speed s){
+static int cam_setfanspd(_U_ cc_fan_speed s){
     return FALSE;
 }
 
@@ -572,7 +572,7 @@ static int cam_ipfalse(_U_ int *i){ return FALSE; }
 /*
  * Global objects: camera, focuser and wheel
  */
-Camera camera = {
+cc_Camera camera = {
     .check = cam_findCCD,
     .close = cam_closecam,
     .pollcapture = cam_pollcapt,

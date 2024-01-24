@@ -26,11 +26,11 @@
 #include <usefull_macros.h>
 #include <ASICamera2.h>
 
-#include "basestructs.h"
+#include "ccdcapture.h"
 
-extern Camera camera;
-extern Focuser focuser;
-extern Wheel wheel;
+extern cc_Camera camera;
+extern cc_Focuser focuser;
+extern cc_Wheel wheel;
 
 // remove all these after removing stubs!
 // VVV
@@ -82,7 +82,7 @@ static int asi_checkcam(){
     return FALSE;
 }
 
-static int campoll(capture_status *st, float *remain){
+static int campoll(cc_capture_status *st, float *remain){
     if(!st) return FALSE;
     ASI_EXPOSURE_STATUS s;
     if(ASI_SUCCESS != ASIGetExpStatus(caminfo.CameraID, &s)){
@@ -112,7 +112,7 @@ static int campoll(capture_status *st, float *remain){
     return TRUE;
 }
 
-static int camcapt(IMG *ima){
+static int camcapt(cc_IMG *ima){
     if(!ima || !ima->data) return FALSE;
     unsigned char *d = (unsigned char *)ima->data;
     long image_size = ima->h * ima->w * 2;
@@ -160,7 +160,7 @@ static int setdevno(int n){
     if(n > camera.Ndevices - 1 || n < 0) return FALSE;
     asi_closecam();
     if(ASI_SUCCESS != ASIGetCameraProperty(&caminfo, n)) return FALSE;
-    DBG("Camera #%d, name: %s, ID: %d", n, caminfo.Name, caminfo.CameraID);
+    DBG("cc_Camera #%d, name: %s, ID: %d", n, caminfo.Name, caminfo.CameraID);
     DBG("WxH: %ldx%ld, %s", caminfo.MaxWidth, caminfo.MaxHeight, caminfo.IsColorCam == ASI_TRUE ? "color" : "monochrome");
     DBG("Pixel size: %1.1f mkm; gain: %1.2f e/ADU", caminfo.PixelSize, caminfo.ElecPerADU);
     int *sup = caminfo.SupportedBins;
@@ -168,7 +168,7 @@ static int setdevno(int n){
         extrvalues.maxbin = *sup++;
     }
     camera.pixX = camera.pixY = (float)caminfo.PixelSize / 1e6; // um -> m
-    camera.array = (frameformat){.w = caminfo.MaxWidth, .h = caminfo.MaxHeight, .xoff = 0, .yoff = 0};
+    camera.array = (cc_frameformat){.w = caminfo.MaxWidth, .h = caminfo.MaxHeight, .xoff = 0, .yoff = 0};
     camera.field = camera.array; // initial setup (will update later)
     if(ASI_SUCCESS != ASIOpenCamera(caminfo.CameraID)){
         WARNX("Can't open device for camera %s", caminfo.Name);
@@ -332,13 +332,13 @@ static int camsetbin(int h, int v){
 }
 
 // unsupported, but return TRUE if have mechanical shutter
-static int camshutter(_U_ shutter_op s){
+static int camshutter(_U_ cc_shutter_op s){
     if(!caminfo.MechanicalShutter) return FALSE;
     return TRUE;
 }
 
 // set ROI
-static int camsetgeom(frameformat *f){ // w,h, xoff, yoff
+static int camsetgeom(cc_frameformat *f){ // w,h, xoff, yoff
     if(!f) return FALSE;
     int imtype;
     DBG("w: %g, h: %g, bin: %d", (double)f->w / curbin, (double)f->h / curbin, curbin);
@@ -375,10 +375,10 @@ static int camgmg(float *mg){ // get max gain
     return TRUE;
 }
 
-static int camggl(frameformat *max, frameformat *step){ // get geometry limits
+static int camggl(cc_frameformat *max, cc_frameformat *step){ // get geometry limits
     DBG("array: %dx%d, off: %dx%d", camera.array.w, camera.array.h, camera.array.xoff, camera.array.yoff);
     if(max) *max = camera.array;
-    if(step) *step = (frameformat){1,1,1,1};
+    if(step) *step = (cc_frameformat){1,1,1,1};
     return TRUE;
 }
 
@@ -405,7 +405,7 @@ static int camgetio(_U_ int *io){ // not supported
     return FALSE;
 }
 
-static int camfan(_U_ fan_speed spd){ // not supported, just turn it on/off
+static int camfan(_U_ cc_fan_speed spd){ // not supported, just turn it on/off
     switch(spd){
         case FAN_OFF:
             if(!zwo_setfloat(0., ASI_FAN_ON)){
@@ -490,7 +490,7 @@ static int istub(_U_ int N){
 /*
  * Global objects: camera, focuser and wheel
  */
-__attribute__ ((visibility("default"))) Camera camera = {
+__attribute__ ((visibility("default"))) cc_Camera camera = {
     .check = asi_checkcam,
     .close = asi_closecam,
     .pollcapture = campoll,
@@ -526,7 +526,7 @@ __attribute__ ((visibility("default"))) Camera camera = {
     .getio = camgetio,
 };
 
-__attribute__ ((visibility("default"))) Focuser focuser = {
+__attribute__ ((visibility("default"))) cc_Focuser focuser = {
     .check = stub,
     .close = vstub,
     // setters:
@@ -541,7 +541,7 @@ __attribute__ ((visibility("default"))) Focuser focuser = {
     .getMinPos = focmp,
 };
 
-__attribute__ ((visibility("default"))) Wheel wheel = {
+__attribute__ ((visibility("default"))) cc_Wheel wheel = {
     .check = stub,
     .close = vstub,
     // setters

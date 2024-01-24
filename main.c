@@ -71,7 +71,7 @@ void signals(int signo){
 int main(int argc, char **argv){
     initial_setup();
 #if defined GETTEXT_PACKAGE && defined LOCALEDIR
-    printf("GETTEXT_PACKAGE=" GETTEXT_PACKAGE ", LOCALEDIR=" LOCALEDIR "\n");
+    //printf("GETTEXT_PACKAGE=" GETTEXT_PACKAGE ", LOCALEDIR=" LOCALEDIR "\n");
     bindtextdomain(GETTEXT_PACKAGE, LOCALEDIR);
     textdomain(GETTEXT_PACKAGE);
 #endif
@@ -97,7 +97,7 @@ int main(int argc, char **argv){
             return 1;
         }
         int port = atoi(GP->port);
-        if(port < PORTN_MIN || port > PORTN_MAX){
+        if(port < CC_PORTN_MIN || port > CC_PORTN_MAX){
             WARNX("Wrong port value: %d", port);
             return 1;
         }
