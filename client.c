@@ -32,6 +32,8 @@
 #include "server.h" // for common commands names
 #include "socket.h"
 
+extern double answer_timeout;
+
 static char sendbuf[BUFSIZ];
 // send message and wait any answer
 #define SENDMSG(...) do{DBG("SENDMSG"); snprintf(sendbuf, BUFSIZ-1, __VA_ARGS__); verbose(2, "\t> %s", sendbuf); cc_sendstrmessage(sock, sendbuf); while(getans(sock, NULL));} while(0)
@@ -52,17 +54,16 @@ static uint8_t *imbuf = NULL;
 #endif
 
 static char *readmsg(int fd){
-    static cc_charbuff *buf = NULL;
-    static char line[BUFSIZ];
-    if(!buf) buf = cc_bufnew(BUFSIZ);
+    static cc_strbuff *buf = NULL;
+    if(!buf) buf = cc_strbufnew(BUFSIZ, 255);
     if(1 == cc_canberead(fd)){
         if(cc_read2buf(fd, buf)){
-            size_t got = cc_getline(buf, line, BUFSIZ);
-            if(got >= BUFSIZ){
+            size_t got = cc_getline(buf);
+            if(got > 255){
                 DBG("Client fd=%d gave buffer overflow", fd);
                 LOGMSG("SERVER client fd=%d buffer overflow", fd);
             }else if(got){
-                return line;
+                return buf->string;
             }
         }else ERRX("Server disconnected");
     }
@@ -103,7 +104,7 @@ static int parseans(char *ans){
 static int getans(int sock, const char *msg){
     double t0 = dtime();
     char *ans = NULL;
-    while(dtime() - t0 < CC_ANSWER_TIMEOUT){
+    while(dtime() - t0 < answer_timeout){
         char *s = readmsg(sock);
         if(!s) continue;
         t0 = dtime();
@@ -118,7 +119,6 @@ DBG("1 msg-> %s, ans -> %s", msg, ans);
             break;
         }
     }
-    //DBG("GETANS: %s, %s", ans, (dtime()-t0 > CC_ANSWER_TIMEOUT) ? "timeout" : "got answer");
     return ((ans) ? TRUE : FALSE);
 }
 
@@ -126,6 +126,9 @@ DBG("1 msg-> %s, ans -> %s", msg, ans);
  * @brief processData - process here some actions and make messages for server
  */
 static void send_headers(int sock){
+    if(GP->exptime > -DBL_EPSILON) SENDMSGW(CC_CMD_EXPOSITION, "=%g", GP->exptime);
+    DBG("infty=%d", GP->infty);
+    if(GP->infty > -1) SENDMSGW(CC_CMD_INFTY, "=%d", GP->infty);
     // common information
     SENDMSG(CC_CMD_INFO);
     // focuser
@@ -188,7 +191,6 @@ static void send_headers(int sock){
         if(!*GP->outfileprefix) SENDMSGW(CC_CMD_FILENAMEPREFIX, "=");
         else SENDMSGW(CC_CMD_FILENAMEPREFIX, "=%s", makeabspath(GP->outfileprefix, FALSE));
     }
-    if(GP->exptime > -DBL_EPSILON) SENDMSGW(CC_CMD_EXPOSITION, "=%g", GP->exptime);
     // FITS header keywords:
 #define CHKHDR(x, cmd)   do{if(x) SENDMSG(cmd "=%s", x);}while(0)
     CHKHDR(GP->author, CC_CMD_AUTHOR);
@@ -218,7 +220,6 @@ void client(int sock){
         SENDCMDW(CC_CMD_RESTART);
         return;
     }
-    if(GP->infty > -1) SENDMSGW(CC_CMD_INFTY, "=%d", GP->infty);
     send_headers(sock);
     double t0 = dtime(), tw = t0;
     int Nremain = 0, nframe = 1;
@@ -278,7 +279,7 @@ void client(int sock){
                     SENDMSGW(CC_CMD_EXPSTATE, "=%d", CAMERA_CAPTURE);
                 }else{
                     GP->waitexpend = 0;
-                    timeout = CC_ANSWER_TIMEOUT; // wait for last file name
+                    timeout = answer_timeout; // wait for last file name
                 }
             }
         }

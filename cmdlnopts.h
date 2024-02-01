@@ -40,6 +40,7 @@ typedef struct{
     char *port;         // local INET socket port
     char *imageport;    // port to send/receive images (by default == port+1)
     char **addhdr;      // list of files from which to add header records
+    char **plugincmd;   // plugin commands
     int restart;        // restart server
     int waitexpend;     // wait while exposition ends
     int cancelexpose;   // cancel exp (for Grasshopper - forbid forever)

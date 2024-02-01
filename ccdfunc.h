@@ -24,6 +24,7 @@ extern cc_Focuser *focuser;
 extern cc_Wheel *wheel;
 
 void calculate_stat(cc_IMG *image);
+cc_charbuff *getFITSheader(cc_IMG *img);
 int saveFITS(cc_IMG *img, char **outp); // for imageview module
 void focusers();
 void wheels();

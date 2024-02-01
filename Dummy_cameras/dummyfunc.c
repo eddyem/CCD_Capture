@@ -41,6 +41,8 @@ static float camtemp = -30., exptime = 0.;
 static cc_capture_status capstat = CAPTURE_NO;
 static double texpstart = 0.;
 static uint8_t bitpix = 16; // bit depth: 8 or 16
+// sinusoide periods
+static double sinPx = 100., sinPy = 200.;
 
 static int campoll(cc_capture_status *st, float *remain){
     if(capstat != CAPTURE_PROCESS){
@@ -79,7 +81,7 @@ static int camcapt(cc_IMG *ima){
             uint16_t *d = &((uint16_t*)ima->data)[y*ima->w/curvbin];
             for(int x = 0; x < x1; x += curhbin){ // sinusoide 100x200
                 //*d++ = (uint16_t)(((n+x)%100)/99.*65535.);
-                *d++ = (uint16_t)((1. + sin((n+x) * M_PI/50.)*sin((n+y) * M_PI/100.))*32767.);
+                *d++ = (uint16_t)((1. + sin((n+x) * (2.*M_PI)/sinPx)*sin((n+y) * (2.*M_PI)/sinPy))*32767.);
             }
         }
     }else{
@@ -88,7 +90,7 @@ static int camcapt(cc_IMG *ima){
             uint8_t *d = &((uint8_t*)ima->data)[y*ima->w/curvbin];
             for(int x = 0; x < x1; x += curhbin){ // sinusoide 100x200
                 //*d++ = (uint16_t)(((n+x)%100)/99.*65535.);
-                *d++ = (uint8_t)((1. + sin((n+x) * M_PI/50.)*sin((n+y) * M_PI/100.))*127.);
+                *d++ = (uint8_t)((1. + sin((n+x) * (2.*M_PI)/sinPx)*sin((n+y) * (2.*M_PI)/sinPy))*127.);
             }
         }
     }
@@ -254,6 +256,37 @@ static int whlgetnam(char *n, int l){
     return TRUE;
 }
 
+static const char* const helpmsg =
+    "Dummy camera custom plugin commands:\n"
+    "\tpx - set/get sin period over X axis (pix)\n"
+    "\tpy - -//- over Y axis\n"
+;
+static const char* const pmust = "Period must be not less than 1";
+static const char *plugincmd(const char *str){
+    static char ans[BUFSIZ+1];
+    snprintf(ans, BUFSIZ, "%s", str);
+    char *val = cc_get_keyval(ans);
+    if(val){ // setters
+        if(0 == strcmp("px", ans)){
+            double f = atof(val);
+            if(f < 1.) return pmust;
+            sinPx = f;
+        }else if(0 == strcmp("py", ans)){
+            double f = atof(val);
+            if(f < 1.) return pmust;
+            sinPy = f;
+        }
+    } // getters/return
+    if(0 == strcmp("px", ans)){
+        snprintf(ans, BUFSIZ, "px=%g", sinPx);
+        return (const char*) ans;
+    }else if(0 == strcmp("py", ans)){
+        snprintf(ans, BUFSIZ, "yx=%g", sinPy);
+        return (const char*) ans;
+    }
+    return helpmsg;
+}
+
 static int stub(){
     return TRUE;
 }
@@ -275,6 +308,7 @@ __attribute__ ((visibility("default"))) cc_Camera camera = {
     .capture = camcapt,
     .cancel = camcancel,
     .startexposition = startexp,
+    .plugincmd = plugincmd,
     // setters:
     .setDevNo = setdevno,
     .setbrightness = camsetbrig,

@@ -73,59 +73,118 @@ static int check_filenameprefix(char *buff, int buflen){
     return FALSE;
 }
 
-// get next record from external text file, newlines==1 if every record ends with '\n'
-static char *getnextrec(char *buf, char *record, int newlines){
-    char *nextline = NULL;
-    int l = FLEN_CARD - 1;
-    if(newlines){
-        char *e = strchr(buf, '\n');
-        if(e){
-            if(e - buf < FLEN_CARD) l = e - buf;
-            nextline = e + 1;
-        }
-    }else nextline = buf + (FLEN_CARD - 1);
-    strncpy(record, buf, l);
-    record[l] = 0;
-    return nextline;
-}
+cc_charbuff *getFITSheader(cc_IMG *img){
+    static cc_charbuff charbuf = {0};
+    cc_charbufclr(&charbuf);
+    char card[FLEN_CARD+1], templ[2*FLEN_CARD+1], bufc[FLEN_CARD+1];
+#define FORMKW(in)                              \
+do{ int status = 0, kt = 0;                      \
+    fits_parse_template(in, card, &kt, &status);  \
+    if(status) fits_report_error(stderr, status);\
+    else{cc_charbufaddline(&charbuf, card);} \
+}while(0)
+#define FORMINT(key, val, comment) do{ \
+    snprintf(templ, FLEN_CARD, "%s = %d / %s", key, val, comment); \
+    FORMKW(templ); \
+}while(0)
+#define FORMFLT(key, val, comment) do{ \
+    snprintf(templ, FLEN_CARD, "%s = %g / %s", key, val, comment); \
+    FORMKW(templ); \
+}while(0)
+#define FORMSTR(key, val, comment) do{ \
+    snprintf(templ, 2*FLEN_CARD, "%s = '%s' / %s", key, val, comment); \
+    FORMKW(templ); \
+}while(0)
+    calculate_stat(img);
+    float tmpf = 0.0;
+    int tmpi = 0;
+   /* FORMKW("COMMENT this is just a test comment - 0");
+    FORMKW("COMMENT this is just a test comment - 1");
+    FORMKW("COMMENT this is just a test comment - 2");
+    FORMKW("HIERARCH longsome1 = 'this is just a test comment'");
+    FORMKW("HIERARCH longsome2 = 'this is just a test comment'");
+    FORMKW("HIERARCH longsome3 = 'this is just a test comment'");*/
+    FORMKW("ORIGIN = 'SAO RAS' / Organization responsible for the data");
+    FORMKW("OBSERVAT = 'Special Astrophysical Observatory, Russia' / Observatory name");
+    FORMKW("INSTRUME = 'direct imaging'  / Instrument");
+    snprintf(templ, FLEN_CARD, "VIEWFLD = '(%d, %d)(%d, %d)' / Camera maximal field of view", camera->field.xoff, camera->field.yoff,
+             camera->field.xoff + camera->field.w, camera->field.yoff + camera->field.h);
+    FORMKW(templ);
+    snprintf(templ, FLEN_CARD, "ARRAYFLD = '(%d, %d)(%d, %d)' / Camera full array size (with overscans)", camera->array.xoff, camera->array.yoff,
+             camera->array.xoff + camera->array.w, camera->array.yoff + camera->array.h);
+    FORMKW(templ);
+    snprintf(templ, FLEN_CARD, "GEOMETRY = '(%d, %d)(%d, %d)' / Camera current frame geometry", camera->geometry.xoff, camera->geometry.yoff,
+             camera->geometry.xoff + camera->geometry.w, camera->geometry.yoff + camera->geometry.h);
+    FORMKW(templ);
+    if(GP->X0 > -1) FORMINT("X0", GP->X0, "Subframe left border without binning");
+    if(GP->Y0 > -1) FORMINT("Y0", GP->Y0, "Subframe upper border without binning");
+    if(GP->dark) sprintf(bufc, "dark");
+    else if(GP->objtype) strncpy(bufc, GP->objtype, FLEN_CARD);
+    else sprintf(bufc, "light");
+    FORMSTR("IMAGETYP", bufc, "Image type");
+    FORMINT("DATAMIN", 0, "Min pixel value");
+    FORMINT("DATAMAX", (1<<img->bitpix) - 1, "Max pixel value");
+    FORMINT("STATMIN", img->min, "Min data value");
+    FORMINT("STATMAX", img->max, "Max data value");
+    FORMFLT("STATAVR", img->avr, "Average data value");
+    FORMFLT("STATSTD", img->std, "Std. of data value");
+    if(camera->getTcold && camera->getTcold(&tmpf))
+        FORMFLT("CAMTEMP", tmpf, "Camera temperature at exp. end, degr C");
+    if(camera->getTbody && camera->getTbody(&tmpf))
+        FORMFLT("BODYTEMP", tmpf, "Camera body temperature at exp. end, degr C");
+    if(camera->getThot && camera->getThot(&tmpf))
+        FORMFLT("HOTTEMP", tmpf, "Camera peltier hot side temperature at exp. end, degr C");
+    FORMFLT( "EXPTIME", GP->exptime, "Actual exposition time (sec)");
+    if(camera->getgain && camera->getgain(&tmpf))
+        FORMFLT("CAMGAIN", tmpf, "CMOS gain value");
+    if(camera->getbrightness && camera->getbrightness(&tmpf))
+        FORMFLT("CAMBRIGH", tmpf, "CMOS brightness value");
 
-/**
- * @brief addrec - add FITS records from file
- * @param f (i)        - FITS filename
- * @param filename (i) - name of file
- */
-static void addrec(fitsfile *f, char *filename){
-    mmapbuf *buf = My_mmap(filename);
-    char rec[FLEN_CARD];
-    if(!buf || buf->len < 1){
-        WARNX("Empty header file %s", filename);
-        return;
+    snprintf(templ, 2*FLEN_CARD, "TIMESTAM = %.3f / Time of acquisition end (UNIX)", img->timestamp);
+    FORMKW(templ);
+    // BINNING / Binning
+    snprintf(templ, FLEN_CARD, "BINNING = '%d x %d' / Binning (hbin x vbin)", GP->hbin, GP->vbin);
+    FORMKW(templ);
+    FORMINT("XBINNING", GP->hbin, "Binning factor used on X axis");
+    FORMINT("YBINNING", GP->vbin, "Binning factor used on Y axis");
+    if(focuser){ // there is a focuser device - add info
+        if(focuser->getModelName && focuser->getModelName(bufc, FLEN_CARD))
+            FORMSTR("FOCUSER", bufc, "Focuser model");
+        if(focuser->getPos && focuser->getPos(&tmpf))
+            FORMFLT("FOCUS", tmpf, "Current focuser position, mm");
+        if(focuser->getMinPos && focuser->getMinPos(&tmpf))
+            FORMFLT("FOCMIN", tmpf, "Minimal focuser position, mm");
+        if(focuser->getMaxPos && focuser->getMaxPos(&tmpf))
+            FORMFLT("FOCMAX", tmpf, "Maximal focuser position, mm");
+        if(focuser->getTbody && focuser->getTbody(&tmpf))
+            FORMFLT("FOCTEMP", tmpf, "Focuser body temperature, degr C");
     }
-    char *data = buf->data, *x = strchr(data, '\n'), *eodata = buf->data + buf->len;
-    int newlines = 0;
-    if(x && (x - data) < FLEN_CARD){ // we found newline -> this is a format with newlines
-        newlines = 1;
-    }
-    do{
-        data = getnextrec(data, rec, newlines);
-        verbose(4, "check record _%s_", rec);
-        int keytype, status = 0;
-        char newcard[FLEN_CARD], keyname[FLEN_CARD];
-        fits_parse_template(rec, newcard, &keytype, &status);
-        if(status){
-            fits_report_error(stderr, status);
-            continue;
+    if(wheel){ // there is a filter wheel device - add info
+        if(wheel->getModelName && wheel->getModelName(bufc, FLEN_CARD)){
+            FORMSTR("WHEEL", bufc, "Filter wheel model");
         }
-        verbose(4, "reformatted to _%s_", newcard);
-        strncpy(keyname, newcard, FLEN_CARD);
-        char *eq = strchr(keyname, '='); if(eq) *eq = 0;
-        eq = strchr(keyname, ' '); if(eq) *eq = 0;
-        //DBG("keyname: %s", keyname);
-        fits_update_card(f, keyname, newcard, &status);
-        if(status) fits_report_error(stderr, status);
-        if(data > eodata) break;
-    }while(data && *data);
-    My_munmap(buf);
+        if(wheel->getPos && wheel->getPos(&tmpi))
+            FORMINT("FILTER", tmpi, "Current filter number");
+        if(wheel->getMaxPos && wheel->getMaxPos(&tmpi))
+            FORMINT("FILTMAX", tmpi, "Amount of filter positions");
+        if(wheel->getTbody && wheel->getTbody(&tmpf))
+            FORMFLT("FILTTEMP", tmpf, "Filter wheel body temperature, degr C");
+    }
+    if(GP->addhdr){ // add records from files
+        char **nxtfile = GP->addhdr;
+        while(*nxtfile){
+            cc_kwfromfile(&charbuf, *(nxtfile++));
+        }
+    }
+    // add these keywords after all to override records from files
+    if(GP->observers) FORMSTR("OBSERVER", GP->observers, "Observers");
+    if(GP->prog_id) FORMSTR("PROG-ID", GP->prog_id, "Observation program identifier");
+    if(GP->author) FORMSTR("AUTHOR", GP->author, "Author of the program");
+    if(GP->objname) FORMSTR("OBJECT", GP->objname, "Object name");
+    if(camera->getModelName && camera->getModelName(bufc, FLEN_CARD))
+        FORMSTR("DETECTOR", bufc, "Detector model");
+    if(GP->instrument) FORMSTR("INSTRUME", GP->instrument, "Instrument");
+    return &charbuf;
 }
 
 // save FITS file `img` into GP->outfile or GP->outfileprefix_XXXX.fits
@@ -138,7 +197,7 @@ int saveFITS(cc_IMG *img, char **outp){
         WARNX(_("Camera device unknown"));
         return FALSE;
     }
-    char buff[PATH_MAX+1], fnam[PATH_MAX+1];
+    char fnam[PATH_MAX+1];
     if(!GP->outfile && !GP->outfileprefix){
         LOGWARN("Image not saved: neither filename nor filename prefix pointed");
         return FALSE;
@@ -163,13 +222,8 @@ int saveFITS(cc_IMG *img, char **outp){
             LOGERR("Can't save image with prefix %s", GP->outfileprefix);
         }
     }
-    calculate_stat(img);
-
     int width = img->w, height = img->h;
     long naxes[2] = {width, height};
-    double tmpd = 0.0;
-    float tmpf = 0.0;
-    int tmpi = 0;
     struct tm *tm_time;
     char bufc[FLEN_CARD];
     double dsavetime = dtime();
@@ -182,129 +236,29 @@ int saveFITS(cc_IMG *img, char **outp){
     if(nbytes == 1) TRYFITS(fits_create_img, fp, BYTE_IMG, 2, naxes);
     else TRYFITS(fits_create_img, fp, USHORT_IMG, 2, naxes);
     if(fitserror) goto cloerr;
-    // ORIGIN / organization responsible for the data
-    WRITEKEY(fp, TSTRING, "ORIGIN", "SAO RAS", "organization responsible for the data");
-    // OBSERVAT / Observatory name
-    WRITEKEY(fp, TSTRING, "OBSERVAT", "Special Astrophysical Observatory, Russia", "Observatory name");
-    WRITEKEY(fp, TSTRING, "INSTRUME", "direct imaging", "Instrument");
-    snprintf(bufc, FLEN_VALUE, "(%d, %d)(%d, %d)", camera->field.xoff, camera->field.yoff,
-             camera->field.xoff + camera->field.w, camera->field.yoff + camera->field.h);
-    WRITEKEY(fp, TSTRING, "VIEWFLD", bufc, "Camera maximal field of view");
-    snprintf(bufc, FLEN_VALUE, "(%d, %d)(%d, %d)", camera->array.xoff, camera->array.yoff,
-             camera->array.xoff + camera->array.w, camera->array.yoff + camera->array.h);
-    WRITEKEY(fp, TSTRING, "ARRAYFLD", bufc, "Camera full array size (with overscans)");
-    snprintf(bufc, FLEN_VALUE, "(%d, %d)(%d, %d)", camera->geometry.xoff, camera->geometry.yoff,
-             camera->geometry.xoff + camera->geometry.w, camera->geometry.yoff + camera->geometry.h);
-    WRITEKEY(fp, TSTRING, "GEOMETRY", bufc, "Camera current frame geometry");    // CRVAL1, CRVAL2 / Offset in X, Y
-    if(GP->X0 > -1) WRITEKEY(fp, TINT, "X0", &GP->X0, "Subframe left border without binning");
-    if(GP->Y0 > -1) WRITEKEY(fp, TINT, "Y0", &GP->Y0, "Subframe upper border without binning");
-    if(GP->dark) sprintf(bufc, "dark");
-    else if(GP->objtype) strncpy(bufc, GP->objtype, FLEN_CARD-1);
-    else sprintf(bufc, "light");
-    // IMAGETYP / object, flat, dark, bias, scan, eta, neon, push
-    WRITEKEY(fp, TSTRING, "IMAGETYP", bufc, "Image type");
-    // DATAMAX, DATAMIN / Max, min pixel value
-    tmpi = 0;
-    WRITEKEY(fp, TINT, "DATAMIN", &tmpi, "Min pixel value");
-    tmpi = (1<<img->bitpix) - 1;
-    WRITEKEY(fp, TINT, "DATAMAX", &tmpi, "Max pixel value");
-    tmpi = img->min;
-    WRITEKEY(fp, TUSHORT, "STATMIN", &tmpi, "Min data value");
-    tmpi = img->max;
-    WRITEKEY(fp, TUSHORT, "STATMAX", &tmpi, "Max data value");
-    tmpf = img->avr;
-    WRITEKEY(fp, TFLOAT, "STATAVR", &tmpf, "Average data value");
-    tmpf = img->std;
-    WRITEKEY(fp, TFLOAT, "STATSTD", &tmpf, "Std. of data value");
-//    WRITEKEY(fp, TFLOAT, "CAMTEMP0", &GP->temperature, "Camera temperature at exp. start, degr C");
-    if(camera->getTcold(&tmpf))
-        WRITEKEY(fp, TFLOAT, "CAMTEMP", &tmpf, "Camera temperature at exp. end, degr C");
-    if(camera->getTbody(&tmpf))
-        WRITEKEY(fp, TFLOAT, "BODYTEMP", &tmpf, "Camera body temperature at exp. end, degr C");
-    if(camera->getThot(&tmpf))
-        WRITEKEY(fp, TFLOAT, "HOTTEMP", &tmpf, "Camera peltier hot side temperature at exp. end, degr C");
-    // EXPTIME / actual exposition time (sec)
-    tmpd = GP->exptime;
-    WRITEKEY(fp, TDOUBLE, "EXPTIME", &tmpd, "Actual exposition time (sec)");
-    if(camera->getgain(&tmpf)){
-        WRITEKEY(fp, TFLOAT, "CAMGAIN", &tmpf, "CMOS gain value");
-    }
-    if(camera->getbrightness(&tmpf)){
-        WRITEKEY(fp, TFLOAT, "CAMBRIGH", &tmpf, "CMOS brightness value");
-    }
-    // DATE / Creation date (YYYY-MM-DDThh:mm:ss, UTC)
-    strftime(bufc, FLEN_VALUE, "%Y-%m-%dT%H:%M:%S", gmtime(&savetime));
-    WRITEKEY(fp, TSTRING, "DATE", bufc, "Creation date (YYYY-MM-DDThh:mm:ss, UTC)");
+    cc_charbuff *bufhdr = getFITSheader(img);
+    cc_charbuf2kw(bufhdr, fp);
+    // creation date/time
+    int s = 0;
+    fits_write_date(fp, &s);
+/*
+s = 0;
+fits_write_comment(fp, bufhdr->buf, &s);
+s = 0;
+fits_write_history(fp, bufhdr->buf, &s);
+*/
     tm_time = localtime(&savetime);
-    strftime(bufc, FLEN_VALUE, "File creation time (UNIX)", tm_time);
-    WRITEKEY(fp, TDOUBLE, "UNIXTIME", &dsavetime, bufc);
-    WRITEKEY(fp, TDOUBLE, "TIMESTAM", &img->timestamp, "Time of acquisition end");
-    strftime(bufc, 80, "%Y/%m/%d", tm_time);
-    // DATE-OBS / DATE (YYYY/MM/DD) OF OBS.
-    WRITEKEY(fp, TSTRING, "DATE-OBS", bufc, "DATE OF OBS. (YYYY/MM/DD, local)");
-    strftime(bufc, 80, "%H:%M:%S", tm_time);
+    WRITEKEY(fp, TDOUBLE, "UNIXTIME", &dsavetime, "File creation time (UNIX)");
+    strftime(bufc, FLEN_VALUE, "%Y/%m/%d", tm_time);
+    WRITEKEY(fp, TSTRING, "DATE-OBS", bufc, "Date of observation (YYYY/MM/DD, local)");
+    strftime(bufc, FLEN_VALUE, "%H:%M:%S", tm_time);
     WRITEKEY(fp, TSTRING, "TIME", bufc, "Creation time (hh:mm:ss, local)");
-    // BINNING / Binning
-    if(GP->hbin != 1 || GP->vbin != 1){
-        snprintf(bufc, 80, "%d x %d", GP->hbin, GP->vbin);
-        WRITEKEY(fp, TSTRING, "BINNING", bufc, "Binning (hbin x vbin)");
-        tmpi = GP->hbin;
-        WRITEKEY(fp, TINT, "XBINNING", &tmpi, "binning factor used on X axis");
-        tmpi = GP->vbin;
-        WRITEKEY(fp, TINT, "YBINNING", &tmpi, "binning factor used on Y axis");
-    }
-    if(focuser){ // there is a focuser device - add info
-        if(focuser->getModelName(buff, PATH_MAX))
-            WRITEKEY(fp, TSTRING, "FOCUSER", buff, "Focuser model");
-        if(focuser->getPos(&tmpf))
-            WRITEKEY(fp, TFLOAT, "FOCUS", &tmpf, "Current focuser position, mm");
-        if(focuser->getMinPos(&tmpf))
-            WRITEKEY(fp, TFLOAT, "FOCMIN", &tmpf, "Minimal focuser position, mm");
-        if(focuser->getMaxPos(&tmpf))
-            WRITEKEY(fp, TFLOAT, "FOCMAX", &tmpf, "Maximal focuser position, mm");
-        if(focuser->getTbody(&tmpf))
-            WRITEKEY(fp, TFLOAT, "FOCTEMP", &tmpf, "Focuser body temperature, degr C");
-    }
-    if(wheel){ // there is a filter wheel device - add info
-        if(wheel->getModelName(buff, PATH_MAX))
-            WRITEKEY(fp, TSTRING, "WHEEL", buff, "Filter wheel model");
-        if(wheel->getPos(&tmpi))
-            WRITEKEY(fp, TINT, "FILTER", &tmpi, "Current filter number");
-        if(wheel->getMaxPos(&tmpi))
-            WRITEKEY(fp, TINT, "FILTMAX", &tmpi, "Amount of filter positions");
-        if(wheel->getTbody(&tmpf))
-            WRITEKEY(fp, TFLOAT, "FILTTEMP", &tmpf, "Filter wheel body temperature, degr C");
-    }
-    if(GP->addhdr){ // add records from files
-        char **nxtfile = GP->addhdr;
-        while(*nxtfile){
-            addrec(fp, *nxtfile++);
-        }
-    }
-    // add these keywords after all to change things in files with static records
-    // OBSERVER / Observers
-    if(GP->observers)
-        WRITEKEY(fp, TSTRING, "OBSERVER", GP->observers, "Observers");
-    // PROG-ID / Observation program identifier
-    if(GP->prog_id)
-        WRITEKEY(fp, TSTRING, "PROG-ID", GP->prog_id, "Observation program identifier");
-    // AUTHOR / Author of the program
-    if(GP->author)
-        WRITEKEY(fp, TSTRING, "AUTHOR", GP->author, "Author of the program");
-    // OBJECT  / Object name
-    if(GP->objname){
-        WRITEKEY(fp, TSTRING, "OBJECT", GP->objname, "Object name");
-    }
     // FILE / Input file original name
     char *n = fnam;
     if(*n == '!') ++n;
-    WRITEKEY(fp, TSTRING, "FILE", n, "Input file original name");
-    // DETECTOR / detector
-    if(camera->getModelName(buff, PATH_MAX))
-        WRITEKEY(fp, TSTRING, "DETECTOR", buff, "Detector model");
-    // INSTRUME / Instrument
-    if(GP->instrument)
-        WRITEKEY(fp, TSTRING, "INSTRUME", GP->instrument, "Instrument");
+    s = 0; fits_write_comment(fp, "Input file original name:", &s);
+    s = 0; fits_write_comment(fp, n, &s);
+    //WRITEKEY(fp, TSTRING, "FILE", n, "Input file original name");
     if(nbytes == 1) TRYFITS(fits_write_img, fp, TBYTE, 1, width * height, img->data);
     else TRYFITS(fits_write_img, fp, TUSHORT, 1, width * height, img->data);
     if(fitserror) goto cloerr;
@@ -394,6 +348,7 @@ static void stat16(cc_IMG *image){
 
 
 void calculate_stat(cc_IMG *image){
+    if(!image || image->gotstat) return;
     int nbytes = ((7 + image->bitpix) / 8);
     if(nbytes == 1) stat8(image);
     else stat16(image);
@@ -402,6 +357,7 @@ void calculate_stat(cc_IMG *image){
         printf("avr = %.1f, std = %.1f\n", image->avr, image->std);
         printf("max = %u, min = %u, size = %d pix\n", image->max, image->min, image->w * image->h);
     }
+    image->gotstat = 1;
 }
 
 cc_Focuser *startFocuser(){
@@ -643,6 +599,19 @@ int prepare_ccds(){
         WARNX(_("Can't set active camera number"));
         goto retn;
     }
+    // run plugincmd handler if available
+    if(GP->plugincmd){
+        DBG("Plugincmd");
+        if(!camera->plugincmd) WARNX(_("Camera plugin have no custom commands"));
+        else{
+            char **p = GP->plugincmd;
+            DBG("got %s", *p);
+            while(p && *p){
+                printf("Command: %s\nAnswer: %s\n", *p, camera->plugincmd(*p));
+                ++p;
+            }
+        }
+    }
     if(GP->fanspeed > -1){
         if(GP->fanspeed > FAN_HIGH) GP->fanspeed = FAN_HIGH;
         if(!camera->setfanspeed((cc_fan_speed)GP->fanspeed))
@@ -791,6 +760,7 @@ DBG("w=%d, h=%d", raw_width, raw_height);
             WARNX(_("Can't grab image"));
             break;
         }
+        ima.gotstat = 0;
         TIMESTAMP("Calc stat");
         calculate_stat(&ima);
         TIMESTAMP("Save fits");

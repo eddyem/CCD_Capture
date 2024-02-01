@@ -25,7 +25,7 @@ option(APOGEE "Add support of Apogee cameras" OFF)
 option(EXAMPLES "Some examples" OFF)
 
 # default flags
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -W -Wextra")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -W -Wextra -fno-builtin-strlen")
 
 # change wrong behaviour with install prefix
 if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT AND CMAKE_INSTALL_PREFIX MATCHES "/usr/local")
@@ -51,7 +51,7 @@ set(CMAKE_COLOR_MAKEFILE ON)
 
 # cmake -DDEBUG=yes -> debugging
 if(DEBUG)
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Og -g3 -ggdb -fno-builtin-strlen -Werror")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Og -g3 -ggdb -Werror")
     add_definitions(-DEBUG)
     set(CMAKE_BUILD_TYPE DEBUG)
     set(CMAKE_VERBOSE_MAKEFILE "ON")
@@ -122,7 +122,7 @@ set(RU_FILE ${LCPATH}/ru.po)
 add_library(${PROJLIB} SHARED ${LIBSRC})
 add_executable(${PROJ} ${SOURCES} ${PO_FILE} ${MO_FILE})
 target_link_libraries(${PROJ} ${CFITSIO_LIBRARIES} ${X11_LIBRARIES} ${OPENGL_LIBRARIES} ${GLUT_LIBRARIES} ${${PROJ}_LIBRARIES} -lm ${CMAKE_DL_LIBS} ${PROJLIB})
-target_link_libraries(${PROJLIB} ${${PROJLIB}_LIBRARIES})
+target_link_libraries(${PROJLIB} ${CFITSIO_LIBRARIES} ${${PROJLIB}_LIBRARIES})
 include_directories(${${PROJ}_INCLUDE_DIRS} .)
 link_directories(${${PROJ}_LIBRARY_DIRS} )
 set(PCFILE "${CMAKE_BINARY_DIR}/${PROJLIB}.pc")

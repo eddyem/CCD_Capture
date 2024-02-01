@@ -73,6 +73,7 @@ strpair allcommands[] = {
     { CC_CMD_FGOTO,        "focuser position" },
     { CC_CMD_FRAMEFORMAT,  "camera frame format (X0,Y0,X1,Y1)" },
     { CC_CMD_GAIN,         "camera gain" },
+    { CC_CMD_GETHEADERS,   "get last file FITS headers" },
     { CC_CMD_HBIN,         "horizontal binning" },
     { CC_CMD_HEADERFILES,  "add FITS records from these files (comma-separated list)" },
     { CC_CMD_HELP,         "show this help" },
@@ -88,9 +89,10 @@ strpair allcommands[] = {
     { CC_CMD_OBJECT,       "FITS 'OBJECT' field" },
     { CC_CMD_OBJTYPE,      "FITS 'IMAGETYP' field" },
     { CC_CMD_OBSERVER,     "FITS 'OBSERVER' field" },
+    { CC_CMD_PLUGINCMD,    "custom camera plugin command" },
     { CC_CMD_PROGRAM,      "FITS 'PROG-ID' field" },
     { CC_CMD_RESTART,      "restart server" },
-    { CC_CMD_REWRITE,      "rewrite file (if give `filename`, not `filenameprefix`" },
+    { CC_CMD_REWRITE,      "rewrite file (if give `filename`, not `filenameprefix`)" },
     { CC_CMD_SHMEMKEY,     "get shared memory key" },
     { CC_CMD_SHUTTER,      "camera shutter's operations" },
     { CC_CMD_CAMTEMPER,    "camera chip temperature" },
@@ -166,10 +168,9 @@ static inline void cameracapturestate(){ // capturing - wait for exposition ends
                     camstate = CAMERA_ERROR;
                     return;
                 }else{
-                    /*if(lastfile){ (move calcstat into savefits)
-                        TIMESTAMP("Calc stat");
-                        calculate_stat(ima);
-                    }*/
+                    ima->gotstat = 0; // fresh image without statistics - recalculate when save
+                    ima->timestamp = dtime(); // set timestamp
+                    ++ima->imnumber; // increment counter
                     if(saveFITS(ima, &lastfile)){
                         DBG("LAST file name changed");
                     }
@@ -954,6 +955,24 @@ static cc_hresult inftyhandler(int fd, _U_ const char *key, const char *val){
     return RESULT_SILENCE;
 }
 
+// custom camera plugin command
+static cc_hresult pluginhandler(int fd, _U_ const char *key, const char *val){
+    if(!camera->plugincmd) return RESULT_BADKEY;
+    const char *r = camera->plugincmd(val);
+    if(!r) return RESULT_FAIL;
+    if(*r == 0) return RESULT_OK;
+    if(!cc_sendstrmessage(fd, r)) return RESULT_DISCONNECTED;
+    return RESULT_SILENCE;
+}
+
+// get headers
+static cc_hresult gethdrshandler(int fd, _U_ const char *key, _U_ const char *val){
+    cc_charbuff *b = getFITSheader(ima);
+    if(!b) return RESULT_FAIL;
+    if(!cc_sendstrmessage(fd, b->buf)) return RESULT_DISCONNECTED;
+    return RESULT_SILENCE;
+}
+
 // for setters: do nothing when camera not in idle state
 static int CAMbusy(){
     if(camera && camstate != CAMERA_IDLE){
@@ -1015,7 +1034,9 @@ static cc_handleritem items[] = {
     {chkcc,  fastspdhandler, CC_CMD_FASTSPD},
     {chkcc,  darkhandler, CC_CMD_DARK},
     {chkcc,  inftyhandler, CC_CMD_INFTY},
+    {chkcc,  pluginhandler, CC_CMD_PLUGINCMD},
     {NULL,   tremainhandler, CC_CMD_TREMAIN},
+    {chkcc,  gethdrshandler, CC_CMD_GETHEADERS},
     {NULL,   FITSparhandler, CC_CMD_AUTHOR},
     {NULL,   FITSparhandler, CC_CMD_INSTRUMENT},
     {NULL,   FITSparhandler, CC_CMD_OBSERVER},
@@ -1034,6 +1055,7 @@ static cc_handleritem items[] = {
 };
 
 #define CLBUFSZ     BUFSIZ
+#define STRBUFSZ    (255)
 
 // send image as raw data
 static void sendimage(int client){
@@ -1072,11 +1094,10 @@ void server(int sock, int imsock){
     }
     int nfd = 2; // only two listening sockets @start: command and image
     struct pollfd poll_set[CC_MAXCLIENTS+2];
-    cc_charbuff *buffers[CC_MAXCLIENTS];
+    cc_strbuff *buffers[CC_MAXCLIENTS];
     for(int i = 0; i < CC_MAXCLIENTS; ++i){
-        buffers[i] = cc_bufnew(CLBUFSZ);
+        buffers[i] = cc_strbufnew(CLBUFSZ, STRBUFSZ);
     }
-    char string[CLBUFSZ]; // string to read data from buffers
     bzero(poll_set, sizeof(poll_set));
     // ZERO - listening server socket
     poll_set[0].fd = sock;
@@ -1123,10 +1144,7 @@ void server(int sock, int imsock){
         }
         // process some data & send messages to ALL
         if(camstate == CAMERA_FRAMERDY || camstate == CAMERA_ERROR){
-            if(camstate == CAMERA_FRAMERDY){
-                ima->timestamp = dtime(); // set timestamp
-                ++ima->imnumber; // increment counter
-            }
+            DBG("new image: timestamp=%.1f, num=%zd", ima->timestamp, ima->imnumber);
             char buff[PATH_MAX+32];
             snprintf(buff, PATH_MAX, CC_CMD_EXPSTATE "=%d", camstate);
             DBG("Send %s to %d clients", buff, nfd - 2);
@@ -1145,15 +1163,15 @@ void server(int sock, int imsock){
         for(int fdidx = 2; fdidx < nfd; ++fdidx){
             if((poll_set[fdidx].revents & POLLIN) == 0) continue;
             int fd = poll_set[fdidx].fd;
-            cc_charbuff *curbuff = buffers[fdidx-1];
+            cc_strbuff *curbuff = buffers[fdidx-1];
             int disconnected = 0;
             if(cc_read2buf(fd, curbuff)){
-                size_t got = cc_getline(curbuff, string, CLBUFSZ);
+                size_t got = cc_getline(curbuff);
                 if(got >= CLBUFSZ){
                     DBG("Client fd=%d gave buffer overflow", fd);
                     LOGMSG("SERVER client fd=%d buffer overflow", fd);
                 }else if(got){
-                    if(!parsestring(fd, items, string)) disconnected = 1;
+                    if(!parsestring(fd, items, curbuff->string)) disconnected = 1;
                 }
             }else disconnected = 1;
             if(disconnected){
@@ -1254,4 +1272,3 @@ static int parsestring(int fd, cc_handleritem *handlers, char *str){
     DBG("Command not found!");
     return cc_sendstrmessage(fd, cc_hresult2str(RESULT_BADKEY));
 }
-

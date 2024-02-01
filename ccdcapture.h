@@ -17,6 +17,8 @@
  */
 
 #pragma once
+
+#include <fitsio.h> // FLEN_CARD
 #include <pthread.h>
 #include <stdint.h>
 #include <stdlib.h> // for size_t
@@ -30,6 +32,7 @@ typedef struct __attribute__((packed, aligned(4))){
     double timestamp;           // timestamp of image taken
     uint8_t bitpix;             // bits per pixel (8 or 16)
     int w, h;                   // image size
+    int gotstat;                // stat counted
     uint16_t max, min;          // min/max values
     float avr, std;             // statistics
     size_t bytelen;             // size of image in bytes
@@ -107,6 +110,7 @@ typedef struct{
     int (*getTbody)(float *t);  // body T
     int (*getbin)(int *binh, int *binv);
     int (*getio)(int *s);       // get IO-port state
+    const char* (*plugincmd)(const char *str); // custom camera plugin command (get string as input, send string as output or NULL if failed)
     float pixX, pixY;           // pixel size in um
     cc_frameformat field;          // max field of view
     cc_frameformat array;          // array format
@@ -145,11 +149,6 @@ typedef struct{
     int (*getMaxPos)(int *p);   // amount of positions
 } cc_Wheel;
 
-cc_Focuser *open_focuser(const char *pluginname);
-cc_Camera *open_camera(const char *pluginname);
-cc_Wheel *open_wheel(const char *pluginname);
-int cc_getNbytes(cc_IMG *image);
-
 /****** Content of old socket.h ******/
 
 // max & min TCP socket port number
@@ -161,8 +160,6 @@ int cc_getNbytes(cc_IMG *image);
 
 // wait for mutex locking
 #define CC_BUSY_TIMEOUT    (1.0)
-// waiting for answer timeout
-#define CC_ANSWER_TIMEOUT  (0.01)
 // wait for exposition ends (between subsequent check calls)
 #define CC_WAIT_TIMEOUT    (2.0)
 // client will disconnect after this time from last server message
@@ -179,11 +176,6 @@ typedef enum{
     RESULT_NUM
 } cc_hresult;
 
-const char *cc_hresult2str(cc_hresult r);
-cc_hresult cc_str2hresult(const char *str);
-int cc_setNtries(int n);
-int cc_getNtries();
-
 // fd - socket fd to send private messages, key, val - key and its value
 typedef cc_hresult (*cc_mesghandler)(int fd, const char *key, const char *val);
 
@@ -192,16 +184,6 @@ typedef struct{
     cc_mesghandler handler;                // handler function
     const char *key;                    // keyword
 } cc_handleritem;
-
-int cc_open_socket(int isserver, char *path, int isnet);
-int cc_senddata(int fd, void *data, size_t l);
-int cc_sendmessage(int fd, const char *msg, int l);
-int cc_sendstrmessage(int fd, const char *msg);
-char *cc_get_keyval(char *keyval);
-cc_IMG *cc_getshm(key_t key, size_t imsize);
-int cc_canberead(int fd);
-cc_hresult cc_sendint(int fd, const char *cmd, int val);
-
 
 /****** Content of old server.h ******/
 
@@ -224,6 +206,7 @@ typedef enum{
 #define CC_CMD_SHMEMKEY    "shmemkey"
 
 // CCD/CMOS
+#define CC_CMD_PLUGINCMD   "plugincmd"
 #define CC_CMD_CAMLIST     "camlist"
 #define CC_CMD_CAMDEVNO    "camdevno"
 #define CC_CMD_EXPOSITION  "exptime"
@@ -252,6 +235,7 @@ typedef enum{
 #define CC_CMD_DARK        "dark"
 #define CC_CMD_INFTY       "infty"
 // FITS file keywords
+#define CC_CMD_GETHEADERS  "getheaders"
 #define CC_CMD_AUTHOR      "author"
 #define CC_CMD_INSTRUMENT  "instrument"
 #define CC_CMD_OBSERVER    "observer"
@@ -274,10 +258,58 @@ typedef struct{
     char* buf;      // databuffer
     size_t bufsize; // size of `buf`
     size_t buflen;  // current buffer length
+    char *string;   // last \n-ended string from `buf`
+    size_t strlen;  // max length of `string`
+    pthread_mutex_t mutex; // mutex for atomic data access
+} cc_strbuff;
+
+typedef struct{
+    char* buf;      // databuffer
+    size_t bufsize; // size of `buf`
+    size_t buflen;  // current buffer length
     pthread_mutex_t mutex; // mutex for atomic data access
 } cc_charbuff;
 
-cc_charbuff *cc_bufnew(size_t size);
-void cc_bufdel(cc_charbuff **buf);
-int cc_read2buf(int fd, cc_charbuff *buf);
-size_t cc_getline(cc_charbuff *b, char *str, size_t len);
+#define cc_buff_lock(b) pthread_mutex_lock(&b->mutex)
+#define cc_buff_trylock(b) pthread_mutex_trylock(&b->mutex)
+#define cc_buff_unlock(b) pthread_mutex_unlock(&b->mutex)
+
+cc_Focuser *open_focuser(const char *pluginname);
+cc_Camera *open_camera(const char *pluginname);
+cc_Wheel *open_wheel(const char *pluginname);
+
+cc_charbuff *cc_charbufnew();
+int cc_charbuftest(cc_charbuff *b, size_t maxsize);
+void cc_charbufclr(cc_charbuff *buf);
+void cc_charbufdel(cc_charbuff **buf);
+void cc_charbufput(cc_charbuff *b, const char *s, size_t l);
+void cc_charbufaddline(cc_charbuff *b, const char *s);
+cc_strbuff *cc_strbufnew(size_t size, size_t stringsize);
+void cc_strbufdel(cc_strbuff **buf);
+
+const char *cc_hresult2str(cc_hresult r);
+cc_hresult cc_str2hresult(const char *str);
+int cc_setNtries(int n);
+int cc_getNtries();
+int cc_setAnsTmout(double t);
+double cc_getAnsTmout();
+int cc_getNbytes(cc_IMG *image);
+
+int cc_read2buf(int fd, cc_strbuff *buf);
+int cc_refreshbuf(int fd, cc_strbuff *buf);
+size_t cc_getline(cc_strbuff *b);
+int cc_open_socket(int isserver, char *path, int isnet);
+int cc_senddata(int fd, void *data, size_t l);
+int cc_sendmessage(int fd, const char *msg, int l);
+int cc_sendstrmessage(int fd, const char *msg);
+char *cc_get_keyval(char *keyval);
+cc_IMG *cc_getshm(key_t key, size_t imsize);
+int cc_canberead(int fd);
+cc_hresult cc_setint(int fd, cc_strbuff *cbuf, const char *cmd, int val);
+cc_hresult cc_getint(int fd, cc_strbuff *cbuf, const char *cmd, int *val);
+cc_hresult cc_setfloat(int fd, cc_strbuff *cbuf, const char *cmd, float val);
+cc_hresult cc_getfloat(int fd, cc_strbuff *cbuf, const char *cmd, float *val);
+
+char *cc_nextkw(char *buf, char record[FLEN_CARD+1], int newlines);
+size_t cc_kwfromfile(cc_charbuff *b, char *filename);
+int cc_charbuf2kw(cc_charbuff *b, fitsfile *f);
