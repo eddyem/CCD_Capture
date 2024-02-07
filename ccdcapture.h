@@ -41,6 +41,26 @@ typedef struct __attribute__((packed, aligned(4))){
     /* `data` is uint8_t or uint16_t depending on `bitpix` */
 } cc_IMG;
 
+typedef struct{
+    char* buf;      // databuffer
+    size_t bufsize; // size of `buf`
+    size_t buflen;  // current buffer length
+    char *string;   // last \n-ended string from `buf`
+    size_t strlen;  // max length of `string`
+    pthread_mutex_t mutex; // mutex for atomic data access
+} cc_strbuff;
+
+typedef struct{
+    char* buf;      // databuffer
+    size_t bufsize; // size of `buf`
+    size_t buflen;  // current buffer length
+    pthread_mutex_t mutex; // mutex for atomic data access
+} cc_charbuff;
+
+#define cc_buff_lock(b) pthread_mutex_lock(&((b)->mutex))
+#define cc_buff_trylock(b) pthread_mutex_trylock(&((b)->mutex))
+#define cc_buff_unlock(b) pthread_mutex_unlock(&((b)->mutex))
+
 // format of single frame
 typedef struct{
     int w; int h;               // width & height
@@ -69,6 +89,17 @@ typedef enum{
     FAN_MID,
     FAN_HIGH,
 } cc_fan_speed;
+
+typedef enum{
+    RESULT_OK,          // 0: all OK
+    RESULT_BUSY,        // 1: camera busy and no setters can be done
+    RESULT_FAIL,        // 2: failed running command
+    RESULT_BADVAL,      // 3: bad key's value
+    RESULT_BADKEY,      // 4: bad key
+    RESULT_SILENCE,     // 5: send nothing to client
+    RESULT_DISCONNECTED,// 6: client disconnected
+    RESULT_NUM
+} cc_hresult;
 
 // all setters and getters of Camera, Focuser and cc_Wheel should return TRUE if success or FALSE if failed or unsupported
 // camera
@@ -110,10 +141,10 @@ typedef struct{
     int (*getTbody)(float *t);  // body T
     int (*getbin)(int *binh, int *binv);
     int (*getio)(int *s);       // get IO-port state
-    const char* (*plugincmd)(const char *str); // custom camera plugin command (get string as input, send string as output or NULL if failed)
+    cc_hresult (*plugincmd)(const char *str, cc_charbuff *ans); // custom camera plugin command (get string as input, send string as output or NULL if failed)
     float pixX, pixY;           // pixel size in um
-    cc_frameformat field;          // max field of view
-    cc_frameformat array;          // array format
+    cc_frameformat field;          // max field of view (full CCD field without overscans)
+    cc_frameformat array;          // array format (with overscans)
     cc_frameformat geometry;       // current geometry settings (as in setgeometry)
 } cc_Camera;
 
@@ -164,17 +195,6 @@ typedef struct{
 #define CC_WAIT_TIMEOUT    (2.0)
 // client will disconnect after this time from last server message
 #define CC_CLIENT_TIMEOUT  (3.0)
-
-typedef enum{
-    RESULT_OK,          // 0: all OK
-    RESULT_BUSY,        // 1: camera busy and no setters can be done
-    RESULT_FAIL,        // 2: failed running command
-    RESULT_BADVAL,      // 3: bad key's value
-    RESULT_BADKEY,      // 4: bad key
-    RESULT_SILENCE,     // 5: send nothing to client
-    RESULT_DISCONNECTED,// 6: client disconnected
-    RESULT_NUM
-} cc_hresult;
 
 // fd - socket fd to send private messages, key, val - key and its value
 typedef cc_hresult (*cc_mesghandler)(int fd, const char *key, const char *val);
@@ -254,25 +274,26 @@ typedef enum{
 #define CC_CMD_WDEVNO      "wdevno"
 #define CC_CMD_WPOS        "wpos"
 
-typedef struct{
-    char* buf;      // databuffer
-    size_t bufsize; // size of `buf`
-    size_t buflen;  // current buffer length
-    char *string;   // last \n-ended string from `buf`
-    size_t strlen;  // max length of `string`
-    pthread_mutex_t mutex; // mutex for atomic data access
-} cc_strbuff;
+typedef enum{ // parameter type
+    CC_PAR_INT,
+    CC_PAR_FLOAT,
+    CC_PAR_DOUBLE,
+} cc_partype_t;
 
-typedef struct{
-    char* buf;      // databuffer
-    size_t bufsize; // size of `buf`
-    size_t buflen;  // current buffer length
-    pthread_mutex_t mutex; // mutex for atomic data access
-} cc_charbuff;
+typedef struct{ // custom plugin parameters
+    const char *cmd;        // text parameter/command
+    const char *helpstring; // help string for this parameter
+    cc_hresult (*checker)(const char *str, cc_charbuff *ans); // value checker or custom handler (if don't satisfy common getter/setter); return possible answer in `ans`
+    void *ptr;              // pointer to variable (if exists)
+    void *min;              // min/max values of `ptr` (or NULL if don't need to check)
+    void *max;
+    cc_partype_t type;      // argument type
+} cc_parhandler_t;
 
-#define cc_buff_lock(b) pthread_mutex_lock(&b->mutex)
-#define cc_buff_trylock(b) pthread_mutex_trylock(&b->mutex)
-#define cc_buff_unlock(b) pthread_mutex_unlock(&b->mutex)
+// this record should be last in cc_parhandler_t array for `cc_plugin_customcmd`
+#define CC_PARHANDLER_END   {0}
+
+cc_hresult cc_plugin_customcmd(const char *str, cc_parhandler_t *handlers, cc_charbuff *ans);
 
 cc_Focuser *open_focuser(const char *pluginname);
 cc_Camera *open_camera(const char *pluginname);

@@ -17,6 +17,7 @@
  */
 
 #include <fcntl.h>
+#include <improclib.h>
 #include <limits.h>
 #include <math.h>
 #include <stdint.h>
@@ -41,9 +42,23 @@ static float camtemp = -30., exptime = 0.;
 static cc_capture_status capstat = CAPTURE_NO;
 static double texpstart = 0.;
 static uint8_t bitpix = 16; // bit depth: 8 or 16
-// sinusoide periods
-static double sinPx = 100., sinPy = 200.;
-static const double sinmin = 1.;
+
+typedef struct{
+    int width; int height; // size of field where the 'star' can move
+    int x0; int y0; // center of star field in array coordinates
+    double fwhm; // stars FWHM, arcsec
+    double scale; // CCD scale: arcsec/pix
+    double mag; // star magnitude: 0m is 16384 ADUs per second per arcsec^2
+} settings_t;
+
+static settings_t settings = {
+    .width = 500, .height = 500,
+    .x0 = 512, .y0 = 512,
+    .fwhm = 1.5, .scale = 0.03, .mag = 10.
+};
+// min/max for parameters
+static const int wmin = 100, hmin = 100;
+static const double fwhmmin = 0.1, fwhmmax = 10., scalemin = 0.001, scalemax = 3600., magmin = -30., magmax = 30.;
 
 static int campoll(cc_capture_status *st, float *remain){
     if(capstat != CAPTURE_PROCESS){
@@ -69,34 +84,42 @@ static int startexp(){
     return TRUE;
 }
 
-static int camcapt(cc_IMG *ima){
+static void gen16(cc_IMG *ima){
     static int n = 0;
+    int y1 = ima->h * curvbin, x1 = ima->w * curhbin;
+    OMP_FOR()
+    for(int y = 0; y < y1; y += curvbin){
+        uint16_t *d = &((uint16_t*)ima->data)[y*ima->w/curvbin];
+        for(int x = 0; x < x1; x += curhbin){ // sinusoide 100x200
+            //*d++ = (uint16_t)(((n+x)%100)/99.*65535.);
+            *d++ = (uint16_t)((1. + sin((n+x) * (2.*M_PI)/11.)*sin((n+y) * (2.*M_PI)/22.))*32767.);
+        }
+    }
+    ++n;
+}
+static void gen8(cc_IMG *ima){
+    static int n = 0;
+    int y1 = ima->h * curvbin, x1 = ima->w * curhbin;
+    OMP_FOR()
+    for(int y = 0; y < y1; y += curvbin){
+        uint8_t *d = &((uint8_t*)ima->data)[y*ima->w/curvbin];
+        for(int x = 0; x < x1; x += curhbin){ // sinusoide 100x200
+            //*d++ = (uint16_t)(((n+x)%100)/99.*65535.);
+            *d++ = (uint8_t)((1. + sin((n+x) * (2.*M_PI)/11.)*sin((n+y) * (2.*M_PI)/22.))*127.);
+        }
+    }
+    ++n;
+}
+
+static int camcapt(cc_IMG *ima){
     if(!ima || !ima->data) return FALSE;
 #ifdef EBUG
     double t0 = dtime();
 #endif
-    int y1 = ima->h * curvbin, x1 = ima->w * curhbin;
-    if(bitpix == 16){
-        OMP_FOR()
-        for(int y = 0; y < y1; y += curvbin){
-            uint16_t *d = &((uint16_t*)ima->data)[y*ima->w/curvbin];
-            for(int x = 0; x < x1; x += curhbin){ // sinusoide 100x200
-                //*d++ = (uint16_t)(((n+x)%100)/99.*65535.);
-                *d++ = (uint16_t)((1. + sin((n+x) * (2.*M_PI)/sinPx)*sin((n+y) * (2.*M_PI)/sinPy))*32767.);
-            }
-        }
-    }else{
-        OMP_FOR()
-        for(int y = 0; y < y1; y += curvbin){
-            uint8_t *d = &((uint8_t*)ima->data)[y*ima->w/curvbin];
-            for(int x = 0; x < x1; x += curhbin){ // sinusoide 100x200
-                //*d++ = (uint16_t)(((n+x)%100)/99.*65535.);
-                *d++ = (uint8_t)((1. + sin((n+x) * (2.*M_PI)/sinPx)*sin((n+y) * (2.*M_PI)/sinPy))*127.);
-            }
-        }
-    }
-    ++n;
     ima->bitpix = bitpix;
+    bzero(ima->data, ima->h*ima->w*cc_getNbytes(ima));
+    if(bitpix == 16) gen16(ima);
+    else gen8(ima);
     DBG("Time of capture: %g", dtime() - t0);
     return TRUE;
 }
@@ -257,22 +280,16 @@ static int whlgetnam(char *n, int l){
     return TRUE;
 }
 
-/*
-static int checker(const char *str, cc_charbuff *ans){
-    char *eq = strchr(str, '=');
-    if(eq){
-        float x = (float)atof(eq+1);
-        if(x < 1.){if(ans) cc_charbufaddline(ans, "Value must be >= 1.");}
-        else return TRUE;
-    }else return TRUE; // getter
-    return FALSE;
-}*/
-
-
-// cmd, help, handler, ptr, type
+// cmd, help, handler, ptr, min, max, type
 static cc_parhandler_t handlers[] = {
-    {"px", "set/get sin period over X axis (pix)", NULL, (void*)&sinPx, (void*)&sinmin, NULL, CC_PAR_DOUBLE},
-    {"py", "set/get sin period over Y axis (pix)", NULL, (void*)&sinPy, (void*)&sinmin, NULL, CC_PAR_DOUBLE},
+    {"width", "width of star moving field", NULL, (void*)&settings.width, (void*)&wmin, NULL, CC_PAR_INT},
+    {"height", "height of star moving field", NULL, (void*)&settings.height, (void*)&hmin, NULL, CC_PAR_INT},
+    {"xc", "x center of field in array coordinates", NULL, (void*)&settings.x0, NULL, NULL, CC_PAR_INT},
+    {"yc", "y center of field in array coordinates", NULL, (void*)&settings.y0, NULL, NULL, CC_PAR_INT},
+    {"fwhm", "star FWHM, arcsec", NULL, (void*)&settings.fwhm, (void*)&fwhmmin, (void*)&fwhmmax, CC_PAR_DOUBLE},
+    {"scale", "CCD scale: arcsec/pix", NULL, (void*)&settings.scale, (void*)&scalemin, (void*)&scalemax, CC_PAR_DOUBLE},
+    {"mag", "star magnitude: 0m is 16384 ADUs per second per arcsec^2", NULL, (void*)&settings.mag, (void*)&magmin, (void*)&magmax, CC_PAR_DOUBLE},
+    //{"", "", NULL, (void*)&, (void*)&, (void*)&settings., CC_PAR_DOUBLE},
     CC_PARHANDLER_END
 };
 

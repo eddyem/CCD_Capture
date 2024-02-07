@@ -189,8 +189,6 @@ static const char *resmessages[RESULT_NUM] = {
     [RESULT_FAIL] = "FAIL",
     [RESULT_BADVAL] = "BADVAL",
     [RESULT_BADKEY] = "BADKEY",
-//    [RESULT_SILENCE] = NULL, // nothing to send
-//    [RESULT_DISCONNECTED] = NULL, // not to send
 };
 
 const char *cc_hresult2str(cc_hresult r){
@@ -731,4 +729,124 @@ int cc_charbuf2kw(cc_charbuff *b, fitsfile *f){
         c = e + 1;
     }
     return TRUE;
+}
+
+static size_t print_val(cc_partype_t t, void *val, char *buf, size_t bufl){
+    size_t l = 0;
+    switch(t){
+        case CC_PAR_INT:
+            l = snprintf(buf, bufl, "%d", *(int*)val);
+        break;
+        case CC_PAR_FLOAT:
+            l = snprintf(buf, bufl, "%g", *(float*)val);
+        break;
+        case CC_PAR_DOUBLE:
+            l = snprintf(buf, bufl, "%g", *(double*)val);
+        break;
+        default:
+         l = snprintf(buf, bufl, "hoojnya");
+        break;
+    }
+    return l;
+}
+
+/**
+ * @brief cc_plugin_customcmd - common handler for custom plugin commands
+ * @param str - string like "par" (getter/cmd) or "par=val" (setter)
+ * @param handlers - NULL-terminated array of handlers for custom commands
+ * @param ans - buffer for output string
+ * @return RESULT_OK if all OK or error code
+ */
+cc_hresult cc_plugin_customcmd(const char *str, cc_parhandler_t *handlers, cc_charbuff *ans){
+    if(!str || !handlers) return RESULT_FAIL;
+    char key[256];
+    snprintf(key, 255, "%s", str);
+    char *val = cc_get_keyval(key);
+    cc_parhandler_t *phptr = handlers;
+    cc_hresult result = RESULT_BADKEY;
+    char buf[512];
+#define ADDL(...) do{if(ans){size_t l = snprintf(bptr, L, __VA_ARGS__); bptr += l; L -= l;}}while(0)
+#define PRINTVAL(v) do{if(ans){size_t l = print_val(phptr->type, phptr->v, bptr, L); bptr += l; L -= l;}}while(0)
+    while(phptr->cmd){
+        if(0 == strcmp(key, phptr->cmd)){
+            char *bptr = buf; size_t L = 511;
+            result = RESULT_OK;
+            if(phptr->checker) result = phptr->checker(str, ans);
+            if(phptr->ptr){ // setter/getter
+                if(val){if(result == RESULT_OK){// setter: change value only if [handler] returns OK (`handler` could be value checker)
+                    int ival; float fval; double dval;
+#define UPDATE_VAL(type, val, pr) do{ \
+  if(phptr->max && val > *(type*)phptr->max){ADDL("max=" pr, *(type*)phptr->max); result = RESULT_BADVAL;} \
+  if(phptr->min && val < *(type*)phptr->min){ADDL("min=" pr, *(type*)phptr->min); result = RESULT_BADVAL;} \
+  if(result == RESULT_OK) *(type*)phptr->ptr = val;  \
+}while(0)
+                    switch(phptr->type){
+                        case CC_PAR_INT:
+                            ival = atoi(val);
+                            UPDATE_VAL(int, ival, "%d");
+                        break;
+                        case CC_PAR_FLOAT:
+                            fval = (float)atof(val);
+                            UPDATE_VAL(float, fval, "%g");
+                        break;
+                        case CC_PAR_DOUBLE:
+                            dval = atof(val);
+                            UPDATE_VAL(double, dval, "%g");
+                        break;
+                        default:
+                            result = RESULT_FAIL;
+                    }
+#undef UPDATE_VAL
+                }}else result = RESULT_SILENCE; // getter - don't show "OK"
+                DBG("res=%d", result);
+                if(result == RESULT_SILENCE || result == RESULT_OK){
+                    ADDL("%s=", phptr->cmd);
+                    PRINTVAL(ptr);
+                }
+                if(ans) cc_charbufaddline(ans, buf);
+            }
+            break;
+        }
+        ++phptr;
+    }
+    if(ans && result == RESULT_BADKEY){ // cmd not found - display full help
+        cc_charbufaddline(ans, "Custom plugin commands:\n");
+        phptr = handlers;
+        while(phptr->cmd){
+            char *bptr = buf; size_t L = 511;
+            ADDL("\t%s", phptr->cmd);
+            if(phptr->ptr){
+                ADDL(" = (");
+                switch(phptr->type){
+                    case CC_PAR_INT:
+                        ADDL("int");
+                    break;
+                    case CC_PAR_FLOAT:
+                        ADDL("float");
+                    break;
+                    case CC_PAR_DOUBLE:
+                        ADDL("double");
+                    break;
+                    default:
+                        ADDL("undefined");
+                }
+                ADDL(")");
+                if(phptr->min || phptr->max){
+                    ADDL(" [");
+                    if(phptr->min) PRINTVAL(min);
+                    else ADDL("-inf");
+                    ADDL(", ");
+                    if(phptr->max) PRINTVAL(max);
+                    else ADDL("inf");
+                    ADDL("]");
+                }
+            }
+            ADDL(" - ");
+            ADDL("%s\n", phptr->helpstring);
+            cc_charbufaddline(ans, buf);
+            ++phptr;
+        }
+    }
+#undef ADDL
+    return result;
 }

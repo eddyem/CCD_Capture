@@ -111,7 +111,7 @@ myoption cmdlnopts[] = {
     {"restart", NO_ARGS,    &G.restart,1,   arg_none,   NULL,               N_("restart image server")},
 
     {"shmkey", NEED_ARG,    NULL,   'k',    arg_int,    APTR(&G.shmkey),    N_("shared memory (with image data) key (default: 7777777)")},
-    {"forceimsock",NO_ARGS, &G.forceimsock,1, arg_none, NULL,               N_("force using image through socket transition even if can use SHM)")},
+    {"forceimsock",NO_ARGS, &G.forceimsock,1, arg_none, NULL,               N_("force using image through socket transition even if can use SHM")},
     {"infty", NEED_ARG,     NULL,   NA,     arg_int,    APTR(&G.infty),     N_("start (!=0) or stop(==0) infinity capturing loop")},
 
 #ifdef IMAGEVIEW

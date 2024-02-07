@@ -15,7 +15,8 @@ message("VER: ${VERSION}")
 
 # list of options
 option(DEBUG "Compile in debug mode" OFF)
-option(IMAGEVIEW "Build with imageview module" OFF)
+option(DUMMY "Dummy camera plugin" ON)
+option(IMAGEVIEW "Build with imageview module" ON)
 option(ZWO "Add support of ZWO cameras" OFF)
 option(FLI "Add support of FLI cameras" OFF)
 option(BASLER "Add support of BASLER cameras" OFF)
@@ -23,6 +24,7 @@ option(HIKROBOT "Add support of HIKROBOT cameras" OFF)
 option(FLYCAP "Add support of Grasshopper FlyCap cameras" OFF)
 option(APOGEE "Add support of Apogee cameras" OFF)
 option(EXAMPLES "Some examples" OFF)
+option(ASTAR "Artifical star plugin" OFF)
 
 # default flags
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -W -Wextra -fno-builtin-strlen")
@@ -75,6 +77,7 @@ if(OPENMP_FOUND)
     add_definitions(-DOMP_FOUND)
 endif()
 
+# view image in OpenGL window
 if(IMAGEVIEW)
     list(APPEND SOURCES events.c imageview.c)
     find_package(OpenGL REQUIRED)
@@ -84,9 +87,13 @@ if(IMAGEVIEW)
     list(APPEND ${PROJ}_LIBRARIES ${CMAKE_THREAD_LIBS_INIT})
     add_definitions(-DIMAGEVIEW)
 endif()
-
-add_subdirectory(Dummy_cameras)
-
+# Dummy and artifical star plugins
+if(DUMMY)
+    add_subdirectory(Dummy_cameras)
+endif()
+if(ASTAR)
+    add_subdirectory(Astar_cameras)
+endif()
 # additional modules with CCD/CMOS support
 if(ZWO)
     add_subdirectory(ZWO_cameras)

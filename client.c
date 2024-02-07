@@ -267,7 +267,6 @@ void client(int sock){
                         while(1){
                             SENDCMDW(CC_CMD_CAMTEMPER);
                             if((delta = time1 - dtime()) < __FLT_EPSILON__) break;
-                            // %d секунд до окончания паузы\n
                             if(delta > 1.) verbose(1, _("%d seconds till pause ends\n"), (int)delta);
                             if(delta > 6.) sleep(5);
                             else if(delta > 1.) sleep((int)delta);

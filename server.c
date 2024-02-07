@@ -958,11 +958,14 @@ static cc_hresult inftyhandler(int fd, _U_ const char *key, const char *val){
 // custom camera plugin command
 static cc_hresult pluginhandler(int fd, _U_ const char *key, const char *val){
     if(!camera->plugincmd) return RESULT_BADKEY;
-    const char *r = camera->plugincmd(val);
-    if(!r) return RESULT_FAIL;
-    if(*r == 0) return RESULT_OK;
-    if(!cc_sendstrmessage(fd, r)) return RESULT_DISCONNECTED;
-    return RESULT_SILENCE;
+    static cc_charbuff *ans = NULL;
+    if(!ans) ans = cc_charbufnew();
+    cc_buff_lock(ans);
+    cc_charbufclr(ans);
+    cc_hresult r = camera->plugincmd(val, ans);
+    cc_buff_unlock(ans);
+    if(ans->buflen && !cc_sendstrmessage(fd, ans->buf)) r = RESULT_DISCONNECTED;
+    return r;
 }
 
 // get headers

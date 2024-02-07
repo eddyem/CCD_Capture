@@ -217,7 +217,6 @@ int saveFITS(cc_IMG *img, char **outp){
         }
     }else{ // user pointed output file prefix
         if(!check_filenameprefix(fnam, PATH_MAX)){
-            // Не могу сохранить файл
             WARNX(_("Can't save file with prefix %s"), GP->outfileprefix);
             LOGERR("Can't save image with prefix %s", GP->outfileprefix);
         }
@@ -453,7 +452,7 @@ retn:
 
 cc_Wheel *startWheel(){
     if(!GP->wheeldev && !GP->commondev){
-        verbose(3, _("cc_Wheel device not pointed"));
+        verbose(3, _("Wheel device not pointed"));
         return NULL;
     }else{
         char *plugin = GP->commondev ? GP->commondev : GP->wheeldev;
@@ -518,7 +517,7 @@ void wheels(){
     pos = GP->setwheel;
     if(pos == -1) goto retn; // no wheel commands
     if(pos < 0 || pos > maxpos){
-        WARNX(_("cc_Wheel position should be from 0 to %d"), maxpos);
+        WARNX(_("Wheel position should be from 0 to %d"), maxpos);
         goto retn;
     }
     if(!wheel->setPos(pos))
@@ -605,11 +604,19 @@ int prepare_ccds(){
         if(!camera->plugincmd) WARNX(_("Camera plugin have no custom commands"));
         else{
             char **p = GP->plugincmd;
+            cc_charbuff *b = cc_charbufnew();
             DBG("got %s", *p);
             while(p && *p){
-                printf("Command: %s\nAnswer: %s\n", *p, camera->plugincmd(*p));
+                cc_charbufclr(b);
+                cc_hresult r = camera->plugincmd(*p, b);
+                if(r == RESULT_OK || r == RESULT_SILENCE) green("Command '%s'", *p);
+                else red("Command '%s'", *p);
+                if(r != RESULT_SILENCE) printf(" returns \"%s\"", cc_hresult2str(r));
+                if(b->buflen) printf("\n%s", b->buf);
+                else printf("\n");
                 ++p;
             }
+            cc_charbufdel(&b);
         }
     }
     if(GP->fanspeed > -1){
@@ -650,7 +657,6 @@ int prepare_ccds(){
             WARNX(_("Can't run shutter command %s (unsupported?)"), str[GP->shtr_cmd]);
     }
     if(GP->confio > -1){
-        // "Попытка сконфигурировать порт I/O как %d\n"
         verbose(1, _("Try to configure I/O port as %d"), GP->confio);
         if(!camera->confio(GP->confio))
             WARNX(_("Can't configure (unsupported?)"));
@@ -663,7 +669,6 @@ int prepare_ccds(){
             WARNX(_("Can't get IOport state (unsupported?)"));
     }
     if(GP->setio > -1){
-        // "Попытка записи %d в порт I/O\n"
         verbose(1, _("Try to write %d to I/O port"), GP->setio);
         if(!camera->setio(GP->setio))
             WARNX(_("Can't set IOport"));
@@ -717,7 +722,8 @@ int prepare_ccds(){
         WARNX(_("Can't set readout speed"));
     else verbose(1, _("Readout mode: %s"), GP->fast ? "fast" : "normal");
     if(!GP->outfile) verbose(1, _("Only show statistics"));
-    if(!camera->getbin(&GP->hbin, &GP->vbin)) // GET binning should be AFTER setgeometry!
+    // GET binning should be AFTER setgeometry!
+    if(!camera->getbin(&GP->hbin, &GP->vbin))
         WARNX(_("Can't get current binning"));
     verbose(2, "Binning: %d x %d", GP->hbin, GP->vbin);
     rtn = TRUE;
@@ -742,7 +748,6 @@ DBG("w=%d, h=%d", raw_width, raw_height);
     for(int j = 0; j < GP->nframes; ++j){
         TIMESTAMP("Start next cycle");
         TIMEINIT();
-        // Захват кадра %d\n
         verbose(1, _("Capture frame %d"), j);
         if(!camera->startexposition()){
             WARNX(_("Can't start exposition"));
@@ -769,7 +774,6 @@ DBG("w=%d, h=%d", raw_width, raw_height);
         if(GP->pause_len && j != (GP->nframes - 1)){
             double delta, time1 = dtime() + GP->pause_len;
             while((delta = time1 - dtime()) > 0.){
-                // %d секунд до окончания паузы\n
                 verbose(1, _("%d seconds till pause ends\n"), (int)delta);
                 float tmpf;
                 if(camera->getTcold(&tmpf)) verbose(1, "CCDTEMP=%.1f\n", tmpf);
