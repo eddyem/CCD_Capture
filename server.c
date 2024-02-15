@@ -132,7 +132,7 @@ static void fixima(){
     DBG("curformat: %dx%d", curformat.w, curformat.h);
     ima->h = raw_height;
     ima->w = raw_width;
-    if(!camera->getbitpix(&ima->bitpix)) ima->bitpix = 16;
+    if(!camera->getbitpix || !camera->getbitpix(&ima->bitpix)) ima->bitpix = 16;
     if(ima->bitpix < 8 || ima->bitpix > 16) ima->bitpix = 16; // use maximum in any strange cases
     ima->bytelen = raw_height * raw_width * cc_getNbytes(ima);
     DBG("new image: %dx%d", raw_width, raw_height);
@@ -145,8 +145,14 @@ static inline void cameraidlestate(){ // idle - wait for capture commands
         camflags &= ~(FLAG_STARTCAPTURE | FLAG_CANCEL);
         camstate = CAMERA_CAPTURE;
         fixima();
+        if(!camera->startexposition){
+            LOGERR(_("Camera plugin have no function `start exposition`"));
+            WARNX(_("Camera plugin have no function `start exposition`"));
+            camstate = CAMERA_ERROR;
+            return;
+        }
         if(!camera->startexposition()){
-            LOGERR("Can't start exposition");
+            LOGERR(_("Can't start exposition"));
             WARNX(_("Can't start exposition"));
             camstate = CAMERA_ERROR;
             return;
@@ -155,7 +161,7 @@ static inline void cameraidlestate(){ // idle - wait for capture commands
 }
 static inline void cameracapturestate(){ // capturing - wait for exposition ends
     cc_capture_status cs;
-    if(camera->pollcapture(&cs, &tremain)){
+    if(camera->pollcapture && camera->pollcapture(&cs, &tremain)){
         if(cs != CAPTURE_PROCESS){
             TIMESTAMP("Capture ready");
             tremain = 0.;
@@ -163,6 +169,12 @@ static inline void cameracapturestate(){ // capturing - wait for exposition ends
             if(!ima->data) LOGERR("Can't save image: not initialized");
             else{
                 TIMESTAMP("start capture");
+                if(!camera->capture){
+                    WARNX(_("Camera plugin have no function `capture`"));
+                    LOGERR(_("Camera plugin have no function `capture`"));
+                    camstate = CAMERA_ERROR;
+                    return;
+                }
                 if(!camera->capture(ima)){
                     LOGERR("Can't capture image");
                     camstate = CAMERA_ERROR;
@@ -195,18 +207,19 @@ static void* processCAM(_U_ void *d){
             signals(1);
         }
         usleep(100);
+        if(tremain < 0.5 && tremain > 0.) usleep(tremain*1e6);
         if(lock()){
             // log
             if(dtime() - logt > TLOG_PAUSE){
                 logt = dtime();
                 float t;
-                if(camera->getTcold(&t)){
+                if(camera->getTcold && camera->getTcold(&t)){
                     LOGMSG("CCDTEMP=%.1f", t);
                 }
-                if(camera->getThot(&t)){
+                if(camera->getThot && camera->getThot(&t)){
                    LOGMSG("HOTTEMP=%.1f", t);
                 }
-                if(camera->getTbody(&t)){
+                if(camera->getTbody && camera->getTbody(&t)){
                    LOGMSG("BODYTEMP=%.1f", t);
                 }
             }
@@ -214,7 +227,7 @@ static void* processCAM(_U_ void *d){
                 DBG("Cancel exposition");
                 LOGMSG("User canceled exposition");
                 camflags &= ~(FLAG_STARTCAPTURE | FLAG_CANCEL);
-                camera->cancel();
+                if(camera->cancel) camera->cancel();
                 camstate = CAMERA_IDLE;
                 infty = 0; // also cancel infinity loop
                 unlock();
@@ -244,14 +257,14 @@ static void* processCAM(_U_ void *d){
 // functions running @ each devno change
 static int camdevini(int n){
     if(!camera) return FALSE;
-    if(!camera->setDevNo(n)){
+    if(camera->setDevNo && !camera->setDevNo(n)){
         LOGERR("Can't set active camera number");
         return FALSE;
     }
     camdevno = n;
     LOGMSG("Set camera device number to %d", camdevno);
     cc_frameformat step;
-    camera->getgeomlimits(&frmformatmax, &step);
+    if(camera->getgeomlimits) camera->getgeomlimits(&frmformatmax, &step);
     curformat = frmformatmax;
     DBG("\n\nGeometry format max (offx/offy) w/h: (%d/%d) %d/%d", curformat.xoff, curformat.yoff,
         curformat.w, curformat.h);
@@ -262,8 +275,8 @@ static int camdevini(int n){
     if(GP->hbin < 1) GP->hbin = 1;
     if(GP->vbin < 1) GP->vbin = 1;
     fixima();
-    if(!camera->setbin(GP->hbin, GP->vbin)) WARNX(_("Can't set binning %dx%d"), GP->hbin, GP->vbin);
-    if(!camera->setgeometry(&curformat)) WARNX(_("Can't set given geometry"));
+    if(!camera->setbin || !camera->setbin(GP->hbin, GP->vbin)) WARNX(_("Can't set binning %dx%d"), GP->hbin, GP->vbin);
+    if(!camera->setgeometry || !camera->setgeometry(&curformat)) WARNX(_("Can't set given geometry"));
     return TRUE;
 }
 static int focdevini(int n){
@@ -312,13 +325,14 @@ static cc_hresult imsizehandler(int fd, const char *key, _U_ const char *val){
 }
 static cc_hresult camlisthandler(int fd, _U_ const char *key, _U_ const char *val){
     char buf[BUFSIZ], modname[256];
+    if(!camera->getModelName) return RESULT_FAIL;
     for(int i = 0; i < camera->Ndevices; ++i){
-        if(!camera->setDevNo(i)) continue;
-        camera->getModelName(modname, 255);
-        snprintf(buf, BUFSIZ-1, CC_CMD_CAMLIST "='%s'", modname);
-        if(!cc_sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
+        if(camera->setDevNo && !camera->setDevNo(i)) continue;
+            camera->getModelName(modname, 255);
+            snprintf(buf, BUFSIZ-1, CC_CMD_CAMLIST "='%s'", modname);
+            if(!cc_sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
     }
-    if(camdevno > -1) camera->setDevNo(camdevno);
+    if(camdevno > -1 && camera->setDevNo) camera->setDevNo(camdevno);
     return RESULT_SILENCE;
 }
 static cc_hresult camsetNhandler(_U_ int fd, _U_ const char *key, _U_ const char *val){
@@ -341,6 +355,7 @@ static cc_hresult exphandler(int fd, _U_ const char *key, const char *val){
         DBG("setexp to %s", val);
         double v = atof(val);
         if(v < DBL_EPSILON) return RESULT_BADVAL;
+        if(!camera->setexp) return RESULT_FAIL;
         if(camera->setexp(v)){
             GP->exptime = v;
         }else LOGWARN("Can't set exptime to %g", v);
@@ -427,10 +442,12 @@ static cc_hresult binhandler(_U_ int fd, const char *key, const char *val){
         if(b < 1) return RESULT_BADVAL;
         if(0 == strcmp(key, CC_CMD_HBIN)) GP->hbin = b;
         else GP->vbin = b;
+        if(!camera->setbin) return RESULT_FAIL;
         if(!camera->setbin(GP->hbin, GP->vbin)){
             return RESULT_BADVAL;
         }
     }
+    if(!camera->getbin) return RESULT_SILENCE;
     int r = camera->getbin(&GP->hbin, &GP->vbin);
     if(r){
         if(0 == strcmp(key, CC_CMD_HBIN)) snprintf(buf, 63, "%s=%d", key, GP->hbin);
@@ -445,6 +462,7 @@ static cc_hresult temphandler(int fd, _U_ const char *key, const char *val){
     float f;
     char buf[64];
     int r;
+    if(!camera->setT) return RESULT_FAIL;
     if(val){
         f = atof(val);
         r = camera->setT((float)f);
@@ -454,25 +472,31 @@ static cc_hresult temphandler(int fd, _U_ const char *key, const char *val){
         }
         LOGMSG("Set camera T to %.1f", f);
     }
+    if(!camera->getTcold) return RESULT_SILENCE;
     r = camera->getTcold(&f);
     if(r){
         snprintf(buf, 63, CC_CMD_CAMTEMPER "=%.1f", f);
         if(!cc_sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
-        r = camera->getTbody(&f);
-        if(r){
-            snprintf(buf, 63, "tbody=%.1f", f);
-            if(!cc_sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
+        if(camera->getTbody){
+            r = camera->getTbody(&f);
+            if(r){
+                snprintf(buf, 63, "tbody=%.1f", f);
+                if(!cc_sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
+            }
         }
-        r = camera->getThot(&f);
-        if(r){
-            snprintf(buf, 63, "thot=%.1f", f);
-            if(!cc_sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
+        if(camera->getThot){
+            r = camera->getThot(&f);
+            if(r){
+                snprintf(buf, 63, "thot=%.1f", f);
+                if(!cc_sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
+            }
         }
         return RESULT_SILENCE;
     }else return RESULT_FAIL;
 }
 static cc_hresult camfanhandler(int fd, _U_ const char *key, _U_ const char *val){
     char buf[64];
+    if(!camera->setfanspeed) return RESULT_FAIL;
     if(val){
         int spd = atoi(val);
         if(spd < 0) return RESULT_BADVAL;
@@ -487,6 +511,7 @@ static cc_hresult camfanhandler(int fd, _U_ const char *key, _U_ const char *val
 }
 const char *shutterstr[] = {"open", "close", "expose @high", "expose @low"};
 static cc_hresult shutterhandler(_U_ int fd, _U_ const char *key, const char *val){
+    if(!camera->shuttercmd) return RESULT_FAIL;
     if(val){
         int x = atoi(val);
         if(x < 0 || x >= SHUTTER_AMOUNT) return RESULT_BADVAL;
@@ -502,6 +527,7 @@ static cc_hresult shutterhandler(_U_ int fd, _U_ const char *key, const char *va
 }
 static cc_hresult confiohandler(_U_ int fd, _U_ const char *key, _U_ const char *val){
     char buf[64];
+    if(!camera->confio) return RESULT_FAIL;
     if(val){
         int io = atoi(val);
         int r = camera->confio(io);
@@ -515,6 +541,7 @@ static cc_hresult confiohandler(_U_ int fd, _U_ const char *key, _U_ const char 
 static cc_hresult iohandler(_U_ int fd, _U_ const char *key, _U_ const char *val){
     char buf[64];
     int io;
+    if(!camera->setio) return RESULT_FAIL;
     if(val){
         io = atoi(val);
         int r = camera->setio(io);
@@ -529,11 +556,13 @@ static cc_hresult iohandler(_U_ int fd, _U_ const char *key, _U_ const char *val
 static cc_hresult gainhandler(_U_ int fd, _U_ const char *key, _U_ const char *val){
     char buf[64];
     float f;
+    if(!camera->setgain) return RESULT_FAIL;
     if(val){
         f = atof(val);
         int r = camera->setgain(f);
         if(!r) return RESULT_FAIL;
     }
+    if(!camera->getgain) return RESULT_SILENCE;
     int r = camera->getgain(&f);
     if(!r) return RESULT_FAIL;
     snprintf(buf, 63, CC_CMD_GAIN "=%.1f", f);
@@ -543,11 +572,13 @@ static cc_hresult gainhandler(_U_ int fd, _U_ const char *key, _U_ const char *v
 static cc_hresult brightnesshandler(_U_ int fd, _U_ const char *key, _U_ const char *val){
     char buf[64];
     float b;
+    if(!camera->setbrightness) return RESULT_FAIL;
     if(val){
         b = atof(val);
         int r = camera->setbrightness(b);
         if(!r) return RESULT_FAIL;
     }
+    if(!camera->getbrightness) return RESULT_SILENCE;
     int r = camera->getbrightness(&b);
     if(!r) return RESULT_FAIL;
     snprintf(buf, 63, CC_CMD_BRIGHTNESS "=%.1f", b);
@@ -561,6 +592,7 @@ static cc_hresult formathandler(int fd, const char *key, const char *val){
     cc_frameformat fmt;
     DBG("key=%s, val=%s", key, val);
     if(val){
+        if(!camera->setgeometry) return RESULT_FAIL;
         if(0 == strcmp(key, CC_CMD_FRAMEMAX)){
             DBG("CANT SET MAXFORMAT");
             return RESULT_BADKEY; // can't set maxformat
@@ -585,6 +617,7 @@ static cc_hresult formathandler(int fd, const char *key, const char *val){
 }
 static cc_hresult nflusheshandler(_U_ int fd, _U_ const char *key, _U_ const char *val){
     char buf[64];
+    if(!camera->setnflushes) return RESULT_FAIL;
     if(val){
         int n = atoi(val);
         if(n < 1) return RESULT_BADVAL;
@@ -627,6 +660,7 @@ static cc_hresult tremainhandler(_U_ int fd, _U_ const char *key, _U_ const char
 }
 static cc_hresult _8bithandler(int fd, _U_ const char *key, const char *val){
     char buf[64];
+    if(!camera->setbitdepth) return RESULT_FAIL;
     if(val){
         int s = atoi(val);
         if(s != 0 && s != 1) return RESULT_BADVAL;
@@ -640,6 +674,7 @@ static cc_hresult _8bithandler(int fd, _U_ const char *key, const char *val){
 }
 static cc_hresult fastspdhandler(int fd, _U_ const char *key, const char *val){
     char buf[64];
+    if(!camera->setfastspeed) return RESULT_FAIL;
     if(val){
         int b = atoi(val);
         if(b != 0 && b != 1) return RESULT_BADVAL;
@@ -652,6 +687,7 @@ static cc_hresult fastspdhandler(int fd, _U_ const char *key, const char *val){
 }
 static cc_hresult darkhandler(int fd, _U_ const char *key, const char *val){
     char buf[64];
+    if(!camera->setframetype) return RESULT_FAIL;
     if(val){
         int d = atoi(val);
         if(d != 0 && d != 1) return RESULT_BADVAL;
@@ -869,7 +905,7 @@ static cc_hresult infohandler(int fd, _U_ const char *key, _U_ const char *val){
     float f;
     int i;
     if(camera){
-        if(camera->getModelName(buf1, 255)){
+        if(camera->getModelName && camera->getModelName(buf1, 255)){
             snprintf(buf, BUFSIZ-1, CC_CMD_CAMLIST "='%s'", buf1);
             if(!cc_sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
         }
@@ -1027,7 +1063,7 @@ static cc_handleritem items[] = {
     {chkcc,  formathandler, CC_CMD_FRAMEFORMAT},
     {chkcc,  formathandler, CC_CMD_FRAMEMAX},
     {chkcc,  nflusheshandler, CC_CMD_NFLUSHES},
-    {chkcam, expstatehandler, CC_CMD_EXPSTATE},
+    {NULL,   expstatehandler, CC_CMD_EXPSTATE},
     {chktrue,shmemkeyhandler, CC_CMD_SHMEMKEY},
     {chktrue,imsizehandler, CC_CMD_IMWIDTH},
     {chktrue,imsizehandler, CC_CMD_IMHEIGHT},

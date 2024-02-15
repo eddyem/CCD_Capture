@@ -193,6 +193,12 @@ static int setbitdepth(int i){
     return TRUE;
 }
 
+static int getbitdepth(uint8_t *d){
+    if(!d) return TRUE;
+    *d = (is16bit) ? 16 : 12;
+    return TRUE;
+}
+
 static int setfastspeed(int fast){
     DBG("set fast speed %d", fast);
     unsigned short spd = (fast) ? AdcSpeed_Fast : AdcSpeed_Normal;
@@ -359,6 +365,7 @@ cc_Camera camera = {
     .setfanspeed = setfanspd,
     // getters:
     .getbrightness = fpfalse,
+    .getbitpix = getbitdepth,
     .getModelName = modelname,
     .getgain = fpfalse,
     .getmaxgain = fpfalse,

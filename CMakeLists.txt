@@ -29,11 +29,6 @@ option(ASTAR "Artifical star plugin" OFF)
 # default flags
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -W -Wextra -fno-builtin-strlen")
 
-# change wrong behaviour with install prefix
-if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT AND CMAKE_INSTALL_PREFIX MATCHES "/usr/local")
-    message("Change default install path to /usr")
-    set(CMAKE_INSTALL_PREFIX "/usr")
-endif()
 message("Install dir prefix: ${CMAKE_INSTALL_PREFIX}")
 if(NOT DEFINED LOCALEDIR)
     if(DEBUG)
@@ -87,6 +82,7 @@ if(IMAGEVIEW)
     list(APPEND ${PROJ}_LIBRARIES ${CMAKE_THREAD_LIBS_INIT})
     add_definitions(-DIMAGEVIEW)
 endif()
+
 # Dummy and artifical star plugins
 if(DUMMY)
     add_subdirectory(Dummy_cameras)

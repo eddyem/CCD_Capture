@@ -58,7 +58,7 @@ else (CFITSIO_INCLUDE_DIR AND CFITSIO_LIBRARIES)
     endif (NOT CFITSIO_FIND_QUIETLY)
   else (CFITSIO_FOUND)
     if (CFITSIO_FIND_REQUIRED)
-      message(STATUS "CFITSIO not found.")
+      message(FATAL_ERROR "CFITSIO not found.")
     endif (CFITSIO_FIND_REQUIRED)
   endif (CFITSIO_FOUND)
 

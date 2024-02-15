@@ -29,7 +29,7 @@
 extern cc_Camera camera;
 
 static PYLON_DEVICE_HANDLE hDev;
-static int isopened = FALSE, is16bit = FALSE;
+static int isopened = FALSE, bitdepth = 16;
 static char camname[BUFSIZ] = {0};
 static size_t payloadsize = 0; // size of imgBuf
 static unsigned char *imgBuf = NULL;
@@ -296,11 +296,12 @@ static int setdevno(int N){
 static int setbitdepth(int depth){
 #define MONON 4
     const char *fmts[MONON] = {"Mono16", "Mono14", "Mono12", "Mono10"};
+    const int depths[MONON] = {16, 14, 12, 10};
     if(depth == 0){ // 8 bit
         if(!PylonDeviceFeatureIsAvailable( hDev, "EnumEntry_PixelFormat_Mono8" )) return FALSE;
         PYLONFN(PylonDeviceFeatureFromString, hDev, "PixelFormat", "Mono8");
         green("Pixel format: Mono8\n");
-        is16bit = FALSE;
+        bitdepth = 8;
         DBG("8 bit");
     }else{ // 16 bit
         char buf[128];
@@ -310,12 +311,12 @@ static int setbitdepth(int depth){
             if(!PylonDeviceFeatureIsAvailable( hDev, buf)) continue;
             green("Pixel format: %s\n", fmts[i]);
             PYLONFN(PylonDeviceFeatureFromString, hDev, "PixelFormat", fmts[i]);
+            bitdepth = depths[i];
             break;
         }
         if(i == MONON) return FALSE;
 #undef MONON
-        is16bit = TRUE;
-        DBG("16 bit");
+        DBG("other bits");
     }
     PYLON_STREAMGRABBER_HANDLE hGrabber;
     PYLONFN(PylonDeviceGetStreamGrabber, hDev, 0, &hGrabber);
@@ -325,6 +326,12 @@ static int setbitdepth(int depth){
     PylonStreamGrabberClose(hGrabber);
     FREE(imgBuf);
     imgBuf = MALLOC(unsigned char, payloadsize);
+    return TRUE;
+}
+
+static int getbitdepth(uint8_t *d){
+    if(!d) return TRUE;
+    *d = bitdepth;
     return TRUE;
 }
 
@@ -369,7 +376,7 @@ static int capture(cc_IMG *ima){
     }
     int width = grabResult.SizeX, height = grabResult.SizeY, stride = grabResult.SizeX + grabResult.PaddingX;
     //TIMESTAMP("start converting");
-    if(is16bit){
+    if(bitdepth > 8){
         int s2 = stride<<1;
         OMP_FOR()
         for(int y = 0; y < height; ++y){
@@ -388,7 +395,7 @@ static int capture(cc_IMG *ima){
         }
     }
     //TIMESTAMP("image ready");
-    ima->bitpix = (is16bit) ? 16 : 8;
+    ima->bitpix = bitdepth;
     return TRUE;
 }
 
@@ -526,6 +533,7 @@ cc_Camera camera = {
     .setfanspeed = setfanspd,
     // getters:
     .getbrightness = fpfalse,
+    .getbitpix = getbitdepth,
     .getModelName = modelname,
     .getgain = getgain,
     .getmaxgain = gainmax,

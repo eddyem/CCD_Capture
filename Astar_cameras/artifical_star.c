@@ -33,32 +33,128 @@ extern cc_Camera camera;
 extern cc_Focuser focuser;
 extern cc_Wheel wheel;
 
+// array size
+#define ARRAYH  (1050)
+#define ARRAYW  (1050)
+
 static const int filtermax = 5;
 static const float focmaxpos = 10.;
-static int curhbin = 1, curvbin = 1;
 static int filterpos = 0;
 static float focuserpos = 1., brightness = 1., gain = 0.;
-static float camtemp = -30., exptime = 0.;
+static float camtemp = -30., exptime = 0.1;
 static cc_capture_status capstat = CAPTURE_NO;
 static double texpstart = 0.;
 static uint8_t bitpix = 16; // bit depth: 8 or 16
 
 typedef struct{
-    int width; int height; // size of field where the 'star' can move
     int x0; int y0; // center of star field in array coordinates
-    double fwhm; // stars FWHM, arcsec
+    double fwhm; // stars min FWHM, arcsec
+    double beta; // Moffat `beta` parameter
+    double theta; // start theta, arcsec
     double scale; // CCD scale: arcsec/pix
-    double mag; // star magnitude: 0m is 16384 ADUs per second per arcsec^2
+    double mag; // star magnitude: 0m is 0xffff/0xff ADUs per second
+    double vX; // X axe drift speed (arcsec/s)
+    double vY; // Y -//-
+    double fluct; // stars position fluctuations (arcsec/sec)
 } settings_t;
 
 static settings_t settings = {
-    .width = 500, .height = 500,
     .x0 = 512, .y0 = 512,
-    .fwhm = 1.5, .scale = 0.03, .mag = 10.
+    .fwhm = 1.5, .beta = 1., .scale = 0.03, .mag = 0.,
+    .fluct = 0.5
 };
 // min/max for parameters
-static const int wmin = 100, hmin = 100;
 static const double fwhmmin = 0.1, fwhmmax = 10., scalemin = 0.001, scalemax = 3600., magmin = -30., magmax = 30.;
+static const double vmin = -20., vmax = 20., fluctmin = 0., fluctmax = 3., betamin = 0.5;
+static double dX = 0., dY = 0.; // current "sky" coordinates (arcsec) relative to field center (according vdrift)
+static int Xc = 0, Yc = 0; // current pixel coordinates of "sky" center (due to current image size, clip and scale) + fluctuations
+static double Tstart = -1.; // global acquisition start
+static double Xfluct = 0., Yfluct = 0.; // fluctuation additions in arcsec
+static il_Image *star = NULL; // template of star 0m
+static double FWHM0 = 0., scale0 = 0.; // template fwhm/scale
+static int templ_wh = 0; // template width/height in pixels
+
+/**
+ * @brief test_template - test star template and recalculate new if need
+ */
+static void test_template(){
+    if(star && FWHM0 == settings.fwhm && scale0 == settings.scale) return;
+    templ_wh = (1 + 6*settings.fwhm/settings.scale); // +1 for center
+    FWHM0 = settings.fwhm;
+    scale0 = settings.scale;
+    il_Image_free(&star);
+    star = il_Image_star(IMTYPE_D, templ_wh, templ_wh, settings.fwhm, settings.beta);
+    //il_Image_minmax(star);
+    //DBG("STAR: %dx%d, max=%g, min=%g, %d bytes per pix, type %d; templ_wh=%d", star->height, star->width, star->maxval, star->minval, star->pixbytes, star->type, templ_wh);
+    double sum = 0., *ptr = (double*)star->data;
+    int l = templ_wh * templ_wh;
+    for(int i = 0; i < l; ++i) sum += ptr[i];
+    //green("sum=%g\n", sum);
+    OMP_FOR()
+    for(int i = 0; i < l; ++i) ptr[i] /= sum;
+}
+
+/*
+ * About star[s] model
+ * Star magnitude 0m is approximately full signal level over square second.
+ * Star image generates in circle with raduis 3FWHM'' (3FWHM/scale pix), so amplitude
+ *  of star (max value) will be calculated as
+ *   0xffff (0xff for 8bit image) / sum(I1(x,y)), where I1 is generated star image with amplitude 1.
+ * Flux for magnutude `mag`: Im = I0 * 10^(-0.4mag)
+ * 1. Generate `star` with ampl=1 in radius 3FWHM/scale pixels for image in `double`.
+ * 2. Calculate amplitude I = 1/sum(I1(x,y)).
+ * 3. Multiply all template values by I.
+ * 4. Fill every `star` from this template with factor 0xffff[0xff]*10^(-0.4mag).
+ * 5. Add background and noice.
+ */
+
+static void gen16(cc_IMG *ima){
+    static int n = 0;
+    register int w = ima->w;
+    int h = ima->h, tw2 = templ_wh/2, X0,Y0, X1,Y1, x0,y0;
+    if(Xc - tw2 < 0){
+        X0 = tw2 - Xc;
+        x0 = 0;
+    }else{
+        X0 = 0; x0 = Xc - tw2;
+    }
+    if(Yc - tw2 < 0){
+        Y0 = tw2 - Yc;
+        y0 = 0;
+    }else{
+        Y0 = 0; y0 = Yc - tw2;
+    }
+    if(Xc + tw2 > w-1){
+        X1 = templ_wh - Xc + tw2 - w - 1; // templ_wh - (Xc + tw2 - (w - 1))
+    }else X1 = templ_wh;
+    if(Yc + tw2 > h-1){
+        Y1 = templ_wh - Yc + tw2 - h - 1;
+    }else Y1 = templ_wh;
+    double mul = exptime * 0xffff * pow(10, -0.4*settings.mag); // multiplier due to "star" magnitude
+    // check if the 'star' out of frame
+    DBG("X0=%d, X1=%d, Y0=%d, Y1=%d, x0=%d, y0=%d, mul=%g", X0,X1,Y0,Y1,x0,y0, mul);
+    if(X0 < 0 || X0 > templ_wh - 1 || Y0 < 0 || Y0 > templ_wh - 1) return;
+    if(x0 < 0 || x0 > w-1 || y0 < 0 || y0 > h-1) return;
+    if(X1 < 0 || X1 > templ_wh || Y1 < 0 || Y1 > templ_wh) return;
+    if(X0 > X1 || Y0 > Y1) return;
+    OMP_FOR()
+    for(int y = Y0; y < Y1; ++y){
+        uint16_t *out = &((uint16_t*)ima->data)[(y+y0)*w + x0];
+        double *in = &((double*)star->data)[y*templ_wh + X0];
+        for(int x = X0; x < X1; ++x, ++in, ++out){
+            double val = *in * mul;
+            *out = (val > 0xffff) ? 0xffff : (uint16_t)val;
+        }
+    }
+    ++n;
+}
+/*
+static void gen8(cc_IMG *ima){
+    static int n = 0;
+    OMP_FOR()
+    ;
+    ++n;
+}*/
 
 static int campoll(cc_capture_status *st, float *remain){
     if(capstat != CAPTURE_PROCESS){
@@ -80,46 +176,45 @@ static int campoll(cc_capture_status *st, float *remain){
 static int startexp(){
     if(capstat == CAPTURE_PROCESS) return FALSE;
     capstat = CAPTURE_PROCESS;
-    texpstart = dtime();
+    double Tnow = dtime(), dT = Tnow - texpstart;
+    if(dT < 0.) dT = 0.;
+    else if(dT > 1.) dT = 1.; // dT for fluctuations amplitude
+    if(Tstart < 0.) Tstart = Tnow;
+    texpstart = Tnow;
+    // recalculate center of field coordinates at moment of exp start
+    dX += (dtime() - Tstart) * settings.vX;
+    dY += (dtime() - Tstart) * settings.vY;
+    Xc = dX/settings.scale + settings.x0 - camera.array.xoff;
+    Yc = dY/settings.scale + settings.y0 - camera.array.yoff;
+    DBG("dX=%g, dY=%g; Xc=%d, Yc=%d", dX, dY, Xc, Yc);
+    // add fluctuations
+    double fx = settings.fluct * dT * (2.*drand48() - 1.); // [-fluct*dT, +fluct*dT]
+    double fy = settings.fluct * dT * (2.*drand48() - 1.);
+    DBG("fx=%g, fy=%g, Xfluct=%g, Yfluct=%g", fx,fy,Xfluct,Yfluct);
+    if(Xfluct + fx < -settings.fluct || Xfluct + fx > settings.fluct) Xfluct -= fx;
+    else Xfluct += fx;
+    if(Yfluct + fy < -settings.fluct || Yfluct + fy > settings.fluct) Yfluct -= fy;
+    else Yfluct += fy;
+    DBG("Xfluct=%g, Yfluct=%g, pix: %g/%g\n\n", Xfluct, Yfluct, Xfluct/settings.scale, Yfluct/settings.scale);
+    Xc += Xfluct/settings.scale; Yc += Yfluct/settings.scale;
+    test_template();
     return TRUE;
 }
 
-static void gen16(cc_IMG *ima){
-    static int n = 0;
-    int y1 = ima->h * curvbin, x1 = ima->w * curhbin;
-    OMP_FOR()
-    for(int y = 0; y < y1; y += curvbin){
-        uint16_t *d = &((uint16_t*)ima->data)[y*ima->w/curvbin];
-        for(int x = 0; x < x1; x += curhbin){ // sinusoide 100x200
-            //*d++ = (uint16_t)(((n+x)%100)/99.*65535.);
-            *d++ = (uint16_t)((1. + sin((n+x) * (2.*M_PI)/11.)*sin((n+y) * (2.*M_PI)/22.))*32767.);
-        }
-    }
-    ++n;
-}
-static void gen8(cc_IMG *ima){
-    static int n = 0;
-    int y1 = ima->h * curvbin, x1 = ima->w * curhbin;
-    OMP_FOR()
-    for(int y = 0; y < y1; y += curvbin){
-        uint8_t *d = &((uint8_t*)ima->data)[y*ima->w/curvbin];
-        for(int x = 0; x < x1; x += curhbin){ // sinusoide 100x200
-            //*d++ = (uint16_t)(((n+x)%100)/99.*65535.);
-            *d++ = (uint8_t)((1. + sin((n+x) * (2.*M_PI)/11.)*sin((n+y) * (2.*M_PI)/22.))*127.);
-        }
-    }
-    ++n;
-}
 
 static int camcapt(cc_IMG *ima){
+    DBG("Prepare, xc=%d, yc=%d, bitpix=%d", Xc, Yc, bitpix);
     if(!ima || !ima->data) return FALSE;
 #ifdef EBUG
     double t0 = dtime();
 #endif
     ima->bitpix = bitpix;
+    ima->w = camera.geometry.w;
+    ima->h = camera.geometry.h;
+    ima->bytelen = ima->w*ima->h*cc_getNbytes(ima);
     bzero(ima->data, ima->h*ima->w*cc_getNbytes(ima));
     if(bitpix == 16) gen16(ima);
-    else gen8(ima);
+   // else gen8(ima);
     DBG("Time of capture: %g", dtime() - t0);
     return TRUE;
 }
@@ -183,10 +278,9 @@ static int gett(float *t){
     return TRUE;
 }
 
-static int camsetbin(int h, int v){
-    DBG("set bin %dx%d", h, v);
-    curhbin = h; curvbin = v;
-    return TRUE;
+// Binning not supported, change scale instead!
+static int camsetbin(int _U_ h, int _U_ v){
+    return FALSE;
 }
 
 static int camshutter(_U_ cc_shutter_op s){
@@ -195,12 +289,15 @@ static int camshutter(_U_ cc_shutter_op s){
 
 static int camsetgeom(cc_frameformat *f){
     if(!f) return FALSE;
+    if(f->xoff > ARRAYW-2 || f->yoff > ARRAYH-2) return FALSE;
+    if(f->xoff < 0 || f->yoff < 0 || f->h < 0 || f->w < 0) return FALSE;
+    if(f->h + f->yoff > ARRAYH || f->w + f->xoff > ARRAYW) return FALSE;
     camera.geometry = *f;
     return TRUE;
 }
 
 static int camgetnam(char *n, int l){
-    strncpy(n, "Dummy camera", l);
+    strncpy(n, "Star generator", l);
     return TRUE;
 }
 
@@ -216,8 +313,8 @@ static int camggl(cc_frameformat *max, cc_frameformat *step){
 }
 
 static int camgetbin(int *binh, int *binv){
-    if(binh) *binh = curhbin;
-    if(binv) *binv = curvbin;
+    if(binh) *binh = 1;
+    if(binv) *binv = 1;
     return TRUE;
 }
 
@@ -282,14 +379,16 @@ static int whlgetnam(char *n, int l){
 
 // cmd, help, handler, ptr, min, max, type
 static cc_parhandler_t handlers[] = {
-    {"width", "width of star moving field", NULL, (void*)&settings.width, (void*)&wmin, NULL, CC_PAR_INT},
-    {"height", "height of star moving field", NULL, (void*)&settings.height, (void*)&hmin, NULL, CC_PAR_INT},
     {"xc", "x center of field in array coordinates", NULL, (void*)&settings.x0, NULL, NULL, CC_PAR_INT},
     {"yc", "y center of field in array coordinates", NULL, (void*)&settings.y0, NULL, NULL, CC_PAR_INT},
-    {"fwhm", "star FWHM, arcsec", NULL, (void*)&settings.fwhm, (void*)&fwhmmin, (void*)&fwhmmax, CC_PAR_DOUBLE},
+    {"fwhm", "stars min FWHM, arcsec", NULL, (void*)&settings.fwhm, (void*)&fwhmmin, (void*)&fwhmmax, CC_PAR_DOUBLE},
     {"scale", "CCD scale: arcsec/pix", NULL, (void*)&settings.scale, (void*)&scalemin, (void*)&scalemax, CC_PAR_DOUBLE},
-    {"mag", "star magnitude: 0m is 16384 ADUs per second per arcsec^2", NULL, (void*)&settings.mag, (void*)&magmin, (void*)&magmax, CC_PAR_DOUBLE},
-    //{"", "", NULL, (void*)&, (void*)&, (void*)&settings., CC_PAR_DOUBLE},
+    {"mag", "star magnitude: 0m is 0xffff/0xff (16/8 bit) ADUs per second", NULL, (void*)&settings.mag, (void*)&magmin, (void*)&magmax, CC_PAR_DOUBLE},
+    {"vx", "X axe drift speed (arcsec/s)", NULL, (void*)&settings.vX, (void*)&vmin, (void*)&vmax, CC_PAR_DOUBLE},
+    {"vy", "Y axe drift speed (arcsec/s)", NULL, (void*)&settings.vY, (void*)&vmin, (void*)&vmax, CC_PAR_DOUBLE},
+    {"fluct", "stars position fluctuations (arcsec per sec)", NULL, (void*)&settings.fluct, (void*)&fluctmin, (void*)&fluctmax, CC_PAR_DOUBLE},
+    {"beta", "Moffat `beta` parameter", NULL, (void*)&settings.beta, (void*)&betamin, NULL, CC_PAR_DOUBLE},
+    //{"", "", NULL, (void*)&settings., (void*)&, (void*)&, CC_PAR_DOUBLE},
     CC_PARHANDLER_END
 };
 
@@ -350,8 +449,8 @@ __attribute__ ((visibility("default"))) cc_Camera camera = {
     .pixX = 10.,
     .pixY = 10.,
     .field = (cc_frameformat){.h = 1024, .w = 1024, .xoff = 10, .yoff = 10},
-    .array = (cc_frameformat){.h = 1050, .w = 1050, .xoff = 0, .yoff = 0},
-    .geometry = {0},
+    .array = (cc_frameformat){.h = ARRAYH, .w = ARRAYW, .xoff = 0, .yoff = 0},
+    .geometry = {.xoff = 10, .yoff = 10, .h = 1024, .w = 1024},
 };
 
 __attribute__ ((visibility("default"))) cc_Focuser focuser = {

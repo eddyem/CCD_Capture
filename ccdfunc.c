@@ -535,12 +535,16 @@ static void closeall(){
 static cc_capture_status capt(){
     cc_capture_status cs;
     float tremain, tmpf;
+    if(!camera->pollcapture){
+        WARNX(_("Camera plugin have no capture polling funtion."));
+        return CAPTURE_ABORTED;
+    }
     while(camera->pollcapture(&cs, &tremain)){
         if(cs != CAPTURE_PROCESS) break;
         if(tremain > 0.1){
             verbose(2, _("%.1f seconds till exposition ends"), tremain);
-            if(camera->getTcold(&tmpf)) verbose(1, "CCDTEMP=%.1f", tmpf);
-            if(camera->getTbody(&tmpf)) verbose(1, "BODYTEMP=%.1f", tmpf);
+            if(camera->getTcold && camera->getTcold(&tmpf)) verbose(1, "CCDTEMP=%.1f", tmpf);
+            if(camera->getTbody && camera->getTbody(&tmpf)) verbose(1, "BODYTEMP=%.1f", tmpf);
         }
         if(tremain > 6.) sleep(5);
         else if(tremain > 0.9) sleep((int)(tremain+0.99));
@@ -570,7 +574,7 @@ cc_Camera *startCCD(){
 void closecam(){
     if(!camera) return;
     DBG("Close cam");
-    camera->close();
+    if(camera->close) camera->close();
     camera = NULL;
 }
 
@@ -581,8 +585,9 @@ int prepare_ccds(){
     void *dlh = NULL;
     if(!startCCD(&dlh)) return FALSE;
     if(GP->listdevices){
-        for(int i = 0; i < camera->Ndevices; ++i){
-            if(!camera->setDevNo(i)) continue;
+        if(!camera->getModelName) WARNX(_("Camera plugin have no model name getter"));
+        else for(int i = 0; i < camera->Ndevices; ++i){
+            if(camera->setDevNo && !camera->setDevNo(i)) continue;
             char modname[256];
             camera->getModelName(modname, 255);
             printf("Found camera #%d: %s\n", i, modname);
@@ -594,7 +599,7 @@ int prepare_ccds(){
         WARNX(_("Found %d cameras, you point number %d"), camera->Ndevices, num);
         goto retn;
     }
-    if(!camera->setDevNo(num)){
+    if(camera->setDevNo && !camera->setDevNo(num)){
         WARNX(_("Can't set active camera number"));
         goto retn;
     }
@@ -621,13 +626,16 @@ int prepare_ccds(){
     }
     if(GP->fanspeed > -1){
         if(GP->fanspeed > FAN_HIGH) GP->fanspeed = FAN_HIGH;
-        if(!camera->setfanspeed((cc_fan_speed)GP->fanspeed))
-            WARNX(_("Can't set fan speed"));
-        else verbose(0, _("Set fan speed to %d"), GP->fanspeed);
+        if(!camera->setfanspeed) WARNX(_("Camera plugin have no fun speed setter"));
+        else{
+            if(!camera->setfanspeed((cc_fan_speed)GP->fanspeed))
+                WARNX(_("Can't set fan speed"));
+            else verbose(0, _("Set fan speed to %d"), GP->fanspeed);
+        }
     }
     int x0,x1, y0,y1;
     char buf[BUFSIZ];
-    if(camera->getModelName(buf, BUFSIZ))
+    if(camera->getModelName && camera->getModelName(buf, BUFSIZ))
         verbose(2, _("Camera model: %s"), buf);
     verbose(2, _("Pixel size: %g x %g"), camera->pixX, camera->pixY);
     x0 = camera->array.xoff;
@@ -643,56 +651,57 @@ int prepare_ccds(){
                 camera->geometry.xoff + camera->geometry.w, camera->geometry.yoff + camera->geometry.h);
     verbose(2, _("Current format: %s"), buf);
     if(!isnan(GP->temperature)){
-        if(!camera->setT((float)GP->temperature))
-            WARNX(_("Can't set T to %g degC"), GP->temperature);
-        verbose(3, "SetT=%.1f", GP->temperature);
+        if(!camera->setT)WARNX(_("Camera plugin have no temperature setter"));
+        else{if(!camera->setT((float)GP->temperature)) WARNX(_("Can't set T to %g degC"), GP->temperature);
+            else verbose(3, "SetT=%.1f", GP->temperature);
+        }
     }
     float tmpf;
-    if(camera->getTcold(&tmpf)) verbose(1, "CCDTEMP=%.1f", tmpf);
-    if(camera->getTbody(&tmpf)) verbose(1, "BODYTEMP=%.1f", tmpf);
+    if(camera->getTcold && camera->getTcold(&tmpf)) verbose(1, "CCDTEMP=%.1f", tmpf);
+    if(camera->getTbody && camera->getTbody(&tmpf)) verbose(1, "BODYTEMP=%.1f", tmpf);
     if(GP->shtr_cmd > -1 && GP->shtr_cmd < SHUTTER_AMOUNT){
         const char *str[] = {"open", "close", "expose @high", "expose @low"};
         verbose(1, _("Shutter command: %s\n"), str[GP->shtr_cmd]);
-        if(!camera->shuttercmd((cc_shutter_op)GP->shtr_cmd))
+        if(!camera->shuttercmd || !camera->shuttercmd((cc_shutter_op)GP->shtr_cmd))
             WARNX(_("Can't run shutter command %s (unsupported?)"), str[GP->shtr_cmd]);
     }
     if(GP->confio > -1){
         verbose(1, _("Try to configure I/O port as %d"), GP->confio);
-        if(!camera->confio(GP->confio))
+        if(!camera->confio || !camera->confio(GP->confio))
             WARNX(_("Can't configure (unsupported?)"));
     }
     int tmpi;
     if(GP->getio){
-        if(camera->getio(&tmpi))
+        if(camera->getio && camera->getio(&tmpi))
             verbose(0, "CCDIOPORT=0x%02X\n", tmpi);
         else
             WARNX(_("Can't get IOport state (unsupported?)"));
     }
     if(GP->setio > -1){
         verbose(1, _("Try to write %d to I/O port"), GP->setio);
-        if(!camera->setio(GP->setio))
+        if(!camera->setio || !camera->setio(GP->setio))
             WARNX(_("Can't set IOport"));
     }
     if(GP->exptime < 0.) goto retn;
     if(!isnan(GP->gain)){
         DBG("Change gain to %g", GP->gain);
-        if(camera->setgain(GP->gain)){
-            camera->getgain(&GP->gain);
+        if(camera->setgain && camera->setgain(GP->gain)){
+            if(camera->getgain) camera->getgain(&GP->gain);
             verbose(1, _("Set gain to %g"), GP->gain);
         }else WARNX(_("Can't set gain to %g"), GP->gain);
     }
     if(!isnan(GP->brightness)){
-        if(camera->setbrightness(GP->brightness)){
-            camera->getbrightness(&GP->brightness);
+        if(camera->setbrightness && camera->setbrightness(GP->brightness)){
+            if(camera->getbrightness) camera->getbrightness(&GP->brightness);
             verbose(1, _("Set brightness to %g"), GP->brightness);
         }else WARNX(_("Can't set brightness to %g"), GP->brightness);
     }
     /*********************** expose control ***********************/
     if(GP->hbin < 1) GP->hbin = 1;
     if(GP->vbin < 1) GP->vbin = 1;
-    if(!camera->setbin(GP->hbin, GP->vbin)){
+    if(!camera->setbin || !camera->setbin(GP->hbin, GP->vbin)){
         WARNX(_("Can't set binning %dx%d"), GP->hbin, GP->vbin);
-        camera->getbin(&GP->hbin, &GP->vbin);
+        if(camera->getbin) camera->getbin(&GP->hbin, &GP->vbin);
     }
     if(GP->X0 < 0) GP->X0 = x0; // default values
     else if(GP->X0 > x1-1) GP->X0 = x1-1;
@@ -702,28 +711,29 @@ int prepare_ccds(){
     if(GP->Y1 < GP->Y0+1 || GP->Y1 > y1) GP->Y1 = y1;
     DBG("x1/x0: %d/%d", GP->X1, GP->X0);
     cc_frameformat fmt = {.w = GP->X1 - GP->X0, .h = GP->Y1 - GP->Y0, .xoff = GP->X0, .yoff = GP->Y0};
-    if(!camera->setgeometry(&fmt))
+    if(!camera->setgeometry || !camera->setgeometry(&fmt))
         WARNX(_("Can't set given geometry"));
     verbose(3, "Geometry: off=%d/%d, wh=%d/%d", fmt.xoff, fmt.yoff, fmt.w, fmt.h);
     if(GP->nflushes > 0){
-        if(!camera->setnflushes(GP->nflushes))
+        if(!camera->setnflushes || !camera->setnflushes(GP->nflushes))
             WARNX(_("Can't set %d flushes"), GP->nflushes);
         else verbose(3, "Nflushes=%d", GP->nflushes);
     }
+    if(!camera->setexp) ERRX(_("Camera plugin have no exposition setter"));
     if(!camera->setexp(GP->exptime))
         WARNX(_("Can't set exposure time to %f seconds"), GP->exptime);
     tmpi = (GP->dark) ? 0 : 1;
-    if(!camera->setframetype(tmpi))
+    if(!camera->setframetype || !camera->setframetype(tmpi))
         WARNX(_("Can't change frame type"));
     tmpi = (GP->_8bit) ? 0 : 1;
-    if(!camera->setbitdepth(tmpi))
+    if(!camera->setbitdepth || !camera->setbitdepth(tmpi))
         WARNX(_("Can't set bit depth"));
-    if(!camera->setfastspeed(GP->fast))
+    if(!camera->setfastspeed || !camera->setfastspeed(GP->fast))
         WARNX(_("Can't set readout speed"));
     else verbose(1, _("Readout mode: %s"), GP->fast ? "fast" : "normal");
     if(!GP->outfile) verbose(1, _("Only show statistics"));
     // GET binning should be AFTER setgeometry!
-    if(!camera->getbin(&GP->hbin, &GP->vbin))
+    if(!camera->getbin || !camera->getbin(&GP->hbin, &GP->vbin))
         WARNX(_("Can't get current binning"));
     verbose(2, "Binning: %d x %d", GP->hbin, GP->vbin);
     rtn = TRUE;
@@ -749,6 +759,7 @@ DBG("w=%d, h=%d", raw_width, raw_height);
         TIMESTAMP("Start next cycle");
         TIMEINIT();
         verbose(1, _("Capture frame %d"), j);
+        if(!camera->startexposition) ERRX(_("Camera plugin have no function `start exposition`"));
         if(!camera->startexposition()){
             WARNX(_("Can't start exposition"));
             break;
@@ -760,7 +771,7 @@ DBG("w=%d, h=%d", raw_width, raw_height);
         }
         verbose(2, _("Read grabbed image"));
         TIMESTAMP("Read grabbed");
-        //if(!camera) return;
+        if(!camera->capture) ERRX(_("Camera plugin have no function `capture`"));
         if(!camera->capture(&ima)){
             WARNX(_("Can't grab image"));
             break;
@@ -776,8 +787,8 @@ DBG("w=%d, h=%d", raw_width, raw_height);
             while((delta = time1 - dtime()) > 0.){
                 verbose(1, _("%d seconds till pause ends\n"), (int)delta);
                 float tmpf;
-                if(camera->getTcold(&tmpf)) verbose(1, "CCDTEMP=%.1f\n", tmpf);
-                if(camera->getTbody(&tmpf)) verbose(1, "BODYTEMP=%.1f\n", tmpf);
+                if(camera->getTcold && camera->getTcold(&tmpf)) verbose(1, "CCDTEMP=%.1f\n", tmpf);
+                if(camera->getTbody && camera->getTbody(&tmpf)) verbose(1, "BODYTEMP=%.1f\n", tmpf);
                 if(delta > 6.) sleep(5);
                 else if(delta > 0.9) sleep((int)(delta+0.99));
                 else usleep((int)(delta*1e6 + 1));
@@ -792,8 +803,8 @@ DBG("w=%d, h=%d", raw_width, raw_height);
 // cancel expositions and close camera devise
 void camstop(){
     if(camera){
-        camera->cancel();
-        camera->close();
+        if(camera->cancel) camera->cancel();
+        if(camera->close) camera->close();
     }
 }
 
@@ -823,6 +834,7 @@ static void *grabnext(void *arg){
         TIMESTAMP("Start next exp");
         TIMEINIT();
         if(!ima || !camera) return NULL;
+        if(!camera->startexposition) ERRX(_("Camera plugin have no function `start exposition`"));
         if(!camera->startexposition()){
             WARNX(_("Can't start exposition"));
             usleep(10000);
@@ -830,13 +842,14 @@ static void *grabnext(void *arg){
         }
         cc_capture_status cs = CAPTURE_ABORTED;
         TIMESTAMP("Poll");
-        while(camera->pollcapture(&cs, NULL)){
+        while(camera->pollcapture && camera->pollcapture(&cs, NULL)){
             if(cs != CAPTURE_PROCESS) break;
             usleep(10000);
             if(!camera) return NULL;
         }
         if(cs != CAPTURE_READY){ WARNX(_("Some error when capture")); return NULL;}
         TIMESTAMP("get");
+        if(!camera->capture) ERRX(_("Camera plugin have no function `capture`"));
         if(!camera->capture(ima)){ WARNX(_("Can't grab image")); continue; }
         ++ima->imnumber;
         //calculate_stat(ima);

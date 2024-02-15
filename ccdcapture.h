@@ -101,8 +101,8 @@ typedef enum{
     RESULT_NUM
 } cc_hresult;
 
-// all setters and getters of Camera, Focuser and cc_Wheel should return TRUE if success or FALSE if failed or unsupported
-// camera
+// all setters and getters of Camera, Focuser and cc_Wheel should return TRUE if success or FALSE if failed or unsupported camera
+// each camera plugin must have functions check, startexposition, setexp, pollcapture and capture
 typedef struct{
     int (*check)();             // check if the device is available, connect and init
     int Ndevices;               // amount of devices found
@@ -123,7 +123,7 @@ typedef struct{
     int (*confio)(int s);       // configure IO-port
     int (*setio)(int s);        // set IO-port to given state
     int (*setframetype)(int l); // set frametype: 1 - light, 0 - dark
-    int (*setbitdepth)(int h);  // set bit depth : 1 - high (16 bit), 0 - low (8 bit)
+    int (*setbitdepth)(int h);  // set bit depth : 1 - high (16 bit), 0 - low (8 or other bit)
     int (*setfastspeed)(int s); // set readout speed: 1 - fast, 0 - low
     // geometry (if TRUE, all args are changed to suitable values)
     int (*setgeometry)(cc_frameformat *fmt); // set geometry in UNBINNED coordinates

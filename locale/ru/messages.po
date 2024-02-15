@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2024-02-07 17:00+0300\n"
+"POT-Creation-Date: 2024-02-15 16:32+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -358,198 +358,226 @@ msgstr ""
 msgid "Can't set wheel position %d"
 msgstr ""
 
-#: ccdfunc.c:541
+#: ccdfunc.c:539
+msgid "Camera plugin have no capture polling funtion."
+msgstr ""
+
+#: ccdfunc.c:545
 #, c-format
 msgid "%.1f seconds till exposition ends"
 msgstr ""
 
-#: ccdfunc.c:556
+#: ccdfunc.c:560
 msgid "Camera device not pointed"
 msgstr ""
 
-#: ccdfunc.c:563 ccdfunc.c:564
+#: ccdfunc.c:567 ccdfunc.c:568
 msgid "No cameras found"
 msgstr ""
 
-#: ccdfunc.c:594
+#: ccdfunc.c:588
+msgid "Camera plugin have no model name getter"
+msgstr ""
+
+#: ccdfunc.c:599
 #, c-format
 msgid "Found %d cameras, you point number %d"
 msgstr ""
 
-#: ccdfunc.c:598
+#: ccdfunc.c:603
 msgid "Can't set active camera number"
 msgstr ""
 
-#: ccdfunc.c:604
+#: ccdfunc.c:609
 msgid "Camera plugin have no custom commands"
 msgstr ""
 
-#: ccdfunc.c:625
+#: ccdfunc.c:629
+msgid "Camera plugin have no fun speed setter"
+msgstr ""
+
+#: ccdfunc.c:632
 msgid "Can't set fan speed"
 msgstr ""
 
-#: ccdfunc.c:626
+#: ccdfunc.c:633
 #, c-format
 msgid "Set fan speed to %d"
 msgstr ""
 
-#: ccdfunc.c:631
+#: ccdfunc.c:639
 #, c-format
 msgid "Camera model: %s"
 msgstr ""
 
-#: ccdfunc.c:632
+#: ccdfunc.c:640
 #, c-format
 msgid "Pixel size: %g x %g"
 msgstr ""
 
-#: ccdfunc.c:638
+#: ccdfunc.c:646
 #, c-format
 msgid "Full array: %s"
 msgstr ""
 
-#: ccdfunc.c:641
+#: ccdfunc.c:649
 #, c-format
 msgid "Field of view: %s"
 msgstr ""
 
-#: ccdfunc.c:644
+#: ccdfunc.c:652
 #, c-format
 msgid "Current format: %s"
 msgstr ""
 
-#: ccdfunc.c:647
-#, c-format
-msgid "Can't set T to %g degC"
+#: ccdfunc.c:654
+msgid "Camera plugin have no temperature setter"
 msgstr ""
 
 #: ccdfunc.c:655
 #, c-format
+msgid "Can't set T to %g degC"
+msgstr ""
+
+#: ccdfunc.c:664
+#, c-format
 msgid "Shutter command: %s\n"
 msgstr ""
 
-#: ccdfunc.c:657
+#: ccdfunc.c:666
 #, c-format
 msgid "Can't run shutter command %s (unsupported?)"
 msgstr ""
 
-#: ccdfunc.c:660
+#: ccdfunc.c:669
 #, c-format
 msgid "Try to configure I/O port as %d"
 msgstr ""
 
-#: ccdfunc.c:662
+#: ccdfunc.c:671
 msgid "Can't configure (unsupported?)"
 msgstr ""
 
-#: ccdfunc.c:669
+#: ccdfunc.c:678
 msgid "Can't get IOport state (unsupported?)"
-msgstr ""
-
-#: ccdfunc.c:672
-#, c-format
-msgid "Try to write %d to I/O port"
-msgstr ""
-
-#: ccdfunc.c:674
-msgid "Can't set IOport"
 msgstr ""
 
 #: ccdfunc.c:681
 #, c-format
+msgid "Try to write %d to I/O port"
+msgstr ""
+
+#: ccdfunc.c:683
+msgid "Can't set IOport"
+msgstr ""
+
+#: ccdfunc.c:690
+#, c-format
 msgid "Set gain to %g"
 msgstr ""
 
-#: ccdfunc.c:682
+#: ccdfunc.c:691
 #, c-format
 msgid "Can't set gain to %g"
 msgstr ""
 
-#: ccdfunc.c:687
+#: ccdfunc.c:696
 #, c-format
 msgid "Set brightness to %g"
 msgstr ""
 
-#: ccdfunc.c:688
+#: ccdfunc.c:697
 #, c-format
 msgid "Can't set brightness to %g"
 msgstr ""
 
-#: ccdfunc.c:694 server.c:265
+#: ccdfunc.c:703 server.c:278
 #, c-format
 msgid "Can't set binning %dx%d"
 msgstr ""
 
-#: ccdfunc.c:706 server.c:266
+#: ccdfunc.c:715 server.c:279
 msgid "Can't set given geometry"
 msgstr ""
 
-#: ccdfunc.c:710
+#: ccdfunc.c:719
 #, c-format
 msgid "Can't set %d flushes"
 msgstr ""
 
-#: ccdfunc.c:714
+#: ccdfunc.c:722
+msgid "Camera plugin have no exposition setter"
+msgstr ""
+
+#: ccdfunc.c:724
 #, c-format
 msgid "Can't set exposure time to %f seconds"
 msgstr ""
 
-#: ccdfunc.c:717
+#: ccdfunc.c:727
 msgid "Can't change frame type"
 msgstr ""
 
-#: ccdfunc.c:720
+#: ccdfunc.c:730
 msgid "Can't set bit depth"
 msgstr ""
 
-#: ccdfunc.c:722
+#: ccdfunc.c:732
 msgid "Can't set readout speed"
 msgstr ""
 
-#: ccdfunc.c:723
+#: ccdfunc.c:733
 #, c-format
 msgid "Readout mode: %s"
 msgstr ""
 
-#: ccdfunc.c:724
+#: ccdfunc.c:734
 msgid "Only show statistics"
 msgstr ""
 
-#: ccdfunc.c:727
+#: ccdfunc.c:737
 msgid "Can't get current binning"
 msgstr ""
 
-#: ccdfunc.c:751
+#: ccdfunc.c:761
 #, c-format
 msgid "Capture frame %d"
 msgstr ""
 
-#: ccdfunc.c:753 ccdfunc.c:827 server.c:150
+#: ccdfunc.c:762 ccdfunc.c:837 server.c:149 server.c:150
+msgid "Camera plugin have no function `start exposition`"
+msgstr ""
+
+#: ccdfunc.c:764 ccdfunc.c:839 server.c:155 server.c:156
 msgid "Can't start exposition"
 msgstr ""
 
-#: ccdfunc.c:758
+#: ccdfunc.c:769
 msgid "Can't capture image"
 msgstr ""
 
-#: ccdfunc.c:761
+#: ccdfunc.c:772
 msgid "Read grabbed image"
 msgstr ""
 
-#: ccdfunc.c:765 ccdfunc.c:840
+#: ccdfunc.c:774 ccdfunc.c:852 server.c:173 server.c:174
+msgid "Camera plugin have no function `capture`"
+msgstr ""
+
+#: ccdfunc.c:776 ccdfunc.c:853
 msgid "Can't grab image"
 msgstr ""
 
-#: ccdfunc.c:777 client.c:270
+#: ccdfunc.c:788 client.c:270
 #, c-format
 msgid "%d seconds till pause ends\n"
 msgstr ""
 
-#: ccdfunc.c:838
+#: ccdfunc.c:850
 msgid "Some error when capture"
 msgstr ""
 
-#: server.c:189
+#: server.c:201
 msgid "No camera device"
 msgstr ""
 
