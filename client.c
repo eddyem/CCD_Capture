@@ -81,7 +81,7 @@ static int parseans(char *ans){
     }
     if(0 == strcmp(cc_hresult2str(RESULT_FAIL), ans)) return TRUE;
     if(0 == strcmp(cc_hresult2str(RESULT_OK), ans)) return TRUE;
-    char *val = cc_get_keyval(ans); // now `ans` is a key and `val` its value
+    char *val = cc_get_keyval(&ans); // now `ans` is a key and `val` its value
     if(0 == strcmp(CC_CMD_EXPSTATE, ans)){
         expstate = atoi(val);
         DBG("Exposition state: %d", expstate);

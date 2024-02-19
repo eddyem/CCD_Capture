@@ -36,6 +36,14 @@ extern cc_Wheel wheel;
 // array size
 #define ARRAYH  (1050)
 #define ARRAYW  (1050)
+// amount of stars
+#define MAX_STARS   (32)
+#ifndef _STR
+#define _STR(x)  #x
+#endif
+#ifndef STR
+#define STR(x) _STR(x)
+#endif
 
 static const int filtermax = 5;
 static const float focmaxpos = 10.;
@@ -45,23 +53,29 @@ static float camtemp = -30., exptime = 0.1;
 static cc_capture_status capstat = CAPTURE_NO;
 static double texpstart = 0.;
 static uint8_t bitpix = 16; // bit depth: 8 or 16
+static il_Image *imagemask = NULL; // mask
 
 typedef struct{
-    int x0; int y0; // center of star field in array coordinates
+    int Nstars; // amount of stars
+    int x0, y0; // center of field in array coordinates
+    int xs[MAX_STARS], ys[MAX_STARS]; // center of star field in array coordinates
     double fwhm; // stars min FWHM, arcsec
     double beta; // Moffat `beta` parameter
     double theta; // start theta, arcsec
     double scale; // CCD scale: arcsec/pix
-    double mag; // star magnitude: 0m is 0xffff/0xff ADUs per second
+    double mag[MAX_STARS]; // star magnitude: 0m is 0xffff/0xff ADUs per second
     double vX; // X axe drift speed (arcsec/s)
     double vY; // Y -//-
     double fluct; // stars position fluctuations (arcsec/sec)
+    double noiselambda; // poisson noice lambda value
 } settings_t;
 
 static settings_t settings = {
+    .Nstars = 1,
     .x0 = 512, .y0 = 512,
-    .fwhm = 1.5, .beta = 1., .scale = 0.03, .mag = 0.,
-    .fluct = 0.5
+    .xs = {0}, .ys = {0},
+    .fwhm = 1.5, .beta = 1., .scale = 0.03, .mag = {0.},
+    .fluct = 1., .noiselambda = 3.,
 };
 // min/max for parameters
 static const double fwhmmin = 0.1, fwhmmax = 10., scalemin = 0.001, scalemax = 3600., magmin = -30., magmax = 30.;
@@ -73,6 +87,7 @@ static double Xfluct = 0., Yfluct = 0.; // fluctuation additions in arcsec
 static il_Image *star = NULL; // template of star 0m
 static double FWHM0 = 0., scale0 = 0.; // template fwhm/scale
 static int templ_wh = 0; // template width/height in pixels
+static double noicelambdamin = 1.;
 
 /**
  * @brief test_template - test star template and recalculate new if need
@@ -108,53 +123,71 @@ static void test_template(){
  * 5. Add background and noice.
  */
 
+#define GEN(ima, type, maxval) \
+    register int w = ima->w;\
+    int h = ima->h, tw2 = templ_wh/2, X0,Y0, X1,Y1, x0,y0;\
+    for(int N = 0; N < settings.Nstars; ++N){\
+        int Xstar = Xc + settings.xs[N] - camera.geometry.xoff, Ystar = Yc + settings.ys[N] - camera.geometry.yoff;\
+        if(Xstar - tw2 < 0){\
+            X0 = tw2 - Xstar + 1;\
+            x0 = 0;\
+        }else{\
+            X0 = 1; x0 = Xstar - tw2;\
+        }\
+        if(Ystar - tw2 < 0){\
+            Y0 = tw2 - Ystar + 1;\
+            y0 = 0;\
+        }else{\
+            Y0 = 1; y0 = Ystar - tw2;\
+        }\
+        if(Xstar + tw2 > w-1){\
+     /* templ_wh - (Xc + tw2 - (w - 1))*/ \
+            X1 = templ_wh - Xstar - tw2 + w - 1; \
+        }else X1 = templ_wh;\
+        if(Ystar + tw2 > h-1){\
+            Y1 = templ_wh - Ystar - tw2 + h - 1;\
+        }else Y1 = templ_wh;\
+        double mul = exptime * maxval * pow(10, -0.4*settings.mag[N]); /* multiplier due to "star" magnitude */ \
+        /* check if the 'star' out of frame */ \
+        DBG("X0=%d, X1=%d, Y0=%d, Y1=%d, x0=%d, y0=%d, mul=%g", X0,X1,Y0,Y1,x0,y0, mul);\
+        if(X0 < 0 || X0 > templ_wh - 1 || Y0 < 0 || Y0 > templ_wh - 1) continue;\
+        if(x0 < 0 || x0 > w-1 || y0 < 0 || y0 > h-1) continue;\
+        if(X1 < 0 || X1 > templ_wh || Y1 < 0 || Y1 > templ_wh) continue;\
+        if(X0 > X1 || Y0 > Y1) return;\
+        OMP_FOR()\
+        for(int y = Y0; y < Y1; ++y){\
+            type *out = &((type*)ima->data)[(y-Y0+y0)*w + x0];\
+            double *in = &((double*)star->data)[y*templ_wh + X0];\
+            for(int x = X0; x < X1; ++x, ++in, ++out){\
+                double val = *out + *in * mul;\
+                *out = (val > maxval) ? maxval : (type)val;\
+            }\
+        }\
+    }\
+    if(imagemask){ /* apply mask */ \
+        X0 = camera.geometry.xoff; Y0 = camera.geometry.yoff; \
+        X1 = imagemask->width; Y1 = imagemask->height; \
+        if(X1-X0 > w) X1 = X0 + w;\
+        if(Y1-Y0 > h) Y1 = Y0 + h; \
+        OMP_FOR()\
+        for(int y = Y0; y < Y1; ++y){\
+            type *out = &((type*)ima->data)[(y-Y0)*w];\
+            uint8_t *in = &((uint8_t*)imagemask->data)[y*imagemask->width + X0];\
+            for(int x = X0; x < X1; ++x, ++in, ++out){\
+                type p = il_Poisson(settings.noiselambda); \
+                /*type p = fabs(il_Normal(0., 3.)); */\
+                if(*in == 0) *out = p; else *out = (*out+p > maxval) ? maxval : *out + p; \
+            }\
+        } \
+    }
+
 static void gen16(cc_IMG *ima){
-    static int n = 0;
-    register int w = ima->w;
-    int h = ima->h, tw2 = templ_wh/2, X0,Y0, X1,Y1, x0,y0;
-    if(Xc - tw2 < 0){
-        X0 = tw2 - Xc;
-        x0 = 0;
-    }else{
-        X0 = 0; x0 = Xc - tw2;
-    }
-    if(Yc - tw2 < 0){
-        Y0 = tw2 - Yc;
-        y0 = 0;
-    }else{
-        Y0 = 0; y0 = Yc - tw2;
-    }
-    if(Xc + tw2 > w-1){
-        X1 = templ_wh - Xc + tw2 - w - 1; // templ_wh - (Xc + tw2 - (w - 1))
-    }else X1 = templ_wh;
-    if(Yc + tw2 > h-1){
-        Y1 = templ_wh - Yc + tw2 - h - 1;
-    }else Y1 = templ_wh;
-    double mul = exptime * 0xffff * pow(10, -0.4*settings.mag); // multiplier due to "star" magnitude
-    // check if the 'star' out of frame
-    DBG("X0=%d, X1=%d, Y0=%d, Y1=%d, x0=%d, y0=%d, mul=%g", X0,X1,Y0,Y1,x0,y0, mul);
-    if(X0 < 0 || X0 > templ_wh - 1 || Y0 < 0 || Y0 > templ_wh - 1) return;
-    if(x0 < 0 || x0 > w-1 || y0 < 0 || y0 > h-1) return;
-    if(X1 < 0 || X1 > templ_wh || Y1 < 0 || Y1 > templ_wh) return;
-    if(X0 > X1 || Y0 > Y1) return;
-    OMP_FOR()
-    for(int y = Y0; y < Y1; ++y){
-        uint16_t *out = &((uint16_t*)ima->data)[(y+y0)*w + x0];
-        double *in = &((double*)star->data)[y*templ_wh + X0];
-        for(int x = X0; x < X1; ++x, ++in, ++out){
-            double val = *in * mul;
-            *out = (val > 0xffff) ? 0xffff : (uint16_t)val;
-        }
-    }
-    ++n;
+    GEN(ima, uint16_t, 0xffff);
 }
-/*
+
 static void gen8(cc_IMG *ima){
-    static int n = 0;
-    OMP_FOR()
-    ;
-    ++n;
-}*/
+    GEN(ima, uint8_t, 0xff);
+}
 
 static int campoll(cc_capture_status *st, float *remain){
     if(capstat != CAPTURE_PROCESS){
@@ -214,7 +247,7 @@ static int camcapt(cc_IMG *ima){
     ima->bytelen = ima->w*ima->h*cc_getNbytes(ima);
     bzero(ima->data, ima->h*ima->w*cc_getNbytes(ima));
     if(bitpix == 16) gen16(ima);
-   // else gen8(ima);
+    else gen8(ima);
     DBG("Time of capture: %g", dtime() - t0);
     return TRUE;
 }
@@ -377,17 +410,90 @@ static int whlgetnam(char *n, int l){
     return TRUE;
 }
 
+static cc_hresult setXYs(const char *str, cc_charbuff *ans){
+    static int xctr = 0, yctr = 0; // counters of X and Y (by default MAG[x] = 0)
+    char buf[256], *bptr = buf;
+    strncpy(buf, str, 255);
+    char *val = cc_get_keyval(&bptr);
+    int ival = atoi(val);
+    if(strcmp(bptr, "x") == 0){
+        if(xctr >= MAX_STARS){
+            cc_charbufaddline(ans, "MAX: " STR(MAX_STARS) "stars");
+            return RESULT_FAIL;
+        }
+        DBG("x[%d]=%d", xctr, ival);
+        settings.xs[xctr++] = ival;
+    }
+    else if(strcmp(bptr, "y") == 0){
+        if(yctr >= MAX_STARS){
+            cc_charbufaddline(ans, "MAX: " STR(MAX_STARS) "stars");
+            return RESULT_FAIL;
+        }
+        DBG("y[%d]=%d", yctr, ival);
+        settings.ys[yctr++] = ival;
+    }
+    else{ return RESULT_BADKEY;} // unreachable
+    settings.Nstars = (xctr < yctr) ? xctr : yctr;
+    DBG("Nstars=%d", settings.Nstars);
+    return RESULT_SILENCE;
+}
+
+static cc_hresult setmag(const char *str, cc_charbuff *ans){
+    static int magctr = 0;
+    char buf[256], *bptr = buf;
+    strncpy(buf, str, 255);
+    char *val = cc_get_keyval(&bptr);
+    double dval = atof(val);
+    if(strcmp(bptr, "mag") != 0) return RESULT_BADKEY;
+    if(dval > magmax || dval < magmin){
+        snprintf(buf, 255, "%g < mag < %g", magmin, magmax);
+        cc_charbufaddline(ans, buf);
+        return RESULT_BADVAL;
+    }
+    if(magctr >= MAX_STARS){
+        cc_charbufaddline(ans, "MAX: " STR(MAX_STARS) "stars");
+        return RESULT_FAIL;
+    }
+    DBG("mag[%d]=%g", magctr, dval);
+    settings.mag[magctr++] = dval;
+    return RESULT_SILENCE;
+}
+
+static cc_hresult loadmask(const char *str, cc_charbuff *ans){
+    char buf[FILENAME_MAX+32], *bptr = buf;
+    strncpy(buf, str, FILENAME_MAX+31);
+    char *val = cc_get_keyval(&bptr);
+    if(strcmp(bptr, "mask") != 0) return RESULT_BADKEY;
+    if(imagemask) il_Image_free(&imagemask);
+    imagemask = il_Image_read(val);
+    char *nm = strdup (val);
+    cc_hresult res = RESULT_OK;
+    if(!imagemask){
+        snprintf(buf, FILENAME_MAX, "Can't read image '%s'", nm);
+        res = RESULT_FAIL;
+    }else{
+        snprintf(buf, FILENAME_MAX, "Got image '%s'; w=%d, h=%d, type=%d (impix=%d)", nm, imagemask->width, imagemask->height, imagemask->type, imagemask->pixbytes);
+    }
+    cc_charbufaddline(ans, buf);
+    FREE(nm);
+    return res;
+}
+
 // cmd, help, handler, ptr, min, max, type
 static cc_parhandler_t handlers[] = {
     {"xc", "x center of field in array coordinates", NULL, (void*)&settings.x0, NULL, NULL, CC_PAR_INT},
     {"yc", "y center of field in array coordinates", NULL, (void*)&settings.y0, NULL, NULL, CC_PAR_INT},
+    {"x", "X coordinate of next star", setXYs, NULL, NULL, NULL, 0},
+    {"y", "Y coordinate of next star", setXYs, NULL, NULL, NULL, 0},
     {"fwhm", "stars min FWHM, arcsec", NULL, (void*)&settings.fwhm, (void*)&fwhmmin, (void*)&fwhmmax, CC_PAR_DOUBLE},
     {"scale", "CCD scale: arcsec/pix", NULL, (void*)&settings.scale, (void*)&scalemin, (void*)&scalemax, CC_PAR_DOUBLE},
-    {"mag", "star magnitude: 0m is 0xffff/0xff (16/8 bit) ADUs per second", NULL, (void*)&settings.mag, (void*)&magmin, (void*)&magmax, CC_PAR_DOUBLE},
+    {"mag", "Next star magnitude: 0m is 0xffff/0xff (16/8 bit) ADUs per second", setmag, NULL, NULL, NULL, 0},
+    {"mask", "load mask image (binary, ANDed)", loadmask, NULL, NULL, NULL, 0},
     {"vx", "X axe drift speed (arcsec/s)", NULL, (void*)&settings.vX, (void*)&vmin, (void*)&vmax, CC_PAR_DOUBLE},
     {"vy", "Y axe drift speed (arcsec/s)", NULL, (void*)&settings.vY, (void*)&vmin, (void*)&vmax, CC_PAR_DOUBLE},
     {"fluct", "stars position fluctuations (arcsec per sec)", NULL, (void*)&settings.fluct, (void*)&fluctmin, (void*)&fluctmax, CC_PAR_DOUBLE},
     {"beta", "Moffat `beta` parameter", NULL, (void*)&settings.beta, (void*)&betamin, NULL, CC_PAR_DOUBLE},
+    {"lambda", "Poisson noice lambda value (>1)", NULL, (void*)&settings.noiselambda, (void*)&noicelambdamin, NULL, CC_PAR_DOUBLE},
     //{"", "", NULL, (void*)&settings., (void*)&, (void*)&, CC_PAR_DOUBLE},
     CC_PARHANDLER_END
 };

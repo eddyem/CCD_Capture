@@ -1274,7 +1274,7 @@ char *makeabspath(const char *path, int shouldbe){
 // @return FALSE if client closed (nothing to read)
 static int parsestring(int fd, cc_handleritem *handlers, char *str){
     if(fd < 1 || !handlers || !handlers->key || !str || !*str) return FALSE;
-    char *val = cc_get_keyval(str);
+    char *val = cc_get_keyval(&str);
     if(val){
         DBG("RECEIVE '%s=%s'", str, val);
         LOGDBG("RECEIVE '%s=%s'", str, val);

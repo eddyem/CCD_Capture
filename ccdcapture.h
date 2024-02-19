@@ -323,7 +323,7 @@ int cc_open_socket(int isserver, char *path, int isnet);
 int cc_senddata(int fd, void *data, size_t l);
 int cc_sendmessage(int fd, const char *msg, int l);
 int cc_sendstrmessage(int fd, const char *msg);
-char *cc_get_keyval(char *keyval);
+char *cc_get_keyval(char **keyval);
 cc_IMG *cc_getshm(key_t key, size_t imsize);
 int cc_canberead(int fd);
 cc_hresult cc_setint(int fd, cc_strbuff *cbuf, const char *cmd, int val);

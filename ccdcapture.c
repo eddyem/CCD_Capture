@@ -209,19 +209,19 @@ cc_hresult cc_str2hresult(const char *str){
  * @param keyval (io) - pair `key = val`, return `key`
  * @return `val`
  */
-char *cc_get_keyval(char *keyval){
-    DBG("Got string %s", keyval);
+char *cc_get_keyval(char **keyval){
+    DBG("Got string %s", *keyval);
     // remove starting spaces in key
-    while(isspace(*keyval)) ++keyval;
-    char *val = strchr(keyval, '=');
+    while(isspace(**keyval)) ++(*keyval);
+    char *val = strchr(*keyval, '=');
     if(val){ // got value: remove starting spaces in val
         *val++ = 0;
         while(isspace(*val)) ++val;
     }
     DBG("val = %s (%zd bytes)", val, (val)?strlen(val):0);
     // remove trailing spaces in key
-    char *e = keyval + strlen(keyval) - 1; // last key symbol
-    while(isspace(*e) && e > keyval) --e;
+    char *e = *keyval + strlen(*keyval) - 1; // last key symbol
+    while(isspace(*e) && e > *keyval) --e;
     e[1] = 0;
     // now we have key (`str`) and val (or NULL)
     //DBG("key=%s, val=%s", keyval, val);
@@ -537,8 +537,8 @@ double cc_getAnsTmout(){return answer_timeout;}
  */
 static cc_hresult ask4cmd(int fd, cc_strbuff *buf, const char *cmdwargs){
     DBG("ask for command %s", cmdwargs);
-    char *key = strdup(cmdwargs);
-    cc_get_keyval(key); // pick out key from `cmdwargs`
+    char *keyptr = strdup(cmdwargs), *key = keyptr;
+    cc_get_keyval(&key); // pick out key from `cmdwargs`
     int l = strlen(key);
     cc_hresult ret = RESULT_FAIL;
     for(int i = 0; i < ntries; ++i){
@@ -579,7 +579,7 @@ static cc_hresult ask4cmd(int fd, cc_strbuff *buf, const char *cmdwargs){
     }
 rtn:
     DBG("returned with `%s`", cc_hresult2str(ret));
-    FREE(key);
+    FREE(keyptr);
     return ret;
 }
 
@@ -605,7 +605,8 @@ cc_hresult cc_getint(int fd, cc_strbuff *cbuf, const char *cmd, int *val){
     snprintf(buf, BBUFS, "%s\n", cmd);
     cc_hresult r = ask4cmd(fd, cbuf, buf);
     if(r == RESULT_OK){
-        char *sv = cc_get_keyval(cbuf->string);
+        char *p = cbuf->string;
+        char *sv = cc_get_keyval(&p);
         if(!sv) return RESULT_FAIL;
         char *ep;
         long L = strtol(sv, &ep, 0);
@@ -635,7 +636,8 @@ cc_hresult cc_getfloat(int fd, cc_strbuff *cbuf, const char *cmd, float *val){
     snprintf(buf, BBUFS, "%s\n", cmd);
     cc_hresult r = ask4cmd(fd, cbuf, buf);
     if(r == RESULT_OK){
-        char *sv = cc_get_keyval(cbuf->string);
+        char *p = cbuf->string;
+        char *sv = cc_get_keyval(&p);
         if(!sv) return RESULT_FAIL;
         char *ep;
         double d = strtod(sv, &ep);
@@ -759,16 +761,16 @@ static size_t print_val(cc_partype_t t, void *val, char *buf, size_t bufl){
  */
 cc_hresult cc_plugin_customcmd(const char *str, cc_parhandler_t *handlers, cc_charbuff *ans){
     if(!str || !handlers) return RESULT_FAIL;
-    char key[256];
+    char key[256], *kptr = key;
     snprintf(key, 255, "%s", str);
-    char *val = cc_get_keyval(key);
+    char *val = cc_get_keyval(&kptr);
     cc_parhandler_t *phptr = handlers;
     cc_hresult result = RESULT_BADKEY;
     char buf[512];
 #define ADDL(...) do{if(ans){size_t l = snprintf(bptr, L, __VA_ARGS__); bptr += l; L -= l;}}while(0)
 #define PRINTVAL(v) do{if(ans){size_t l = print_val(phptr->type, phptr->v, bptr, L); bptr += l; L -= l;}}while(0)
     while(phptr->cmd){
-        if(0 == strcmp(key, phptr->cmd)){
+        if(0 == strcmp(kptr, phptr->cmd)){
             char *bptr = buf; size_t L = 511;
             result = RESULT_OK;
             if(phptr->checker) result = phptr->checker(str, ans);
