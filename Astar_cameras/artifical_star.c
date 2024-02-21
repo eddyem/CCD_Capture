@@ -56,14 +56,17 @@ static uint8_t bitpix = 16; // bit depth: 8 or 16
 static il_Image *imagemask = NULL, *imagebg; // mask & background
 static char *maskfilename = NULL, *bgfilename = NULL; // filenames
 
+// local counters of `mag`, `x` and `y` setters
+static int magctr = 0, xctr = 0, yctr = 0;
+
 typedef struct{
     int Nstars; // amount of stars
     int x0, y0; // center of field in array coordinates
     double rotan0; // starting rotation angle
-    int xs[MAX_STARS], ys[MAX_STARS]; // center of star field in array coordinates
+    double xs[MAX_STARS], ys[MAX_STARS]; // center of star field in array coordinates
     double fwhm; // stars min FWHM, arcsec
     double beta; // Moffat `beta` parameter
-    double theta; // start theta, arcsec
+    //double theta; // Moffat `theta`, arcsec
     double scale; // CCD scale: arcsec/pix
     double mag[MAX_STARS]; // star magnitude: 0m is 0xffff/0xff ADUs per second
     double vX; // X axe drift speed (arcsec/s)
@@ -90,7 +93,7 @@ static int Xc = 0, Yc = 0; // current pixel coordinates of "sky" center (due to 
 static double Tstart = -1.; // global acquisition start
 static double Xfluct = 0., Yfluct = 0.; // fluctuation additions in arcsec
 static il_Image *star = NULL; // template of star 0m
-static double FWHM0 = 0., scale0 = 0.; // template fwhm/scale
+static double FWHM0 = 0., scale0 = 0., BETA0 = 0.; // template fwhm/scale
 static int templ_wh = 0; // template width/height in pixels
 static double noicelambdamin = 1.;
 
@@ -98,19 +101,21 @@ static double noicelambdamin = 1.;
  * @brief test_template - test star template and recalculate new if need
  */
 static void test_template(){
-    if(star && FWHM0 == settings.fwhm && scale0 == settings.scale) return;
+    if(star && FWHM0 == settings.fwhm && scale0 == settings.scale && BETA0 == settings.beta) return;
     templ_wh = (1 + 6*settings.fwhm/settings.scale); // +1 for center
     FWHM0 = settings.fwhm;
     scale0 = settings.scale;
+    BETA0 = settings.beta;
     il_Image_free(&star);
 DBG("MAKE STAR, wh=%d, beta=%g", templ_wh, settings.beta);
     star = il_Image_star(IMTYPE_D, templ_wh, templ_wh, settings.fwhm, settings.beta);
-il_Image_minmax(star);
-DBG("STAR: %dx%d, max=%g, min=%g, %d bytes per pix, type %d; templ_wh=%d", star->height, star->width, star->maxval, star->minval, star->pixbytes, star->type, templ_wh);
+    if(!star) ERRX(_("Can't generate star template"));
+    //il_Image_minmax(star);
+    //DBG("STAR: %dx%d, max=%g, min=%g, %d bytes per pix, type %d; templ_wh=%d", star->height, star->width, star->maxval, star->minval, star->pixbytes, star->type, templ_wh);
     double sum = 0., *ptr = (double*)star->data;
     int l = templ_wh * templ_wh;
     for(int i = 0; i < l; ++i) sum += ptr[i];
-green("sum=%g\n", sum);
+    //green("sum=%g\n", sum);
     OMP_FOR()
     for(int i = 0; i < l; ++i) ptr[i] /= sum;
 }
@@ -281,6 +286,7 @@ static int camcapt(cc_IMG *ima){
     ima->h = camera.geometry.h;
     ima->bytelen = ima->w*ima->h*cc_getNbytes(ima);
     bzero(ima->data, ima->h*ima->w*cc_getNbytes(ima));
+    if(!star) ERRX(_("No star template - die"));
     if(bitpix == 16) gen16(ima);
     else gen8(ima);
     DBG("Time of capture: %g", dtime() - t0);
@@ -446,26 +452,31 @@ static int whlgetnam(char *n, int l){
 }
 
 static cc_hresult setXYs(const char *str, cc_charbuff *ans){
-    static int xctr = 0, yctr = 0; // counters of X and Y (by default MAG[x] = 0)
     char buf[256], *bptr = buf;
     strncpy(buf, str, 255);
     char *val = cc_get_keyval(&bptr);
-    int ival = atoi(val);
+    if(!val){ // getter
+        for(int i = 0; i < settings.Nstars; ++i){
+            snprintf(buf, 255, "x[%d]=%g, y[%d]=%g\n", i, settings.xs[i], i, settings.ys[i]);
+            cc_charbufaddline(ans, buf);
+        }
+        return RESULT_SILENCE;
+    }
+    double dval = atof(val);
     if(strcmp(bptr, "x") == 0){
         if(xctr >= MAX_STARS){
             cc_charbufaddline(ans, "MAX: " STR(MAX_STARS) "stars");
             return RESULT_FAIL;
         }
-        DBG("x[%d]=%d", xctr, ival);
-        settings.xs[xctr++] = ival;
-    }
-    else if(strcmp(bptr, "y") == 0){
+        DBG("x[%d]=%g", xctr, dval);
+        settings.xs[xctr++] = dval;
+    } else if(strcmp(bptr, "y") == 0){
         if(yctr >= MAX_STARS){
             cc_charbufaddline(ans, "MAX: " STR(MAX_STARS) "stars");
             return RESULT_FAIL;
         }
-        DBG("y[%d]=%d", yctr, ival);
-        settings.ys[yctr++] = ival;
+        DBG("y[%d]=%g", yctr, dval);
+        settings.ys[yctr++] = dval;
     }
     else{ return RESULT_BADKEY;} // unreachable
     settings.Nstars = (xctr < yctr) ? xctr : yctr;
@@ -474,10 +485,16 @@ static cc_hresult setXYs(const char *str, cc_charbuff *ans){
 }
 
 static cc_hresult setmag(const char *str, cc_charbuff *ans){
-    static int magctr = 0;
     char buf[256], *bptr = buf;
     strncpy(buf, str, 255);
     char *val = cc_get_keyval(&bptr);
+    if(!val){ // getter
+        for(int i = 0; i < settings.Nstars; ++i){
+            snprintf(buf, 255, "mag[%d]=%g", i, settings.mag[i]);
+            cc_charbufaddline(ans, buf);
+        }
+        return RESULT_SILENCE;
+    }
     double dval = atof(val);
     if(strcmp(bptr, "mag") != 0) return RESULT_BADKEY;
     if(dval > magmax || dval < magmin){
@@ -540,22 +557,22 @@ static cc_hresult loadbg(const char *str, cc_charbuff *ans){
 
 // cmd, help, handler, ptr, min, max, type
 static cc_parhandler_t handlers[] = {
-    {"xc", "x center of field in array coordinates", NULL, (void*)&settings.x0, NULL, NULL, CC_PAR_INT},
-    {"yc", "y center of field in array coordinates", NULL, (void*)&settings.y0, NULL, NULL, CC_PAR_INT},
-    {"x", "X coordinate of next star (arcsec, in field coordinate system)", setXYs, NULL, NULL, NULL, CC_PAR_INT},
-    {"y", "Y coordinate of next star (arcsec, in field coordinate system)", setXYs, NULL, NULL, NULL, CC_PAR_INT},
+    {"beta", "Moffat `beta` parameter", NULL, (void*)&settings.beta, (void*)&betamin, NULL, CC_PAR_DOUBLE},
+    {"bkg", "load background image", loadbg, (void*)&bgfilename, NULL, NULL, CC_PAR_STRING},
+    {"fluct", "stars position fluctuations (arcsec per sec)", NULL, (void*)&settings.fluct, (void*)&fluctmin, (void*)&fluctmax, CC_PAR_DOUBLE},
     {"fwhm", "stars min FWHM, arcsec", NULL, (void*)&settings.fwhm, (void*)&fwhmmin, (void*)&fwhmmax, CC_PAR_DOUBLE},
-    {"scale", "CCD scale: arcsec/pix", NULL, (void*)&settings.scale, (void*)&scalemin, (void*)&scalemax, CC_PAR_DOUBLE},
+    {"lambda", "Poisson noice lambda value (>1)", NULL, (void*)&settings.noiselambda, (void*)&noicelambdamin, NULL, CC_PAR_DOUBLE},
     {"mag", "Next star magnitude: 0m is 0xffff/0xff (16/8 bit) ADUs per second", setmag, NULL, (void*)&magmin, (void*)&magmax, CC_PAR_DOUBLE},
     {"mask", "load mask image (binary, ANDed)", loadmask, (void*)&maskfilename, NULL, NULL, CC_PAR_STRING},
-    {"bkg", "load background image", loadbg, (void*)&bgfilename, NULL, NULL, CC_PAR_STRING},
+    {"rotangle", "Starting rotation angle (arcsec)", NULL, (void*)&settings.rotan0, (void*)&rotanmin, (void*)&rotanmax, CC_PAR_DOUBLE},
+    {"scale", "CCD scale: arcsec/pix", NULL, (void*)&settings.scale, (void*)&scalemin, (void*)&scalemax, CC_PAR_DOUBLE},
+    {"vr", "rotation speed (arcsec/s)", NULL, (void*)&settings.vR, (void*)&vrotmin, (void*)&vrotmax, CC_PAR_DOUBLE},
     {"vx", "X axe drift speed (arcsec/s)", NULL, (void*)&settings.vX, (void*)&vmin, (void*)&vmax, CC_PAR_DOUBLE},
     {"vy", "Y axe drift speed (arcsec/s)", NULL, (void*)&settings.vY, (void*)&vmin, (void*)&vmax, CC_PAR_DOUBLE},
-    {"vr", "rotation speed (arcsec/s)", NULL, (void*)&settings.vR, (void*)&vrotmin, (void*)&vrotmax, CC_PAR_DOUBLE},
-    {"fluct", "stars position fluctuations (arcsec per sec)", NULL, (void*)&settings.fluct, (void*)&fluctmin, (void*)&fluctmax, CC_PAR_DOUBLE},
-    {"beta", "Moffat `beta` parameter", NULL, (void*)&settings.beta, (void*)&betamin, NULL, CC_PAR_DOUBLE},
-    {"lambda", "Poisson noice lambda value (>1)", NULL, (void*)&settings.noiselambda, (void*)&noicelambdamin, NULL, CC_PAR_DOUBLE},
-    {"rotangle", "Starting rotation angle (arcsec)", NULL, (void*)&settings.rotan0, (void*)&rotanmin, (void*)&rotanmax, CC_PAR_DOUBLE},
+    {"x", "X coordinate of next star (arcsec, in field coordinate system)", setXYs, NULL, NULL, NULL, CC_PAR_DOUBLE},
+    {"y", "Y coordinate of next star (arcsec, in field coordinate system)", setXYs, NULL, NULL, NULL, CC_PAR_DOUBLE},
+    {"xc", "x center of field in array coordinates", NULL, (void*)&settings.x0, NULL, NULL, CC_PAR_INT},
+    {"yc", "y center of field in array coordinates", NULL, (void*)&settings.y0, NULL, NULL, CC_PAR_INT},
     //{"", "", NULL, (void*)&settings., (void*)&, (void*)&, CC_PAR_DOUBLE},
     CC_PARHANDLER_END
 };

@@ -7,7 +7,7 @@
 msgid   ""
 msgstr  "Project-Id-Version: PACKAGE VERSION\n"
         "Report-Msgid-Bugs-To: \n"
-        "POT-Creation-Date: 2024-02-20 16:30+0300\n"
+        "POT-Creation-Date: 2024-02-21 16:53+0300\n"
         "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
         "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
         "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -21,7 +21,7 @@ msgstr  "Project-Id-Version: PACKAGE VERSION\n"
 msgid   "%.1f seconds till exposition ends"
 msgstr  "%.1f секунд до окончания экспозиции"
 
-#: ccdfunc.c:793 client.c:270
+#: ccdfunc.c:793 client.c:280
 #, c-format
 msgid   "%d seconds till pause ends\n"
 msgstr  "%d секунд до окончания паузы\n"
@@ -134,7 +134,7 @@ msgstr  "Не могу установить фокусер в нуль"
 msgid   "Can't init mutex!"
 msgstr  "Не могу инициализировать мьютекс!"
 
-#: client.c:256
+#: client.c:266
 msgid   "Can't make exposition"
 msgstr  "Не могу выполнить экспозицию"
 
@@ -342,7 +342,7 @@ msgstr  "Считывание изображения"
 msgid   "Readout mode: %s"
 msgstr  "Режим считывания: %s"
 
-#: client.c:286
+#: client.c:296
 msgid   "Server timeout"
 msgstr  "Таймаут сервера"
 

@@ -126,6 +126,16 @@ DBG("1 msg-> %s, ans -> %s", msg, ans);
  * @brief processData - process here some actions and make messages for server
  */
 static void send_headers(int sock){
+    if(GP->plugincmd){
+        char **p = GP->plugincmd;
+        green("Send custom plugin commands\n");
+        while(p && *p){
+            printf("\t%s\n", *p);
+            SENDMSGW(CC_CMD_PLUGINCMD, "=%s", *p);
+            ++p;
+        }
+        while(getans(sock, NULL));
+    }
     if(GP->exptime > -DBL_EPSILON) SENDMSGW(CC_CMD_EXPOSITION, "=%g", GP->exptime);
     DBG("infty=%d", GP->infty);
     if(GP->infty > -1) SENDMSGW(CC_CMD_INFTY, "=%d", GP->infty);
