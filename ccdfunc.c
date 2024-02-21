@@ -606,22 +606,27 @@ int prepare_ccds(){
     // run plugincmd handler if available
     if(GP->plugincmd){
         DBG("Plugincmd");
-        if(!camera->plugincmd) WARNX(_("Camera plugin have no custom commands"));
+        if(!camera->plugincmd) ERRX(_("Camera plugin have no custom commands"));
         else{
             char **p = GP->plugincmd;
             cc_charbuff *b = cc_charbufnew();
             DBG("got %s", *p);
+            int stop = FALSE;
             while(p && *p){
                 cc_charbufclr(b);
                 cc_hresult r = camera->plugincmd(*p, b);
                 if(r == RESULT_OK || r == RESULT_SILENCE) green("Command '%s'", *p);
-                else red("Command '%s'", *p);
+                else{
+                    stop = TRUE;
+                    red("Command '%s'", *p);
+                }
                 if(r != RESULT_SILENCE) printf(" returns \"%s\"", cc_hresult2str(r));
                 if(b->buflen) printf("\n%s", b->buf);
                 else printf("\n");
                 ++p;
             }
             cc_charbufdel(&b);
+            if(stop) signals(9);
         }
     }
     if(GP->fanspeed > -1){

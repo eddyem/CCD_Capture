@@ -745,8 +745,11 @@ static size_t print_val(cc_partype_t t, void *val, char *buf, size_t bufl){
         case CC_PAR_DOUBLE:
             l = snprintf(buf, bufl, "%g", *(double*)val);
         break;
+        case CC_PAR_STRING:
+            l = snprintf(buf, bufl, "%s", *(char**)val);
+        break;
         default:
-         l = snprintf(buf, bufl, "hoojnya");
+         l = snprintf(buf, bufl, "(undefined)");
         break;
     }
     return l;
@@ -795,6 +798,10 @@ cc_hresult cc_plugin_customcmd(const char *str, cc_parhandler_t *handlers, cc_ch
                             dval = atof(val);
                             UPDATE_VAL(double, dval, "%g");
                         break;
+                        case CC_PAR_STRING:
+                            if(*(char**)phptr->ptr) free(*(char**)phptr->ptr);
+                            *(char**)phptr->ptr = strdup(val);
+                        break;
                         default:
                             result = RESULT_FAIL;
                     }
@@ -817,7 +824,7 @@ cc_hresult cc_plugin_customcmd(const char *str, cc_parhandler_t *handlers, cc_ch
         while(phptr->cmd){
             char *bptr = buf; size_t L = 511;
             ADDL("\t%s", phptr->cmd);
-            if(phptr->ptr){
+            if(phptr->type != CC_PAR_NONE){
                 ADDL(" = (");
                 switch(phptr->type){
                     case CC_PAR_INT:
@@ -828,6 +835,9 @@ cc_hresult cc_plugin_customcmd(const char *str, cc_parhandler_t *handlers, cc_ch
                     break;
                     case CC_PAR_DOUBLE:
                         ADDL("double");
+                    break;
+                    case CC_PAR_STRING:
+                        ADDL("string");
                     break;
                     default:
                         ADDL("undefined");

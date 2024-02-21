@@ -275,9 +275,11 @@ typedef enum{
 #define CC_CMD_WPOS        "wpos"
 
 typedef enum{ // parameter type
+    CC_PAR_NONE, // no parameter
     CC_PAR_INT,
     CC_PAR_FLOAT,
     CC_PAR_DOUBLE,
+    CC_PAR_STRING,
 } cc_partype_t;
 
 typedef struct{ // custom plugin parameters

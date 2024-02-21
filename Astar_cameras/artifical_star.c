@@ -53,11 +53,13 @@ static float camtemp = -30., exptime = 0.1;
 static cc_capture_status capstat = CAPTURE_NO;
 static double texpstart = 0.;
 static uint8_t bitpix = 16; // bit depth: 8 or 16
-static il_Image *imagemask = NULL; // mask
+static il_Image *imagemask = NULL, *imagebg; // mask & background
+static char *maskfilename = NULL, *bgfilename = NULL; // filenames
 
 typedef struct{
     int Nstars; // amount of stars
     int x0, y0; // center of field in array coordinates
+    double rotan0; // starting rotation angle
     int xs[MAX_STARS], ys[MAX_STARS]; // center of star field in array coordinates
     double fwhm; // stars min FWHM, arcsec
     double beta; // Moffat `beta` parameter
@@ -66,6 +68,7 @@ typedef struct{
     double mag[MAX_STARS]; // star magnitude: 0m is 0xffff/0xff ADUs per second
     double vX; // X axe drift speed (arcsec/s)
     double vY; // Y -//-
+    double vR; // rotation speed (arcsec/s)
     double fluct; // stars position fluctuations (arcsec/sec)
     double noiselambda; // poisson noice lambda value
 } settings_t;
@@ -73,14 +76,16 @@ typedef struct{
 static settings_t settings = {
     .Nstars = 1,
     .x0 = 512, .y0 = 512,
-    .xs = {0}, .ys = {0},
-    .fwhm = 1.5, .beta = 1., .scale = 0.03, .mag = {0.},
-    .fluct = 1., .noiselambda = 3.,
+    .fwhm = 1.5, .beta = 1., .scale = 0.03,
+    .fluct = 0.3, .noiselambda = 1.,
 };
 // min/max for parameters
 static const double fwhmmin = 0.1, fwhmmax = 10., scalemin = 0.001, scalemax = 3600., magmin = -30., magmax = 30.;
 static const double vmin = -20., vmax = 20., fluctmin = 0., fluctmax = 3., betamin = 0.5;
+static const double vrotmin = -36000., vrotmax = 36000.; // limit rotator speed to 10 degrees per second
+static const double rotanmin = 0., rotanmax = 1295999; // 0..360degr-1''
 static double dX = 0., dY = 0.; // current "sky" coordinates (arcsec) relative to field center (according vdrift)
+static double rotangle = 0., sinr = 0., cosr = 1.; // current rotation angle (arcsec) around x0/y0 and its sin/cos
 static int Xc = 0, Yc = 0; // current pixel coordinates of "sky" center (due to current image size, clip and scale) + fluctuations
 static double Tstart = -1.; // global acquisition start
 static double Xfluct = 0., Yfluct = 0.; // fluctuation additions in arcsec
@@ -98,13 +103,14 @@ static void test_template(){
     FWHM0 = settings.fwhm;
     scale0 = settings.scale;
     il_Image_free(&star);
+DBG("MAKE STAR, wh=%d, beta=%g", templ_wh, settings.beta);
     star = il_Image_star(IMTYPE_D, templ_wh, templ_wh, settings.fwhm, settings.beta);
-    //il_Image_minmax(star);
-    //DBG("STAR: %dx%d, max=%g, min=%g, %d bytes per pix, type %d; templ_wh=%d", star->height, star->width, star->maxval, star->minval, star->pixbytes, star->type, templ_wh);
+il_Image_minmax(star);
+DBG("STAR: %dx%d, max=%g, min=%g, %d bytes per pix, type %d; templ_wh=%d", star->height, star->width, star->maxval, star->minval, star->pixbytes, star->type, templ_wh);
     double sum = 0., *ptr = (double*)star->data;
     int l = templ_wh * templ_wh;
     for(int i = 0; i < l; ++i) sum += ptr[i];
-    //green("sum=%g\n", sum);
+green("sum=%g\n", sum);
     OMP_FOR()
     for(int i = 0; i < l; ++i) ptr[i] /= sum;
 }
@@ -127,7 +133,8 @@ static void test_template(){
     register int w = ima->w;\
     int h = ima->h, tw2 = templ_wh/2, X0,Y0, X1,Y1, x0,y0;\
     for(int N = 0; N < settings.Nstars; ++N){\
-        int Xstar = Xc + settings.xs[N] - camera.geometry.xoff, Ystar = Yc + settings.ys[N] - camera.geometry.yoff;\
+        int Xstar = Xc + (settings.xs[N]*cosr - settings.ys[N]*sinr)/settings.scale; \
+        int Ystar = Yc + (settings.ys[N]*cosr + settings.xs[N]*sinr)/settings.scale;\
         if(Xstar - tw2 < 0){\
             X0 = tw2 - Xstar + 1;\
             x0 = 0;\
@@ -164,6 +171,20 @@ static void test_template(){
             }\
         }\
     }\
+    if(imagebg){ /* add background */ \
+        X0 = camera.geometry.xoff; Y0 = camera.geometry.yoff; \
+        X1 = imagebg->width; Y1 = imagebg->height; \
+        if(X1-X0 > w) X1 = X0 + w;\
+        if(Y1-Y0 > h) Y1 = Y0 + h; \
+        OMP_FOR()\
+        for(int y = Y0; y < Y1; ++y){\
+            type *out = &((type*)ima->data)[(y-Y0)*w];\
+            uint8_t *in = &((uint8_t*)imagebg->data)[y*imagemask->width + X0];\
+            for(int x = X0; x < X1; ++x, ++in, ++out){\
+                *out = (*out + *in > maxval) ? maxval : *out + *in;\
+            }\
+        } \
+    }\
     if(imagemask){ /* apply mask */ \
         X0 = camera.geometry.xoff; Y0 = camera.geometry.yoff; \
         X1 = imagemask->width; Y1 = imagemask->height; \
@@ -174,12 +195,20 @@ static void test_template(){
             type *out = &((type*)ima->data)[(y-Y0)*w];\
             uint8_t *in = &((uint8_t*)imagemask->data)[y*imagemask->width + X0];\
             for(int x = X0; x < X1; ++x, ++in, ++out){\
-                type p = il_Poisson(settings.noiselambda); \
-                /*type p = fabs(il_Normal(0., 3.)); */\
-                if(*in == 0) *out = p; else *out = (*out+p > maxval) ? maxval : *out + p; \
+                if(*in == 0) *out = 0;\
             }\
         } \
-    }
+    }\
+    if(settings.noiselambda > 1.){ /* apply noise */ \
+        w *= h; \
+        type *out = (type*)ima->data;\
+        OMP_FOR()\
+        for(int i = 0; i < w; ++i){\
+            type p = il_Poisson(settings.noiselambda); \
+            out[i] = (out[i] + p > maxval) ? maxval : out[i] + p; \
+        }\
+    }\
+
 
 static void gen16(cc_IMG *ima){
     GEN(ima, uint16_t, 0xffff);
@@ -214,11 +243,17 @@ static int startexp(){
     else if(dT > 1.) dT = 1.; // dT for fluctuations amplitude
     if(Tstart < 0.) Tstart = Tnow;
     texpstart = Tnow;
+    double Tfromstart = Tnow - Tstart;
     // recalculate center of field coordinates at moment of exp start
-    dX += (dtime() - Tstart) * settings.vX;
-    dY += (dtime() - Tstart) * settings.vY;
-    Xc = dX/settings.scale + settings.x0 - camera.array.xoff;
-    Yc = dY/settings.scale + settings.y0 - camera.array.yoff;
+    dX = Tfromstart * settings.vX;
+    dY = Tfromstart * settings.vY;
+    rotangle = settings.rotan0 + Tfromstart * settings.vR;
+    if(rotangle < rotanmin) rotangle += 360.*3600.;
+    else if(rotangle > rotanmax) rotangle -= 360.*3600.;
+    sincos(rotangle * M_PI/3600./180., &sinr, &cosr);
+    double xx = dX/settings.scale, yy = dY/settings.scale;
+    Xc = xx*cosr - yy*sinr + settings.x0 - camera.array.xoff - camera.geometry.xoff;
+    Yc = yy*cosr + xx*sinr + settings.y0 - camera.array.yoff - camera.geometry.yoff;
     DBG("dX=%g, dY=%g; Xc=%d, Yc=%d", dX, dY, Xc, Yc);
     // add fluctuations
     double fx = settings.fluct * dT * (2.*drand48() - 1.); // [-fluct*dT, +fluct*dT]
@@ -472,7 +507,31 @@ static cc_hresult loadmask(const char *str, cc_charbuff *ans){
         snprintf(buf, FILENAME_MAX, "Can't read image '%s'", nm);
         res = RESULT_FAIL;
     }else{
-        snprintf(buf, FILENAME_MAX, "Got image '%s'; w=%d, h=%d, type=%d (impix=%d)", nm, imagemask->width, imagemask->height, imagemask->type, imagemask->pixbytes);
+        if(imagemask->pixbytes != 1){
+            snprintf(buf, FILENAME_MAX, "Image '%s' isn't a 8-bit image", nm);
+            res = RESULT_FAIL;
+        }else
+            snprintf(buf, FILENAME_MAX, "Got image '%s'; w=%d, h=%d, type=%d (impix=%d)", nm, imagemask->width, imagemask->height, imagemask->type, imagemask->pixbytes);
+    }
+    cc_charbufaddline(ans, buf);
+    FREE(nm);
+    return res;
+}
+
+static cc_hresult loadbg(const char *str, cc_charbuff *ans){
+    char buf[FILENAME_MAX+32], *bptr = buf;
+    strncpy(buf, str, FILENAME_MAX+31);
+    char *val = cc_get_keyval(&bptr);
+    if(strcmp(bptr, "bkg") != 0) return RESULT_BADKEY;
+    if(imagebg) il_Image_free(&imagebg);
+    imagebg = il_Image_read(val);
+    char *nm = strdup (val);
+    cc_hresult res = RESULT_OK;
+    if(!imagebg){
+        snprintf(buf, FILENAME_MAX, "Can't read image '%s'", nm);
+        res = RESULT_FAIL;
+    }else{
+        snprintf(buf, FILENAME_MAX, "Got image '%s'; w=%d, h=%d, type=%d (impix=%d)", nm, imagebg->width, imagebg->height, imagebg->type, imagebg->pixbytes);
     }
     cc_charbufaddline(ans, buf);
     FREE(nm);
@@ -483,17 +542,20 @@ static cc_hresult loadmask(const char *str, cc_charbuff *ans){
 static cc_parhandler_t handlers[] = {
     {"xc", "x center of field in array coordinates", NULL, (void*)&settings.x0, NULL, NULL, CC_PAR_INT},
     {"yc", "y center of field in array coordinates", NULL, (void*)&settings.y0, NULL, NULL, CC_PAR_INT},
-    {"x", "X coordinate of next star", setXYs, NULL, NULL, NULL, 0},
-    {"y", "Y coordinate of next star", setXYs, NULL, NULL, NULL, 0},
+    {"x", "X coordinate of next star (arcsec, in field coordinate system)", setXYs, NULL, NULL, NULL, CC_PAR_INT},
+    {"y", "Y coordinate of next star (arcsec, in field coordinate system)", setXYs, NULL, NULL, NULL, CC_PAR_INT},
     {"fwhm", "stars min FWHM, arcsec", NULL, (void*)&settings.fwhm, (void*)&fwhmmin, (void*)&fwhmmax, CC_PAR_DOUBLE},
     {"scale", "CCD scale: arcsec/pix", NULL, (void*)&settings.scale, (void*)&scalemin, (void*)&scalemax, CC_PAR_DOUBLE},
-    {"mag", "Next star magnitude: 0m is 0xffff/0xff (16/8 bit) ADUs per second", setmag, NULL, NULL, NULL, 0},
-    {"mask", "load mask image (binary, ANDed)", loadmask, NULL, NULL, NULL, 0},
+    {"mag", "Next star magnitude: 0m is 0xffff/0xff (16/8 bit) ADUs per second", setmag, NULL, (void*)&magmin, (void*)&magmax, CC_PAR_DOUBLE},
+    {"mask", "load mask image (binary, ANDed)", loadmask, (void*)&maskfilename, NULL, NULL, CC_PAR_STRING},
+    {"bkg", "load background image", loadbg, (void*)&bgfilename, NULL, NULL, CC_PAR_STRING},
     {"vx", "X axe drift speed (arcsec/s)", NULL, (void*)&settings.vX, (void*)&vmin, (void*)&vmax, CC_PAR_DOUBLE},
     {"vy", "Y axe drift speed (arcsec/s)", NULL, (void*)&settings.vY, (void*)&vmin, (void*)&vmax, CC_PAR_DOUBLE},
+    {"vr", "rotation speed (arcsec/s)", NULL, (void*)&settings.vR, (void*)&vrotmin, (void*)&vrotmax, CC_PAR_DOUBLE},
     {"fluct", "stars position fluctuations (arcsec per sec)", NULL, (void*)&settings.fluct, (void*)&fluctmin, (void*)&fluctmax, CC_PAR_DOUBLE},
     {"beta", "Moffat `beta` parameter", NULL, (void*)&settings.beta, (void*)&betamin, NULL, CC_PAR_DOUBLE},
     {"lambda", "Poisson noice lambda value (>1)", NULL, (void*)&settings.noiselambda, (void*)&noicelambdamin, NULL, CC_PAR_DOUBLE},
+    {"rotangle", "Starting rotation angle (arcsec)", NULL, (void*)&settings.rotan0, (void*)&rotanmin, (void*)&rotanmax, CC_PAR_DOUBLE},
     //{"", "", NULL, (void*)&settings., (void*)&, (void*)&, CC_PAR_DOUBLE},
     CC_PARHANDLER_END
 };
