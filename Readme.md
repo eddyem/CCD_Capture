@@ -264,3 +264,19 @@ Commands:
 -   yc = (int) - y center of field in array coordinates
 
 
+## Examples
+
+### ccd_client
+
+Connect to server, send `infty` and simply get up to N images (or quit if no images in 5 seconds).
+
+Usage:
+```
+  -U, --isun          use UNIX socket
+  -h, --help          show this help
+  -i, --infty         run in infinity capturing loop (else - request each frame)
+  -k, --shmkey=arg    shared memory (with image data) key (default: 7777777)
+  -n, --nframes=arg   make series of N frames (2 default)
+  -s, --sock=arg      command socket name or port
+  -x, --exptime=arg   set exposure time to given value (seconds!)
+```

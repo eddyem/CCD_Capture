@@ -297,6 +297,7 @@ typedef struct{ // custom plugin parameters
 
 cc_hresult cc_plugin_customcmd(const char *str, cc_parhandler_t *handlers, cc_charbuff *ans);
 
+void *open_plugin(const char *name);
 cc_Focuser *open_focuser(const char *pluginname);
 cc_Camera *open_camera(const char *pluginname);
 cc_Wheel *open_wheel(const char *pluginname);

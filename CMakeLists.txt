@@ -133,12 +133,13 @@ configure_file("${PROJLIB}.pc.in" ${PCFILE} @ONLY)
 set_target_properties(${PROJLIB} PROPERTIES VERSION ${VERSION})
 set_target_properties(${PROJLIB} PROPERTIES PUBLIC_HEADER ${LIBHEADER})
 
+include(GNUInstallDirs)
 # Installation of the program
 install(FILES ${MO_FILE} DESTINATION "share/locale/ru/LC_MESSAGES")
 install(TARGETS ${PROJ} DESTINATION "bin")
 install(TARGETS ${PROJLIB} LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
         PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-install(FILES ${PCFILE} DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/pkgconfig)
+install(FILES ${PCFILE} DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
 
 
 find_package(Gettext REQUIRED)

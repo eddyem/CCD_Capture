@@ -308,7 +308,7 @@ cc_IMG *cc_getshm(key_t key, size_t imsize){
 
 
 // find plugin
-static void *open_plugin(const char *name){
+void *open_plugin(const char *name){
     DBG("try to open lib %s", name);
     void* dlh = dlopen(name, RTLD_NOLOAD); // library may be already opened
     if(!dlh){
