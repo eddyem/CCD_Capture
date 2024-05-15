@@ -28,7 +28,9 @@
 #include "ccdfunc.h" // framerate
 #include "client.h"
 #include "cmdlnopts.h"
+#ifdef IMAGEVIEW
 #include "imageview.h"
+#endif
 #include "server.h" // for common commands names
 #include "socket.h"
 
