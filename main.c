@@ -91,6 +91,9 @@ int main(int argc, char **argv){
         struct stat filestat;
         if(0 == stat(GP->outfile, &filestat)) ERRX("File %s exists!", GP->outfile);
     }
+    if(GP->anstmout > 0.){
+        if(!cc_setAnsTmout(GP->anstmout)) ERRX("Can't set answer timeout to %g", GP->anstmout);
+    }
     if(GP->port){
         if(GP->path){
             WARNX("Options `port` and `path` can't be used together! Point `port` for TCP socket or `path` for UNIX.");

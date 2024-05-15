@@ -75,6 +75,7 @@ typedef struct{
     int infty;          // run (==1) or stop (==0) infinity loop
     float gain;         // gain level (only for CMOS)
     float brightness;   // brightness (only for CMOS)
+    double anstmout;    // answer timeout by socket
     double exptime;     // time of exposition in seconds
     double temperature; // temperature of CCD
     double gotopos;     // move stepper motor of focuser to absolute position

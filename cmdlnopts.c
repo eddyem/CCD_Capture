@@ -31,6 +31,7 @@ static glob_pars  G = {
     .setwheel = -1,
     .fanspeed = -1,
     .shmkey = 7777777,
+    .anstmout = -1,
     .infty = -1
 };
 
@@ -109,6 +110,7 @@ myoption cmdlnopts[] = {
     {"client",  NO_ARGS,    &G.client,1,    arg_none,   NULL,               N_("run as client")},
     {"viewer",  NO_ARGS,    &G.viewer,1,    arg_none,   NULL,               N_("passive viewer (only get last images)")},
     {"restart", NO_ARGS,    &G.restart,1,   arg_none,   NULL,               N_("restart image server")},
+    {"timeout", NEED_ARG,   NULL,   '0',    arg_double, APTR(&G.anstmout),  N_("network answer timeout (default: 0.1s)")},
 
     {"shmkey", NEED_ARG,    NULL,   'k',    arg_int,    APTR(&G.shmkey),    N_("shared memory (with image data) key (default: 7777777)")},
     {"forceimsock",NO_ARGS, &G.forceimsock,1, arg_none, NULL,               N_("force using image through socket transition even if can use SHM")},

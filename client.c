@@ -55,18 +55,24 @@ static size_t imbufsz = 0; // image buffer for allocated `ima`
 static uint8_t *imbuf = NULL;
 #endif
 
+// read message from queue or file descriptor
 static char *readmsg(int fd){
     static cc_strbuff *buf = NULL;
-    if(!buf) buf = cc_strbufnew(BUFSIZ, 255);
+    if(!buf) buf = cc_strbufnew(BUFSIZ, 256);
+    int test(){
+        size_t got = cc_getline(buf);
+        if(got > 255){
+            DBG("Client fd=%d gave buffer overflow", fd);
+            LOGMSG("SERVER client fd=%d buffer overflow", fd);
+        }else if(got){
+            return TRUE;
+        }
+        return FALSE;
+    }
+    if(test()) return buf->string;
     if(1 == cc_canberead(fd)){
         if(cc_read2buf(fd, buf)){
-            size_t got = cc_getline(buf);
-            if(got > 255){
-                DBG("Client fd=%d gave buffer overflow", fd);
-                LOGMSG("SERVER client fd=%d buffer overflow", fd);
-            }else if(got){
-                return buf->string;
-            }
+            if(test()) return buf->string;
         }else ERRX("Server disconnected");
     }
     return NULL;
@@ -120,6 +126,7 @@ DBG("1 msg-> %s, ans -> %s", msg, ans);
             DBG("BREAK");
             break;
         }
+
     }
     return ((ans) ? TRUE : FALSE);
 }
