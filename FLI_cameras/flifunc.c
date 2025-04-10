@@ -141,7 +141,7 @@ static int fli_findCCD(){
     return TRUE;
 }
 static int fli_setActiceCam(int n){
-    DBG("SET ACTUIVE #%d", n);
+    DBG("SET ACTIVE #%d", n);
     if(!camz && !fli_findCCD()) return FALSE;
     if(n >= camera.Ndevices){
         return FALSE;
@@ -463,7 +463,9 @@ retn:
 static int fli_capt(cc_IMG *ima){
     if(!ima || !ima->data) return FALSE;
     for(int row = 0; row < ima->h; row++){
-        void *ptr = (void*)((is16bit) ? ((uint16_t*)ima->data) + row * ima->w : ((uint8_t*)ima->data) + row * ima->w);
+        void *ptr = NULL;
+        if(is16bit) ptr = (void*)(((uint16_t*)ima->data) + row * ima->w);
+        else ptr = (void*)(((uint8_t*)ima->data) + row * ima->w);
         TRYFUNC(FLIGrabRow, camdev, ptr, ima->w);
         if(fli_err) return FALSE;
     }

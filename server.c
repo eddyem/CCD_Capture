@@ -256,7 +256,9 @@ static void* processCAM(_U_ void *d){
 
 // functions running @ each devno change
 static int camdevini(int n){
+    FNAME();
     if(!camera) return FALSE;
+    DBG("Devno: %d", n);
     if(camera->setDevNo && !camera->setDevNo(n)){
         LOGERR("Can't set active camera number");
         return FALSE;
