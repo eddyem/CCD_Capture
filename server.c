@@ -181,7 +181,7 @@ static inline void cameracapturestate(){ // capturing - wait for exposition ends
                     return;
                 }else{
                     ima->gotstat = 0; // fresh image without statistics - recalculate when save
-                    ima->timestamp = dtime(); // set timestamp
+                    ima->timestamp = sl_dtime(); // set timestamp
                     ++ima->imnumber; // increment counter
                     if(saveFITS(ima, &lastfile)){
                         DBG("LAST file name changed");
@@ -210,8 +210,8 @@ static void* processCAM(_U_ void *d){
         if(tremain < 0.5 && tremain > 0.) usleep(tremain*1e6);
         if(lock()){
             // log
-            if(dtime() - logt > TLOG_PAUSE){
-                logt = dtime();
+            if(sl_dtime() - logt > TLOG_PAUSE){
+                logt = sl_dtime();
                 float t;
                 if(camera->getTcold && camera->getTcold(&t)){
                     LOGMSG("CCDTEMP=%.1f", t);
@@ -310,7 +310,7 @@ static int wheeldevini(int n){
  ******************************************************************************/
 static cc_hresult restarthandler(_U_ int fd, _U_ const char *key, _U_ const char *val){
     camflags |= FLAG_RESTARTSERVER;
-    return RESULT_OK;
+    return CC_RESULT_OK;
 }
 
 /*******************************************************************************
@@ -322,33 +322,33 @@ static cc_hresult imsizehandler(int fd, const char *key, _U_ const char *val){
     // send image width/height in pixels
     if(0 == strcmp(key, CC_CMD_IMHEIGHT)) snprintf(buf, 63, CC_CMD_IMHEIGHT "=%d", ima->h);
     else snprintf(buf, 63, CC_CMD_IMWIDTH "=%d", ima->w);
-    if(!cc_sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
-    return RESULT_SILENCE;
+    if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
+    return CC_RESULT_SILENCE;
 }
 static cc_hresult camlisthandler(int fd, _U_ const char *key, _U_ const char *val){
     char buf[BUFSIZ], modname[256];
-    if(!camera->getModelName) return RESULT_FAIL;
+    if(!camera->getModelName) return CC_RESULT_FAIL;
     for(int i = 0; i < camera->Ndevices; ++i){
         if(camera->setDevNo && !camera->setDevNo(i)) continue;
             camera->getModelName(modname, 255);
             snprintf(buf, BUFSIZ-1, CC_CMD_CAMLIST "='%s'", modname);
-            if(!cc_sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
+            if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
     }
     if(camdevno > -1 && camera->setDevNo) camera->setDevNo(camdevno);
-    return RESULT_SILENCE;
+    return CC_RESULT_SILENCE;
 }
 static cc_hresult camsetNhandler(_U_ int fd, _U_ const char *key, _U_ const char *val){
     char buf[64];
     if(val){
         int num = atoi(val);
         if(num > camera->Ndevices - 1 || num < 0){
-            return RESULT_BADVAL;
+            return CC_RESULT_BADVAL;
         }
-        if(!camdevini(num)) return RESULT_FAIL;
+        if(!camdevini(num)) return CC_RESULT_FAIL;
     }
     snprintf(buf, 63, CC_CMD_CAMDEVNO "=%d", camdevno);
-    if(!cc_sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
-    return RESULT_SILENCE;
+    if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
+    return CC_RESULT_SILENCE;
 }
 // exposition time setter/getter
 static cc_hresult exphandler(int fd, _U_ const char *key, const char *val){
@@ -356,24 +356,24 @@ static cc_hresult exphandler(int fd, _U_ const char *key, const char *val){
     if(val){
         DBG("setexp to %s", val);
         double v = atof(val);
-        if(v < DBL_EPSILON) return RESULT_BADVAL;
-        if(!camera->setexp) return RESULT_FAIL;
+        if(v < DBL_EPSILON) return CC_RESULT_BADVAL;
+        if(!camera->setexp) return CC_RESULT_FAIL;
         if(camera->setexp(v)){
             GP->exptime = v;
         }else LOGWARN("Can't set exptime to %g", v);
     }
     DBG("expt: %g", GP->exptime);
     snprintf(buf, 63, CC_CMD_EXPOSITION "=%g", GP->exptime);
-    if(!cc_sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
-    return RESULT_SILENCE;
+    if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
+    return CC_RESULT_SILENCE;
 }
 // show last filename of saved FITS
 static cc_hresult lastfnamehandler(int fd, _U_ const char *key, _U_ const char *val){
     char buf[PATH_MAX+32];
     if(lastfile && *lastfile) snprintf(buf, PATH_MAX+31, CC_CMD_LASTFNAME "=%s", lastfile);
     else snprintf(buf, PATH_MAX+31, CC_CMD_LASTFNAME "=");
-    if(!cc_sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
-    return RESULT_SILENCE;
+    if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
+    return CC_RESULT_SILENCE;
 }
 // filename setter/getter
 static cc_hresult namehandler(int fd, _U_ const char *key, const char *val){
@@ -384,7 +384,7 @@ static cc_hresult namehandler(int fd, _U_ const char *key, const char *val){
         char *path = makeabspath(val, FALSE);
         if(!path){
             LOGERR("Can't create file '%s'", val);
-            return RESULT_BADVAL;
+            return CC_RESULT_BADVAL;
         }
         FREE(outfile);
         outfile = strdup(path);
@@ -394,12 +394,12 @@ static cc_hresult namehandler(int fd, _U_ const char *key, const char *val){
         DBG("Clear names");
         GP->outfileprefix = NULL;
         GP->outfile = NULL;
-        return RESULT_OK;
+        return CC_RESULT_OK;
     }
-    if(!GP->outfile) return RESULT_FAIL;
+    if(!GP->outfile) return CC_RESULT_FAIL;
     snprintf(buf, PATH_MAX+31, CC_CMD_FILENAME "=%s", GP->outfile);
-    if(!cc_sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
-    return RESULT_SILENCE;
+    if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
+    return CC_RESULT_SILENCE;
 }
 // filename prefix
 static cc_hresult nameprefixhandler(_U_ int fd, _U_ const char *key, const char *val){
@@ -409,7 +409,7 @@ static cc_hresult nameprefixhandler(_U_ int fd, _U_ const char *key, const char 
         char *path = makeabspath(val, FALSE);
         if(!path){
             LOGERR("Can't create file '%s'", val);
-            return RESULT_BADVAL;
+            return CC_RESULT_BADVAL;
         }
         FREE(outfile);
         outfile = strdup(path);
@@ -418,174 +418,174 @@ static cc_hresult nameprefixhandler(_U_ int fd, _U_ const char *key, const char 
     }else{ // clear names
         GP->outfileprefix = NULL;
         GP->outfile = NULL;
-        return RESULT_OK;
+        return CC_RESULT_OK;
     }
-    if(!GP->outfileprefix) return RESULT_FAIL;
+    if(!GP->outfileprefix) return CC_RESULT_FAIL;
     snprintf(buf, PATH_MAX+31, CC_CMD_FILENAMEPREFIX "=%s", GP->outfileprefix);
-    if(!cc_sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
-    return RESULT_SILENCE;
+    if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
+    return CC_RESULT_SILENCE;
 }
 // rewrite
 static cc_hresult rewritefilehandler(_U_ int fd, _U_ const char *key, const char *val){
     char buf[64];
     if(val){
         int n = atoi(val);
-        if(n < 0 || n > 1) return RESULT_BADVAL;
+        if(n < 0 || n > 1) return CC_RESULT_BADVAL;
         GP->rewrite = n;
     }
     snprintf(buf, 63, CC_CMD_REWRITE "=%d", GP->rewrite);
-    if(!cc_sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
-    return RESULT_SILENCE;
+    if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
+    return CC_RESULT_SILENCE;
 }
 static cc_hresult binhandler(_U_ int fd, const char *key, const char *val){
     char buf[64];
     if(val){
         int b = atoi(val);
-        if(b < 1) return RESULT_BADVAL;
+        if(b < 1) return CC_RESULT_BADVAL;
         if(0 == strcmp(key, CC_CMD_HBIN)) GP->hbin = b;
         else GP->vbin = b;
-        if(!camera->setbin) return RESULT_FAIL;
+        if(!camera->setbin) return CC_RESULT_FAIL;
         if(!camera->setbin(GP->hbin, GP->vbin)){
-            return RESULT_BADVAL;
+            return CC_RESULT_BADVAL;
         }
     }
-    if(!camera->getbin) return RESULT_SILENCE;
+    if(!camera->getbin) return CC_RESULT_SILENCE;
     int r = camera->getbin(&GP->hbin, &GP->vbin);
     if(r){
         if(0 == strcmp(key, CC_CMD_HBIN)) snprintf(buf, 63, "%s=%d", key, GP->hbin);
         else snprintf(buf, 63, "%s=%d", key, GP->vbin);
         if(val) fixima();
-        if(!cc_sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
-        return RESULT_SILENCE;
+        if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
+        return CC_RESULT_SILENCE;
     }
-    return RESULT_FAIL;
+    return CC_RESULT_FAIL;
 }
 static cc_hresult temphandler(int fd, _U_ const char *key, const char *val){
     float f;
     char buf[64];
     int r;
-    if(!camera->setT) return RESULT_FAIL;
+    if(!camera->setT) return CC_RESULT_FAIL;
     if(val){
         f = atof(val);
         r = camera->setT((float)f);
         if(!r){
             LOGWARN("Can't set camera T to %.1f", f);
-            return RESULT_FAIL;
+            return CC_RESULT_FAIL;
         }
         LOGMSG("Set camera T to %.1f", f);
     }
-    if(!camera->getTcold) return RESULT_SILENCE;
+    if(!camera->getTcold) return CC_RESULT_SILENCE;
     r = camera->getTcold(&f);
     if(r){
         snprintf(buf, 63, CC_CMD_CAMTEMPER "=%.1f", f);
-        if(!cc_sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
+        if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
         if(camera->getTbody){
             r = camera->getTbody(&f);
             if(r){
                 snprintf(buf, 63, "tbody=%.1f", f);
-                if(!cc_sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
+                if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
             }
         }
         if(camera->getThot){
             r = camera->getThot(&f);
             if(r){
                 snprintf(buf, 63, "thot=%.1f", f);
-                if(!cc_sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
+                if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
             }
         }
-        return RESULT_SILENCE;
-    }else return RESULT_FAIL;
+        return CC_RESULT_SILENCE;
+    }else return CC_RESULT_FAIL;
 }
 static cc_hresult camfanhandler(int fd, _U_ const char *key, _U_ const char *val){
     char buf[64];
-    if(!camera->setfanspeed) return RESULT_FAIL;
+    if(!camera->setfanspeed) return CC_RESULT_FAIL;
     if(val){
         int spd = atoi(val);
-        if(spd < 0) return RESULT_BADVAL;
+        if(spd < 0) return CC_RESULT_BADVAL;
         if(spd > FAN_HIGH) spd = FAN_HIGH;
         int r = camera->setfanspeed((cc_fan_speed)spd);
-        if(!r) return RESULT_FAIL;
+        if(!r) return CC_RESULT_FAIL;
         camfanspd = spd;
     }
     snprintf(buf, 63, CC_CMD_CAMFANSPD "=%d", camfanspd);
-    if(!cc_sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
-    return RESULT_SILENCE;
+    if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
+    return CC_RESULT_SILENCE;
 }
 const char *shutterstr[] = {"open", "close", "expose @high", "expose @low"};
 static cc_hresult shutterhandler(_U_ int fd, _U_ const char *key, const char *val){
-    if(!camera->shuttercmd) return RESULT_FAIL;
+    if(!camera->shuttercmd) return CC_RESULT_FAIL;
     if(val){
         int x = atoi(val);
-        if(x < 0 || x >= SHUTTER_AMOUNT) return RESULT_BADVAL;
+        if(x < 0 || x >= SHUTTER_AMOUNT) return CC_RESULT_BADVAL;
         int r = camera->shuttercmd((cc_shutter_op)x);
         if(r){
            LOGMSG("Shutter command '%s'", shutterstr[x]);
         }else{
             LOGWARN("Can't run shutter command '%s'", shutterstr[x]);
-            return RESULT_FAIL;
+            return CC_RESULT_FAIL;
         }
     }
-    return RESULT_OK;
+    return CC_RESULT_OK;
 }
 static cc_hresult confiohandler(_U_ int fd, _U_ const char *key, _U_ const char *val){
     char buf[64];
-    if(!camera->confio) return RESULT_FAIL;
+    if(!camera->confio) return CC_RESULT_FAIL;
     if(val){
         int io = atoi(val);
         int r = camera->confio(io);
-        if(!r) return RESULT_FAIL;
+        if(!r) return CC_RESULT_FAIL;
         confio = io;
     }
     snprintf(buf, 63, CC_CMD_CONFIO "=%d", confio);
-    if(!cc_sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
-    return RESULT_SILENCE;
+    if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
+    return CC_RESULT_SILENCE;
 }
 static cc_hresult iohandler(_U_ int fd, _U_ const char *key, _U_ const char *val){
     char buf[64];
     int io;
-    if(!camera->setio) return RESULT_FAIL;
+    if(!camera->setio) return CC_RESULT_FAIL;
     if(val){
         io = atoi(val);
         int r = camera->setio(io);
-        if(!r) return RESULT_FAIL;
+        if(!r) return CC_RESULT_FAIL;
     }
     int r = camera->getio(&io);
-    if(!r) return RESULT_FAIL;
+    if(!r) return CC_RESULT_FAIL;
     snprintf(buf, 63, CC_CMD_IO "=%d", io);
-    if(!cc_sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
-    return RESULT_SILENCE;
+    if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
+    return CC_RESULT_SILENCE;
 }
 static cc_hresult gainhandler(_U_ int fd, _U_ const char *key, _U_ const char *val){
     char buf[64];
     float f;
-    if(!camera->setgain) return RESULT_FAIL;
+    if(!camera->setgain) return CC_RESULT_FAIL;
     if(val){
         f = atof(val);
         int r = camera->setgain(f);
-        if(!r) return RESULT_FAIL;
+        if(!r) return CC_RESULT_FAIL;
     }
-    if(!camera->getgain) return RESULT_SILENCE;
+    if(!camera->getgain) return CC_RESULT_SILENCE;
     int r = camera->getgain(&f);
-    if(!r) return RESULT_FAIL;
+    if(!r) return CC_RESULT_FAIL;
     snprintf(buf, 63, CC_CMD_GAIN "=%.1f", f);
-    if(!cc_sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
-    return RESULT_SILENCE;
+    if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
+    return CC_RESULT_SILENCE;
 }
 static cc_hresult brightnesshandler(_U_ int fd, _U_ const char *key, _U_ const char *val){
     char buf[64];
     float b;
-    if(!camera->setbrightness) return RESULT_FAIL;
+    if(!camera->setbrightness) return CC_RESULT_FAIL;
     if(val){
         b = atof(val);
         int r = camera->setbrightness(b);
-        if(!r) return RESULT_FAIL;
+        if(!r) return CC_RESULT_FAIL;
     }
-    if(!camera->getbrightness) return RESULT_SILENCE;
+    if(!camera->getbrightness) return CC_RESULT_SILENCE;
     int r = camera->getbrightness(&b);
-    if(!r) return RESULT_FAIL;
+    if(!r) return CC_RESULT_FAIL;
     snprintf(buf, 63, CC_CMD_BRIGHTNESS "=%.1f", b);
-    if(!cc_sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
-    return RESULT_SILENCE;
+    if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
+    return CC_RESULT_SILENCE;
 }
 // set format: `format=X0,X1,Y0,Y1`
 // get geomlimits: `maxformat=X0,X1,Y0,Y1`
@@ -594,18 +594,18 @@ static cc_hresult formathandler(int fd, const char *key, const char *val){
     cc_frameformat fmt;
     DBG("key=%s, val=%s", key, val);
     if(val){
-        if(!camera->setgeometry) return RESULT_FAIL;
+        if(!camera->setgeometry) return CC_RESULT_FAIL;
         if(0 == strcmp(key, CC_CMD_FRAMEMAX)){
             DBG("CANT SET MAXFORMAT");
-            return RESULT_BADKEY; // can't set maxformat
+            return CC_RESULT_BADKEY; // can't set maxformat
         }
         if(4 != sscanf(val, "%d,%d,%d,%d", &fmt.xoff, &fmt.yoff, &fmt.w, &fmt.h)){
             DBG("Wrong format %s", val);
-            return RESULT_BADVAL;
+            return CC_RESULT_BADVAL;
         }
         fmt.w -= fmt.xoff; fmt.h -= fmt.yoff;
         int r = camera->setgeometry(&fmt);
-        if(!r) return RESULT_FAIL;
+        if(!r) return CC_RESULT_FAIL;
         curformat = fmt;
         DBG("curformat: w=%d, h=%d", curformat.w, curformat.h);
         fixima();
@@ -614,23 +614,23 @@ static cc_hresult formathandler(int fd, const char *key, const char *val){
         frmformatmax.xoff, frmformatmax.yoff, frmformatmax.xoff+frmformatmax.w, frmformatmax.yoff+frmformatmax.h);
     else snprintf(buf, 63, CC_CMD_FRAMEFORMAT "=%d,%d,%d,%d",
         camera->geometry.xoff, camera->geometry.yoff, camera->geometry.xoff+camera->geometry.w, camera->geometry.yoff+camera->geometry.h);
-    if(!cc_sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
-    return RESULT_SILENCE;
+    if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
+    return CC_RESULT_SILENCE;
 }
 static cc_hresult nflusheshandler(_U_ int fd, _U_ const char *key, _U_ const char *val){
     char buf[64];
-    if(!camera->setnflushes) return RESULT_FAIL;
+    if(!camera->setnflushes) return CC_RESULT_FAIL;
     if(val){
         int n = atoi(val);
-        if(n < 1) return RESULT_BADVAL;
+        if(n < 1) return CC_RESULT_BADVAL;
         if(!camera->setnflushes(n)){
-            return RESULT_FAIL;
+            return CC_RESULT_FAIL;
         }
         nflushes = n;
     }
     snprintf(buf, 63, CC_CMD_NFLUSHES "=%d", nflushes);
-    if(!cc_sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
-    return RESULT_SILENCE;
+    if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
+    return CC_RESULT_SILENCE;
 }
 static cc_hresult expstatehandler(_U_ int fd, _U_ const char *key, _U_ const char *val){
     char buf[64];
@@ -638,68 +638,68 @@ static cc_hresult expstatehandler(_U_ int fd, _U_ const char *key, _U_ const cha
         int n = atoi(val);
         if(n == CAMERA_IDLE){ // cancel expositions
             camflags |= FLAG_CANCEL;
-            return RESULT_OK;
+            return CC_RESULT_OK;
         }
         else if(n == CAMERA_CAPTURE){ // start exposition
             TIMESTAMP("Get FLAG_STARTCAPTURE");
             TIMEINIT();
             camflags |= FLAG_STARTCAPTURE;
-            return RESULT_OK;
+            return CC_RESULT_OK;
         }
-        else return RESULT_BADVAL;
+        else return CC_RESULT_BADVAL;
     }
     snprintf(buf, 63, CC_CMD_EXPSTATE "=%d", camstate);
-    if(!cc_sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
+    if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
     snprintf(buf, 63, "camflags=%d", camflags);
-    if(!cc_sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
-    return RESULT_SILENCE;
+    if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
+    return CC_RESULT_SILENCE;
 }
 static cc_hresult tremainhandler(_U_ int fd, _U_ const char *key, _U_ const char *val){
     char buf[64];
     snprintf(buf, 63, CC_CMD_TREMAIN "=%g", tremain);
-    if(!cc_sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
-    return RESULT_SILENCE;
+    if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
+    return CC_RESULT_SILENCE;
 }
 static cc_hresult _8bithandler(int fd, _U_ const char *key, const char *val){
     char buf[64];
-    if(!camera->setbitdepth) return RESULT_FAIL;
+    if(!camera->setbitdepth) return CC_RESULT_FAIL;
     if(val){
         int s = atoi(val);
-        if(s != 0 && s != 1) return RESULT_BADVAL;
-        if(!camera->setbitdepth(!s)) return RESULT_FAIL;
+        if(s != 0 && s != 1) return CC_RESULT_BADVAL;
+        if(!camera->setbitdepth(!s)) return CC_RESULT_FAIL;
         fixima();
         GP->_8bit = s;
     }
     snprintf(buf, 63, CC_CMD_8BIT "=%d", GP->_8bit);
-    if(!cc_sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
-    return RESULT_SILENCE;
+    if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
+    return CC_RESULT_SILENCE;
 }
 static cc_hresult fastspdhandler(int fd, _U_ const char *key, const char *val){
     char buf[64];
-    if(!camera->setfastspeed) return RESULT_FAIL;
+    if(!camera->setfastspeed) return CC_RESULT_FAIL;
     if(val){
         int b = atoi(val);
-        if(b != 0 && b != 1) return RESULT_BADVAL;
+        if(b != 0 && b != 1) return CC_RESULT_BADVAL;
         GP->fast = b;
-        if(!camera->setfastspeed(b)) return RESULT_FAIL;
+        if(!camera->setfastspeed(b)) return CC_RESULT_FAIL;
     }
     snprintf(buf, 63, CC_CMD_FASTSPD "=%d", GP->fast);
-    if(!cc_sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
-    return RESULT_SILENCE;
+    if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
+    return CC_RESULT_SILENCE;
 }
 static cc_hresult darkhandler(int fd, _U_ const char *key, const char *val){
     char buf[64];
-    if(!camera->setframetype) return RESULT_FAIL;
+    if(!camera->setframetype) return CC_RESULT_FAIL;
     if(val){
         int d = atoi(val);
-        if(d != 0 && d != 1) return RESULT_BADVAL;
+        if(d != 0 && d != 1) return CC_RESULT_BADVAL;
         GP->dark = d;
         d = !d;
-        if(!camera->setframetype(d)) return RESULT_FAIL;
+        if(!camera->setframetype(d)) return CC_RESULT_FAIL;
     }
     snprintf(buf, 63, CC_CMD_DARK "=%d", GP->dark);
-    if(!cc_sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
-    return RESULT_SILENCE;
+    if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
+    return CC_RESULT_SILENCE;
 }
 static cc_hresult FITSparhandler(int fd, const char *key, const char *val){
     char buf[256], **fitskey = NULL;
@@ -715,14 +715,14 @@ static cc_hresult FITSparhandler(int fd, const char *key, const char *val){
         fitskey = &GP->prog_id;
     }else if(0 == strcmp(key, CC_CMD_OBJTYPE)){
         fitskey = &GP->objtype;
-    }else return RESULT_BADKEY;
+    }else return CC_RESULT_BADKEY;
     if(val){
         FREE(*fitskey);
         *fitskey = strdup(val);
     }
     snprintf(buf, 255, "%s=%s", key, *fitskey);
-    if(!cc_sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
-    return RESULT_SILENCE;
+    if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
+    return CC_RESULT_SILENCE;
 }
 static cc_hresult FITSheaderhandler(int fd, _U_ const char *key, const char *val){
     char buf[BUFSIZ], **sptr;
@@ -751,7 +751,7 @@ static cc_hresult FITSheaderhandler(int fd, _U_ const char *key, const char *val
                     FREE(*sptr++);
                 }
                 FREE(list);
-                return RESULT_BADVAL;
+                return CC_RESULT_BADVAL;
             }
             *lptr++ = strdup(newpath);
             if(++amount == sz){
@@ -792,42 +792,42 @@ static cc_hresult FITSheaderhandler(int fd, _U_ const char *key, const char *val
         }
     }
     snprintf(buf, BUFSIZ-1, CC_CMD_HEADERFILES "=%s", curhdr);
-    if(!cc_sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
-    return RESULT_SILENCE;
+    if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
+    return CC_RESULT_SILENCE;
 }
 /*
 static cc_hresult handler(_U_ int fd, _U_ const char *key, _U_ const char *val){
     char buf[64];
-    return RESULT_SILENCE;
+    return CC_RESULT_SILENCE;
 }
 */
 /*******************************************************************************
  ***************************** cc_Wheel handlers **********************************
  ******************************************************************************/
 static cc_hresult wlisthandler(int fd, _U_ const char *key, _U_ const char *val){
-    if(wheel->Ndevices < 1) return RESULT_FAIL;
+    if(wheel->Ndevices < 1) return CC_RESULT_FAIL;
     for(int i = 0; i < wheel->Ndevices; ++i){
         if(!wheel->setDevNo(i)) continue;
         char modname[256], buf[BUFSIZ];
         wheel->getModelName(modname, 255);
         snprintf(buf, BUFSIZ-1, CC_CMD_WLIST "='%s'", modname);
-        if(!cc_sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
+        if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
     }
     if(wheeldevno > -1) wheel->setDevNo(wheeldevno);
-    return RESULT_SILENCE;
+    return CC_RESULT_SILENCE;
 }
 static cc_hresult wsetNhandler(int fd, _U_ const char *key, const char *val){
     char buf[64];
     if(val){
         int num = atoi(val);
         if(num > wheel->Ndevices - 1 || num < 0){
-            return RESULT_BADVAL;
+            return CC_RESULT_BADVAL;
         }
-        if(!wheeldevini(num)) return RESULT_FAIL;
+        if(!wheeldevini(num)) return CC_RESULT_FAIL;
     }
     snprintf(buf, 63, CC_CMD_WDEVNO "=%d", wheeldevno);
-    if(!cc_sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
-    return RESULT_SILENCE;
+    if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
+    return CC_RESULT_SILENCE;
 }
 
 static cc_hresult wgotohandler(_U_ int fd, _U_ const char *key, _U_ const char *val){
@@ -838,13 +838,13 @@ static cc_hresult wgotohandler(_U_ int fd, _U_ const char *key, _U_ const char *
         DBG("USER wants to %d", pos);
         int r = wheel->setPos(pos);
         DBG("wheel->setPos(%d)", pos);
-        if(!r) return RESULT_BADVAL;
+        if(!r) return CC_RESULT_BADVAL;
     }
     int r = wheel->getPos(&pos);
-    if(!r) return RESULT_FAIL;
+    if(!r) return CC_RESULT_FAIL;
     snprintf(buf, 63, CC_CMD_WPOS "=%d", pos);
-    if(!cc_sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
-    return RESULT_SILENCE;
+    if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
+    return CC_RESULT_SILENCE;
 }
 
 /*******************************************************************************
@@ -852,29 +852,29 @@ static cc_hresult wgotohandler(_U_ int fd, _U_ const char *key, _U_ const char *
  ******************************************************************************/
 
 static cc_hresult foclisthandler(int fd, _U_ const char *key, _U_ const char *val){
-    if(focuser->Ndevices < 1) return RESULT_FAIL;
+    if(focuser->Ndevices < 1) return CC_RESULT_FAIL;
     for(int i = 0; i < focuser->Ndevices; ++i){
         char modname[256], buf[BUFSIZ];
         if(!focuser->setDevNo(i)) continue;
         focuser->getModelName(modname, 255);
         snprintf(buf, BUFSIZ-1, CC_CMD_FOCLIST "='%s'", modname);
-        if(!cc_sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
+        if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
     }
     if(focdevno > -1) focuser->setDevNo(focdevno);
-    return RESULT_SILENCE;
+    return CC_RESULT_SILENCE;
 }
 static cc_hresult fsetNhandler(int fd, _U_ const char *key, const char *val){
     char buf[64];
     if(val){
         int num = atoi(val);
         if(num > focuser->Ndevices - 1 || num < 0){
-            return RESULT_BADVAL;
+            return CC_RESULT_BADVAL;
         }
-        if(!focdevini(num)) return RESULT_FAIL;
+        if(!focdevini(num)) return CC_RESULT_FAIL;
     }
     snprintf(buf, 63, CC_CMD_FDEVNO "=%d", focdevno);
-    if(!cc_sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
-    return RESULT_SILENCE;
+    if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
+    return CC_RESULT_SILENCE;
 }
 static cc_hresult fgotohandler(int fd, _U_ const char *key, const char *val){
     char buf[64];
@@ -882,19 +882,19 @@ static cc_hresult fgotohandler(int fd, _U_ const char *key, const char *val){
     int r;
     if(val){
         f = atof(val);
-        if(f < focminpos || f > focmaxpos) return RESULT_BADVAL;
+        if(f < focminpos || f > focmaxpos) return CC_RESULT_BADVAL;
         if(f - focminpos < __FLT_EPSILON__){
             r = focuser->home(1);
         }else{
             r = focuser->setAbsPos(1, f);
         }
-        if(!r) return RESULT_FAIL;
+        if(!r) return CC_RESULT_FAIL;
     }
     r = focuser->getPos(&f);
-    if(!r) return RESULT_FAIL;
+    if(!r) return CC_RESULT_FAIL;
     snprintf(buf, 63, CC_CMD_FGOTO "=%g", f);
-    if(!cc_sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
-    return RESULT_SILENCE;
+    if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
+    return CC_RESULT_SILENCE;
 }
 
 /*******************************************************************************
@@ -909,9 +909,9 @@ static cc_hresult infohandler(int fd, _U_ const char *key, _U_ const char *val){
     if(camera){
         if(camera->getModelName && camera->getModelName(buf1, 255)){
             snprintf(buf, BUFSIZ-1, CC_CMD_CAMLIST "='%s'", buf1);
-            if(!cc_sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
+            if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
         }
-#define RUN(f, arg) do{if(RESULT_DISCONNECTED == f(fd, arg, NULL)) return RESULT_DISCONNECTED;}while(0)
+#define RUN(f, arg) do{if(CC_RESULT_DISCONNECTED == f(fd, arg, NULL)) return CC_RESULT_DISCONNECTED;}while(0)
         RUN(namehandler, CC_CMD_FILENAME);
         RUN(binhandler, CC_CMD_HBIN);
         RUN(binhandler, CC_CMD_VBIN);
@@ -925,40 +925,40 @@ static cc_hresult infohandler(int fd, _U_ const char *key, _U_ const char *val){
         DBG("chk wheel");
         if(wheel->getModelName(buf1, 255)){
             snprintf(buf, BUFSIZ-1, CC_CMD_WLIST "='%s'", buf1);
-            if(!cc_sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
+            if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
         }
         if(wheel->getTbody(&f)){
             snprintf(buf, BUFSIZ-1, "wtemp=%.1f", f);
-            if(!cc_sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
+            if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
         }
         if(wheel->getPos(&i)){
             snprintf(buf, BUFSIZ-1, CC_CMD_WPOS "=%d", i);
-            if(!cc_sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
+            if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
         }
         snprintf(buf, BUFSIZ-1, "wmaxpos=%d", wmaxpos);
-        if(!cc_sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
+        if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
     }
     if(focuser){
         DBG("Chk focuser");
         if(focuser->getModelName(buf1, 255)){
             snprintf(buf, BUFSIZ-1, CC_CMD_FOCLIST "='%s'", buf1);
-            if(!cc_sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
+            if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
         }
         if(focuser->getTbody(&f)){
             snprintf(buf, BUFSIZ-1, "foctemp=%.1f", f);
-            if(!cc_sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
+            if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
         }
         snprintf(buf, BUFSIZ-1, "focminpos=%g", focminpos);
-        if(!cc_sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
+        if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
         snprintf(buf, BUFSIZ-1, "focmaxpos=%g", focmaxpos);
-        if(!cc_sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
+        if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
         if(focuser->getPos(&f)){
             snprintf(buf, BUFSIZ-1, CC_CMD_FGOTO "=%g", f);
-            if(!cc_sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
+            if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
         }
     }
     DBG("EOF");
-    return RESULT_SILENCE;
+    return CC_RESULT_SILENCE;
 }
 // show help
 static cc_hresult helphandler(int fd, _U_ const char *key, _U_ const char *val){
@@ -966,19 +966,19 @@ static cc_hresult helphandler(int fd, _U_ const char *key, _U_ const char *val){
     strpair *ptr = allcommands;
     while(ptr->key){
         snprintf(buf, 255, "%s - %s", ptr->key, ptr->help);
-        if(!cc_sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
+        if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
         ++ptr;
     }
-    return RESULT_SILENCE;
+    return CC_RESULT_SILENCE;
 }
 
 // shared memory key
 static cc_hresult shmemkeyhandler(int fd, _U_ const char *key, _U_ const char *val){
     char buf[64];
-    if(shmkey == IPC_PRIVATE) return RESULT_FAIL;
+    if(shmkey == IPC_PRIVATE) return CC_RESULT_FAIL;
     snprintf(buf, 63, CC_CMD_SHMEMKEY "=%d", shmkey);
-    if(!cc_sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
-    return RESULT_SILENCE;
+    if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
+    return CC_RESULT_SILENCE;
 }
 
 // infinity loop
@@ -989,29 +989,29 @@ static cc_hresult inftyhandler(int fd, _U_ const char *key, const char *val){
         infty = (i) ? 1 : 0;
     }
     snprintf(buf, 63, CC_CMD_INFTY "=%d", infty);
-    if(!cc_sendstrmessage(fd, buf)) return RESULT_DISCONNECTED;
-    return RESULT_SILENCE;
+    if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
+    return CC_RESULT_SILENCE;
 }
 
 // custom camera plugin command
 static cc_hresult pluginhandler(int fd, _U_ const char *key, const char *val){
-    if(!camera->plugincmd) return RESULT_BADKEY;
+    if(!camera->plugincmd) return CC_RESULT_BADKEY;
     static cc_charbuff *ans = NULL;
     if(!ans) ans = cc_charbufnew();
     cc_buff_lock(ans);
     cc_charbufclr(ans);
     cc_hresult r = camera->plugincmd(val, ans);
     cc_buff_unlock(ans);
-    if(ans->buflen && !cc_sendstrmessage(fd, ans->buf)) r = RESULT_DISCONNECTED;
+    if(ans->buflen && !cc_sendstrmessage(fd, ans->buf)) r = CC_RESULT_DISCONNECTED;
     return r;
 }
 
 // get headers
 static cc_hresult gethdrshandler(int fd, _U_ const char *key, _U_ const char *val){
     cc_charbuff *b = getFITSheader(ima);
-    if(!b) return RESULT_FAIL;
-    if(!cc_sendstrmessage(fd, b->buf)) return RESULT_DISCONNECTED;
-    return RESULT_SILENCE;
+    if(!b) return CC_RESULT_FAIL;
+    if(!cc_sendstrmessage(fd, b->buf)) return CC_RESULT_DISCONNECTED;
+    return CC_RESULT_SILENCE;
 }
 
 // for setters: do nothing when camera not in idle state
@@ -1024,26 +1024,26 @@ static int CAMbusy(){
 }
 // check funtions
 static cc_hresult chktrue(_U_ char *val){ // dummy check for `infohandler` (need to lock mutex anymore)
-    return RESULT_OK;
+    return CC_RESULT_OK;
 }
 static cc_hresult chkcam(char *val){
-    if(val && CAMbusy()) return RESULT_BUSY;
-    if(camera) return RESULT_OK;
-    return RESULT_FAIL;
+    if(val && CAMbusy()) return CC_RESULT_BUSY;
+    if(camera) return CC_RESULT_OK;
+    return CC_RESULT_FAIL;
 }
 static cc_hresult chkcc(_U_ char *val){ // just check that camera connected
-    if(camera) return RESULT_OK;
-    return RESULT_FAIL;
+    if(camera) return CC_RESULT_OK;
+    return CC_RESULT_FAIL;
 }
 static cc_hresult chkwhl(char *val){
-    if(val && CAMbusy()) return RESULT_BUSY;
-    if(wheel) return RESULT_OK;
-    return RESULT_FAIL;
+    if(val && CAMbusy()) return CC_RESULT_BUSY;
+    if(wheel) return CC_RESULT_OK;
+    return CC_RESULT_FAIL;
 }
 static cc_hresult chkfoc(char *val){
-    if(val && CAMbusy()) return RESULT_BUSY;
-    if(focuser) return RESULT_OK;
-    return RESULT_FAIL;
+    if(val && CAMbusy()) return CC_RESULT_BUSY;
+    if(focuser) return CC_RESULT_OK;
+    return CC_RESULT_FAIL;
 }
 static cc_handleritem items[] = {
     {chktrue,infohandler, CC_CMD_INFO},
@@ -1286,30 +1286,30 @@ static int parsestring(int fd, cc_handleritem *handlers, char *str){
     }
     for(cc_handleritem *h = handlers; h->key; ++h){
         if(strcmp(str, h->key)) continue;
-        cc_hresult r = RESULT_OK;
+        cc_hresult r = CC_RESULT_OK;
         int l = FALSE;
         if(h->chkfunction){
-            double t0 = dtime();
-            do{ l = lock(); } while(!l && dtime() - t0 < CC_BUSY_TIMEOUT);
-            DBG("time: %g", dtime() - t0);
+            double t0 = sl_dtime();
+            do{ l = lock(); } while(!l && sl_dtime() - t0 < CC_BUSY_TIMEOUT);
+            DBG("time: %g", sl_dtime() - t0);
             if(!l){
                 WARN("Can't lock mutex"); //signals(1);
-                return RESULT_BUSY; // long blocking work
+                return CC_RESULT_BUSY; // long blocking work
             }
             r = h->chkfunction(val);
         } // else NULL instead of chkfuntion -> don't check and don't lock mutex
-        if(r == RESULT_OK){ // no test function or it returns TRUE
+        if(r == CC_RESULT_OK){ // no test function or it returns TRUE
             if(h->handler) r = h->handler(fd, str, val);
-            else r = RESULT_FAIL;
+            else r = CC_RESULT_FAIL;
         }
         if(l) unlock();
-        if(r == RESULT_DISCONNECTED){
-            DBG("handler return RESULT_DISCONNECTED");
+        if(r == CC_RESULT_DISCONNECTED){
+            DBG("handler return CC_RESULT_DISCONNECTED");
             return FALSE;
         }
         DBG("handler returns with '%s' (%d)", cc_hresult2str(r), r);
         return cc_sendstrmessage(fd, cc_hresult2str(r));
     }
     DBG("Command not found!");
-    return cc_sendstrmessage(fd, cc_hresult2str(RESULT_BADKEY));
+    return cc_sendstrmessage(fd, cc_hresult2str(CC_RESULT_BADKEY));
 }

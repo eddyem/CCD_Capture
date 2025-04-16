@@ -231,21 +231,21 @@ static int campoll(cc_capture_status *st, float *remain){
         if(remain) *remain = 0.;
         return TRUE;
     }
-    if(dtime() - texpstart > exptime){
+    if(sl_dtime() - texpstart > exptime){
         if(st) *st = CAPTURE_READY;
         if(remain) *remain = 0.;
         capstat = CAPTURE_NO;
         return TRUE;
     }
     if(st) *st = capstat;
-    if(remain) *remain = exptime + texpstart - dtime();
+    if(remain) *remain = exptime + texpstart - sl_dtime();
     return TRUE;
 }
 
 static int startexp(){
     if(capstat == CAPTURE_PROCESS) return FALSE;
     capstat = CAPTURE_PROCESS;
-    double Tnow = dtime(), dT = Tnow - texpstart, Xcd, Ycd;
+    double Tnow = sl_dtime(), dT = Tnow - texpstart, Xcd, Ycd;
     if(dT < 0.) dT = 0.;
     else if(dT > 1.) dT = 1.; // dT for fluctuations amplitude
     if(Tstart < 0.) Tstart = Tnow;
@@ -282,7 +282,7 @@ static int camcapt(cc_IMG *ima){
     DBG("Prepare, xc=%d, yc=%d, bitpix=%d", Xc, Yc, bitpix);
     if(!ima || !ima->data) return FALSE;
 #ifdef EBUG
-    double t0 = dtime();
+    double t0 = sl_dtime();
 #endif
     ima->bitpix = bitpix;
     ima->w = camera.geometry.w;
@@ -292,7 +292,7 @@ static int camcapt(cc_IMG *ima){
     if(!star) ERRX(_("No star template - die"));
     if(bitpix == 16) gen16(ima);
     else gen8(ima);
-    DBG("Time of capture: %g", dtime() - t0);
+    DBG("Time of capture: %g", sl_dtime() - t0);
     return TRUE;
 }
 
@@ -463,11 +463,11 @@ static cc_hresult setstarsamount(const char *str, cc_charbuff *ans){
     }
     snprintf(buf, 31, "nstars=%d", settings.Nstars);
     cc_charbufaddline(ans, buf);
-    return RESULT_SILENCE;
+    return CC_RESULT_SILENCE;
 }
 
 static cc_hresult setstarno(const char *str, cc_charbuff *ans){
-    return RESULT_SILENCE;
+    return CC_RESULT_SILENCE;
 }*/
 
 static cc_hresult setXYs(const char *str, cc_charbuff *ans){
@@ -479,7 +479,7 @@ static cc_hresult setXYs(const char *str, cc_charbuff *ans){
             snprintf(buf, 255, "x[%d]=%g, y[%d]=%g\n", i, settings.xs[i], i, settings.ys[i]);
             cc_charbufaddline(ans, buf);
         }
-        return RESULT_SILENCE;
+        return CC_RESULT_SILENCE;
     }
     double dval = atof(val);
     if(strcmp(bptr, "x") == 0){
@@ -493,9 +493,9 @@ static cc_hresult setXYs(const char *str, cc_charbuff *ans){
         snprintf(buf, 255, "y[%d]=%g\n", settings.curstarno, dval);
         cc_charbufaddline(ans, buf);
     }
-    else{ return RESULT_BADKEY;} // unreachable
+    else{ return CC_RESULT_BADKEY;} // unreachable
 
-    return RESULT_SILENCE;
+    return CC_RESULT_SILENCE;
 }
 
 static cc_hresult setmag(const char *str, cc_charbuff *ans){
@@ -507,38 +507,38 @@ static cc_hresult setmag(const char *str, cc_charbuff *ans){
             snprintf(buf, 255, "mag[%d]=%g", i, settings.mag[i]);
             cc_charbufaddline(ans, buf);
         }
-        return RESULT_SILENCE;
+        return CC_RESULT_SILENCE;
     }
     double dval = atof(val);
-    if(strcmp(bptr, "mag") != 0) return RESULT_BADKEY;
+    if(strcmp(bptr, "mag") != 0) return CC_RESULT_BADKEY;
     if(dval > magmax || dval < magmin){
         snprintf(buf, 255, "%g < mag < %g", magmin, magmax);
         cc_charbufaddline(ans, buf);
-        return RESULT_BADVAL;
+        return CC_RESULT_BADVAL;
     }
     DBG("mag[%d]=%g", settings.curstarno, dval);
     settings.mag[settings.curstarno] = dval;
     snprintf(buf, 255, "mag[%d]=%g\n", settings.curstarno, dval);
     cc_charbufaddline(ans, buf);
-    return RESULT_SILENCE;
+    return CC_RESULT_SILENCE;
 }
 
 static cc_hresult loadmask(const char *str, cc_charbuff *ans){
     char buf[FILENAME_MAX+32], *bptr = buf;
     strncpy(buf, str, FILENAME_MAX+31);
     char *val = cc_get_keyval(&bptr);
-    if(strcmp(bptr, "mask") != 0) return RESULT_BADKEY;
+    if(strcmp(bptr, "mask") != 0) return CC_RESULT_BADKEY;
     if(imagemask) il_Image_free(&imagemask);
     imagemask = il_Image_read(val);
     char *nm = strdup (val);
-    cc_hresult res = RESULT_OK;
+    cc_hresult res = CC_RESULT_OK;
     if(!imagemask){
         snprintf(buf, FILENAME_MAX, "Can't read image '%s'", nm);
-        res = RESULT_FAIL;
+        res = CC_RESULT_FAIL;
     }else{
         if(imagemask->pixbytes != 1){
             snprintf(buf, FILENAME_MAX, "Image '%s' isn't a 8-bit image", nm);
-            res = RESULT_FAIL;
+            res = CC_RESULT_FAIL;
         }else
             snprintf(buf, FILENAME_MAX, "Got image '%s'; w=%d, h=%d, type=%d (impix=%d)", nm, imagemask->width, imagemask->height, imagemask->type, imagemask->pixbytes);
     }
@@ -551,14 +551,14 @@ static cc_hresult loadbg(const char *str, cc_charbuff *ans){
     char buf[FILENAME_MAX+32], *bptr = buf;
     strncpy(buf, str, FILENAME_MAX+31);
     char *val = cc_get_keyval(&bptr);
-    if(strcmp(bptr, "bkg") != 0) return RESULT_BADKEY;
+    if(strcmp(bptr, "bkg") != 0) return CC_RESULT_BADKEY;
     if(imagebg) il_Image_free(&imagebg);
     imagebg = il_Image_read(val);
     char *nm = strdup (val);
-    cc_hresult res = RESULT_OK;
+    cc_hresult res = CC_RESULT_OK;
     if(!imagebg){
         snprintf(buf, FILENAME_MAX, "Can't read image '%s'", nm);
-        res = RESULT_FAIL;
+        res = CC_RESULT_FAIL;
     }else{
         snprintf(buf, FILENAME_MAX, "Got image '%s'; w=%d, h=%d, type=%d (impix=%d)", nm, imagebg->width, imagebg->height, imagebg->type, imagebg->pixbytes);
     }

@@ -71,7 +71,7 @@ static char* describeError(GENAPIC_RESULT reserr){
 #define PYLONFN(fn, ...) do{register GENAPIC_RESULT reserr; if(GENAPI_E_OK != (reserr=fn(__VA_ARGS__))){ \
     WARNX(#fn "(): %s", describeError(reserr)); return FALSE;}}while(0)
 
-static void disconnect(){
+static void b_disconnect(){
     FNAME();
     if(!isopened) return;
     FREE(imgBuf);
@@ -188,13 +188,13 @@ static void disableauto(){
 }
 
 static void GENAPIC_CC removalCallbackFunction(_U_ PYLON_DEVICE_HANDLE hDevice){
-    disconnect();
+    b_disconnect();
 }
 
-static int connect(){
+static int b_connect(){
     FNAME();
     size_t numDevices;
-    disconnect();
+    b_disconnect();
     PylonInitialize();
     PYLONFN(PylonEnumerateDevices, &numDevices);
     if(!numDevices){
@@ -509,8 +509,8 @@ static void vstub(){ return ;}
  * Global objects: camera, focuser and wheel
  */
 cc_Camera camera = {
-    .check = connect,
-    .close = disconnect,
+    .check = b_connect,
+    .close = b_disconnect,
     .pollcapture = pollcapt,
     .capture = capture,
     .cancel = vstub,

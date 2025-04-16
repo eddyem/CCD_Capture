@@ -44,7 +44,7 @@ static glob_pars  G = {
  * Define command line options by filling structure:
  *  name    has_arg flag    val     type        argptr          help
 */
-myoption cmdlnopts[] = {
+sl_option_t cmdlnopts[] = {
     {"plugin"   ,NEED_ARG,  NULL,   NA,     arg_string, APTR(&G.commondev), N_("common device plugin (e.g devfli.so)")},
     {"plugincmd",MULT_PAR,  NULL,   '_',    arg_string, APTR(&G.plugincmd), N_("custom camera device plugin command")},
     {"cameradev", NEED_ARG, NULL,   'C',    arg_string, APTR(&G.cameradev), N_("camera device plugin (e.g. devfli.so)")},
@@ -133,10 +133,10 @@ myoption cmdlnopts[] = {
  */
 glob_pars *parse_args(int argc, char **argv){
     // format of help: "Usage: progname [args]\n"
-    change_helpstring("Version: " PACKAGE_VERSION "\nUsage: %s [args] [output file prefix]\nTo restart server kill it with SIGUSR1\n\tArgs are:\n");
+    sl_helpstring("Version: " PACKAGE_VERSION "\nUsage: %s [args] [output file prefix]\nTo restart server kill it with SIGUSR1\n\tArgs are:\n");
     // parse arguments
-    parseargs(&argc, &argv, cmdlnopts);
-    if(help) showhelp(-1, cmdlnopts);
+    sl_parseargs(&argc, &argv, cmdlnopts);
+    if(help) sl_showhelp(-1, cmdlnopts);
     if(argc > 0){
         G.outfileprefix = strdup(argv[0]);
         if(argc > 1){

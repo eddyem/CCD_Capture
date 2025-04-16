@@ -54,7 +54,7 @@ static glob_pars G = {
  * Define command line options by filling structure:
  *  name    has_arg flag    val     type        argptr          help
 */
-myoption cmdlnopts[] = {
+sl_option_t cmdlnopts[] = {
     {"background",NEED_ARG, NULL,   'b',    arg_double, APTR(&G.background),"fixed background level"},
     {"sock",    NEED_ARG,   NULL,   's',    arg_string, APTR(&G.sockname),  "command socket name or port"},
     {"isun",    NO_ARGS,    NULL,   'U',    arg_int,    APTR(&G.isun),      "use UNIX socket"},
@@ -80,7 +80,7 @@ static void calcimg(){
         sqsz = m;
     }*/
     double Xs = 0., X2s = 0., Ys = 0., Y2s = 0., Is = 0;
-    double t0 = dtime();
+    double t0 = sl_dtime();
     uint8_t *d = (uint8_t*)img.data;
     double Timestamp = img.timestamp;
     static double bg = -1.;
@@ -129,7 +129,7 @@ static void calcimg(){
     il_write_png(buf, W, H, 1, img.data);*/
     printf("Xs=%g, X2s=%g, Ys=%g, Y2s=%g, Is=%g\n", Xs, X2s, Ys, Y2s, Is);
     double xc = Xs/Is, yc = Ys/Is, sX = sqrt(X2s/Is-xc*xc), sY = sqrt(Y2s/Is-yc*yc);
-    green("Xc = %.2f, Yc=%.2f, Xcs=%.2f, Ycs=%.2f, I=%.1f, T=%gms; npix=%d\n", xc, yc, sX, sY, Is, (dtime() - t0)*1e3, npix);
+    green("Xc = %.2f, Yc=%.2f, Xcs=%.2f, Ycs=%.2f, I=%.1f, T=%gms; npix=%d\n", xc, yc, sX, sY, Is, (sl_dtime() - t0)*1e3, npix);
     if(out) fprintf(out, "%.2f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\n", Timestamp, xc, yc, Is, sX, sY);
 }
 
@@ -137,7 +137,7 @@ static int refresh_img(){
     if(!shimg) return FALSE;
     static size_t imnumber = 0;
     if(shimg->imnumber == imnumber) return FALSE;
-    double ts = dtime();
+    double ts = sl_dtime();
     if(ts - shimg->timestamp > G.exptime + 1.) return FALSE; // too old image
     imnumber = shimg->imnumber;
     void *optr = img.data;
@@ -149,9 +149,9 @@ static int refresh_img(){
 }
 
 int main(int argc, char **argv){
-    initial_setup();
-    parseargs(&argc, &argv, cmdlnopts);
-    if(G.help) showhelp(-1, cmdlnopts);
+    sl_init();
+    sl_parseargs(&argc, &argv, cmdlnopts);
+    if(G.help) sl_showhelp(-1, cmdlnopts);
     if(argc > 0){
         WARNX("%d unused parameters:", argc);
         for(int i = 0; i < argc; ++i)
@@ -168,26 +168,26 @@ int main(int argc, char **argv){
     int sock = cc_open_socket(FALSE, G.sockname, !G.isun);
     if(sock < 0) ERR("Can't open socket %s", G.sockname);
     int shmemkey = 0;
-    if(RESULT_OK == cc_getint(sock, cbuf, CC_CMD_SHMEMKEY, &shmemkey)){
+    if(CC_RESULT_OK == cc_getint(sock, cbuf, CC_CMD_SHMEMKEY, &shmemkey)){
         green("Got shm key: %d\n", shmemkey);
     }else{
         red("Can't read shmkey, try yours\n");
         shmemkey = G.shmkey;
     }
-    if(RESULT_OK != cc_setint(sock, cbuf, CC_CMD_8BIT, 1)){
+    if(CC_RESULT_OK != cc_setint(sock, cbuf, CC_CMD_8BIT, 1)){
         ERRX("Can't set 8 bit mode");
     }
     if(G.infty){
-        if(RESULT_OK == cc_setint(sock, cbuf, CC_CMD_INFTY, 1)) green("ask for INFTY\n");
+        if(CC_RESULT_OK == cc_setint(sock, cbuf, CC_CMD_INFTY, 1)) green("ask for INFTY\n");
         else red("Can't ask for INFTY\n");
     }
     float xt = 0.f;
-    if(RESULT_OK == cc_getfloat(sock, cbuf, CC_CMD_EXPOSITION, &xt)){
+    if(CC_RESULT_OK == cc_getfloat(sock, cbuf, CC_CMD_EXPOSITION, &xt)){
         green("Old exp time: %gs\n", xt);
     }
     fflush(stdout);
     if(G.exptime > 0.){
-        if(RESULT_OK == cc_setfloat(sock, cbuf, CC_CMD_EXPOSITION, G.exptime)) green("ask for exptime %gs\n", G.exptime);
+        if(CC_RESULT_OK == cc_setfloat(sock, cbuf, CC_CMD_EXPOSITION, G.exptime)) green("ask for exptime %gs\n", G.exptime);
         else red("Can't change exptime to %gs\n", G.exptime);
     }else G.exptime = xt;
     shimg = cc_getshm(shmemkey, 0);
@@ -197,7 +197,7 @@ int main(int argc, char **argv){
     double waittime = ((int)G.exptime) + 5.;
     do{
         if(!G.infty){ // ask new image in non-infty mode
-            if(RESULT_OK != cc_setint(sock, cbuf, CC_CMD_EXPSTATE, CAMERA_CAPTURE)){
+            if(CC_RESULT_OK != cc_setint(sock, cbuf, CC_CMD_EXPSTATE, CAMERA_CAPTURE)){
                 WARNX("Can't ask new image\n");
                 usleep(1000);
                 continue;
@@ -221,10 +221,10 @@ int main(int argc, char **argv){
         printf("Got image #%zd, size %dx%d, bitpix %d, time %.2f\n", img.imnumber, img.w, img.h, img.bitpix, img.timestamp);
     }while(i < G.nframes);
     if(G.infty){
-        if(RESULT_OK != cc_setint(sock, cbuf, CC_CMD_INFTY, 0)) red("Can't clear INFTY\n");
+        if(CC_RESULT_OK != cc_setint(sock, cbuf, CC_CMD_INFTY, 0)) red("Can't clear INFTY\n");
     }
     if(xt > 0.){
-        if(RESULT_OK != cc_setfloat(sock, cbuf, CC_CMD_EXPOSITION, xt)) red("Can't return exptime to %gs\n", xt);
+        if(CC_RESULT_OK != cc_setfloat(sock, cbuf, CC_CMD_EXPOSITION, xt)) red("Can't return exptime to %gs\n", xt);
     }
     cc_strbufdel(&cbuf);
     close(sock);

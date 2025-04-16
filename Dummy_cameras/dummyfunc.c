@@ -51,21 +51,21 @@ static int campoll(cc_capture_status *st, float *remain){
         if(remain) *remain = 0.;
         return TRUE;
     }
-    if(dtime() - texpstart > exptime){
+    if(sl_dtime() - texpstart > exptime){
         if(st) *st = CAPTURE_READY;
         if(remain) *remain = 0.;
         capstat = CAPTURE_NO;
         return TRUE;
     }
     if(st) *st = capstat;
-    if(remain) *remain = exptime + texpstart - dtime();
+    if(remain) *remain = exptime + texpstart - sl_dtime();
     return TRUE;
 }
 
 static int startexp(){
     if(capstat == CAPTURE_PROCESS) return FALSE;
     capstat = CAPTURE_PROCESS;
-    texpstart = dtime();
+    texpstart = sl_dtime();
     return TRUE;
 }
 
@@ -73,7 +73,7 @@ static int camcapt(cc_IMG *ima){
     static int n = 0;
     if(!ima || !ima->data) return FALSE;
 #ifdef EBUG
-    double t0 = dtime();
+    double t0 = sl_dtime();
 #endif
     int y1 = ima->h * curvbin, x1 = ima->w * curhbin;
     if(bitpix == 16){
@@ -97,7 +97,7 @@ static int camcapt(cc_IMG *ima){
     }
     ++n;
     ima->bitpix = bitpix;
-    DBG("Time of capture: %g", dtime() - t0);
+    DBG("Time of capture: %g", sl_dtime() - t0);
     return TRUE;
 }
 

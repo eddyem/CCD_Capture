@@ -20,6 +20,7 @@
 #include <C/FlyCapture2Defs_C.h>
 #include <stdatomic.h>
 #include <math.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 #include <usefull_macros.h>
@@ -43,7 +44,7 @@ static char camname[BUFSIZ] = {0};
 #define FC2FN(fn, ...) do{err = FC2_ERROR_OK; if(FC2_ERROR_OK != (err=fn(context __VA_OPT__(,) __VA_ARGS__))){ \
     WARNX(Stringify(fn) "(): %s", fc2ErrorToDescription(err)); return FALSE;}}while(0)
 
-static void disconnect(){
+static void g_disconnect(){
     FNAME();
     if(!isopened) return;
     fc2DestroyContext(context);
@@ -145,10 +146,10 @@ static void disableauto(){
     propOnOff(FC2_FRAME_RATE, false);
 }
 
-static int connect(){
+static int g_connect(){
     FNAME();
     unsigned int numDevices;
-    disconnect();
+    g_disconnect();
     DBG("fc2CreateContext");
     if(FC2_ERROR_OK != (err = fc2CreateContext(&context))){
         WARNX("fc2CreateContext(): %s", fc2ErrorToDescription(err));
@@ -321,16 +322,16 @@ static int capture(cc_IMG *ima){
         int w2 = width<<1;
         OMP_FOR()
         for(int y = 0; y < height; ++y){
-            uint16_t *Out = &ima->data[y*width];
-            const uint8_t *In = &convertedImage.pData[y*stride];
+            uint16_t *Out = &((uint16_t*)(ima->data))[y*width];
+            const uint8_t *In = (uint8_t*)&convertedImage.pData[y*stride];
             memcpy(Out, In, w2);
             //DBG("Row %d copied. First byte: %d", y, *((uint16_t*)In));
         }
     }else{
         OMP_FOR()
         for(int y = 0; y < height; ++y){
-            uint16_t *Out = &ima->data[y*width];
-            const uint8_t *In = &convertedImage.pData[y*stride];
+            uint16_t *Out = &((uint16_t*)(ima->data))[y*width];
+            const uint8_t *In = (uint8_t*)&convertedImage.pData[y*stride];
             for(int x = 0; x < width; ++x){
                 *Out++ = *In++;
             }
@@ -451,8 +452,8 @@ static int ipfalse(_U_ int *i){ return FALSE; }
  * Global objects: camera, focuser and wheel
  */
 cc_Camera camera = {
-    .check = connect,
-    .close = disconnect,
+    .check = g_connect,
+    .close = g_disconnect,
     .pollcapture = pollcapt,
     .capture = capture,
     .cancel = capcancel,

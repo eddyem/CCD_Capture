@@ -27,8 +27,8 @@
 
 #ifdef EBUG
 extern double __t0;
-#define TIMEINIT()  do{__t0 = dtime();}while(0)
-#define TIMESTAMP(...) do{DBG(__VA_ARGS__); green("%g\n", dtime()-__t0); fflush(stdout);}while(0)
+#define TIMEINIT()  do{__t0 = sl_dtime();}while(0)
+#define TIMESTAMP(...) do{DBG(__VA_ARGS__); green("%g\n", sl_dtime()-__t0); fflush(stdout);}while(0)
 #else
 #define TIMEINIT()
 #define TIMESTAMP(...)

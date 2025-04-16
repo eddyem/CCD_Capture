@@ -225,7 +225,7 @@ int saveFITS(cc_IMG *img, char **outp){
     long naxes[2] = {width, height};
     struct tm *tm_time;
     char bufc[FLEN_CARD];
-    double dsavetime = dtime();
+    double dsavetime = sl_dtime();
     time_t savetime = time(NULL);
     fitsfile *fp;
     fitserror = 0;
@@ -615,12 +615,12 @@ int prepare_ccds(){
             while(p && *p){
                 cc_charbufclr(b);
                 cc_hresult r = camera->plugincmd(*p, b);
-                if(r == RESULT_OK || r == RESULT_SILENCE) green("Command '%s'", *p);
+                if(r == CC_RESULT_OK || r == CC_RESULT_SILENCE) green("Command '%s'", *p);
                 else{
                     stop = TRUE;
                     red("Command '%s'", *p);
                 }
-                if(r != RESULT_SILENCE) printf(" returns \"%s\"", cc_hresult2str(r));
+                if(r != CC_RESULT_SILENCE) printf(" returns \"%s\"", cc_hresult2str(r));
                 if(b->buflen) printf("\n%s", b->buf);
                 else printf("\n");
                 ++p;
@@ -788,8 +788,8 @@ DBG("w=%d, h=%d", raw_width, raw_height);
         saveFITS(&ima, NULL);
         TIMESTAMP("Ready");
         if(GP->pause_len && j != (GP->nframes - 1)){
-            double delta, time1 = dtime() + GP->pause_len;
-            while((delta = time1 - dtime()) > 0.){
+            double delta, time1 = sl_dtime() + GP->pause_len;
+            while((delta = time1 - sl_dtime()) > 0.){
                 verbose(1, _("%d seconds till pause ends\n"), (int)delta);
                 float tmpf;
                 if(camera->getTcold && camera->getTcold(&tmpf)) verbose(1, "CCDTEMP=%.1f\n", tmpf);
@@ -819,8 +819,8 @@ void framerate(){
     if(GP->verbose == 0) return;
     static double tlast = 0., lastn[NFRM] = {0.}, sumn = 0.;
     static int lastidx = 0;
-    if(tlast == 0.){tlast = dtime(); return;}
-    double t = dtime(), dT = t-tlast;
+    if(tlast == 0.){tlast = sl_dtime(); return;}
+    double t = sl_dtime(), dT = t-tlast;
     if(++lastidx > NFRM-1) lastidx = 0;
     sumn = sumn - lastn[lastidx] + dT;
     lastn[lastidx] = dT;

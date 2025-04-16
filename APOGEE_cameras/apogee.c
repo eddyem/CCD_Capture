@@ -255,7 +255,7 @@ static int thot(float *t){
 }
 
 static int startexp(){
-    tstart = dtime();
+    tstart = sl_dtime();
     DBG("Start exposition %g seconds (isobject=%d)", exptime, isobject);
     CCDerr r = ApnGlueStartExp(&exptime, isobject);
     if(ALTA_OK != r){
@@ -302,7 +302,7 @@ static int pollcapt(cc_capture_status *st, float *remain){
         if(remain) *remain = 0.f;
         return TRUE;
     }else DBG("Capture in process");
-    double d = exptime - (dtime() - tstart);
+    double d = exptime - (sl_dtime() - tstart);
     DBG("Poll capture, tremain=%g", d);
     if(d < -5.){ // capture error?
         WARNX("Abort capture");

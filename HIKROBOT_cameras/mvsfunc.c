@@ -395,7 +395,7 @@ static int cam_startexp(){
     MV_CC_StopGrabbing(handle);
     TRY(StartGrabbing);
     ONERR() return FALSE;
-    starttime = dtime();
+    starttime = sl_dtime();
     capStatus = CAPTURE_PROCESS;
     return TRUE;
 }
@@ -422,7 +422,7 @@ static int cam_pollcapt(cc_capture_status *st, float *remain){
         }
         DBG("not ready");
         if(remain){
-            float diff = exptime - (dtime() - starttime);
+            float diff = exptime - (sl_dtime() - starttime);
             DBG("diff = %g", diff);
             if(diff < -5.0){
                 capStatus = CAPTURE_NO;

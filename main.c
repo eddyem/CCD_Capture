@@ -69,7 +69,7 @@ void signals(int signo){
 }
 
 int main(int argc, char **argv){
-    initial_setup();
+    sl_init();
 #if defined GETTEXT_PACKAGE && defined LOCALEDIR
     //printf("GETTEXT_PACKAGE=" GETTEXT_PACKAGE ", LOCALEDIR=" LOCALEDIR "\n");
     bindtextdomain(GETTEXT_PACKAGE, LOCALEDIR);
@@ -121,7 +121,7 @@ int main(int argc, char **argv){
         if(lvl > LOGLEVEL_ANY) lvl = LOGLEVEL_ANY;
         verbose(1, "Log file %s @ level %d\n", GP->logfile, lvl);
         OPENLOG(GP->logfile, lvl, 1);
-        if(!globlog) WARNX("Can't create log file");
+        if(!sl_globlog) WARNX("Can't create log file");
     }
     signal(SIGINT, signals);
     signal(SIGQUIT, signals);
@@ -156,11 +156,11 @@ int main(int argc, char **argv){
     while(1){
         childpid = fork();
         if(childpid){ // master
-            double t0 = dtime();
+            double t0 = sl_dtime();
             LOGMSG("Created child with pid %d", childpid);
             wait(NULL);
             LOGERR("Child %d died", childpid);
-            if(dtime() - t0 < 1.) pause += 5;
+            if(sl_dtime() - t0 < 1.) pause += 5;
             else pause = 1;
             if(pause > 900) pause = 900;
             sleep(pause); // wait a little before respawn

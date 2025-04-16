@@ -142,7 +142,7 @@ int cc_senddata(int fd, void *data, size_t l){
         return FALSE;
     }
     DBG("success");
-    if(globlog)  LOGDBG("SEND data (size=%d) to fd %d", l, fd);
+    if(sl_globlog)  LOGDBG("SEND data (size=%d) to fd %d", l, fd);
     return TRUE;
 }
 
@@ -167,7 +167,7 @@ int cc_sendmessage(int fd, const char *msg, int l){
         return FALSE;
     }else{
         //DBG("success");
-        if(globlog){ // logging turned ON
+        if(sl_globlog){ // logging turned ON
             tmpbuf[l-1] = 0; // remove trailing '\n' for logging
             LOGDBG("SEND '%s'", tmpbuf);
         }
@@ -183,25 +183,27 @@ int cc_sendstrmessage(int fd, const char *msg){
 
 // text messages for `cc_hresult`
 // WARNING! You should initialize ABSOLUTELY ALL members of `cc_hresult` or some pointers would give segfault
-static const char *resmessages[RESULT_NUM] = {
-    [RESULT_OK] = "OK",
-    [RESULT_BUSY] = "BUSY",
-    [RESULT_FAIL] = "FAIL",
-    [RESULT_BADVAL] = "BADVAL",
-    [RESULT_BADKEY] = "BADKEY",
+static const char *resmessages[CC_RESULT_NUM] = {
+    [CC_RESULT_OK] = "OK",
+    [CC_RESULT_BUSY] = "BUSY",
+    [CC_RESULT_FAIL] = "FAIL",
+    [CC_RESULT_BADVAL] = "BADVAL",
+    [CC_RESULT_BADKEY] = "BADKEY",
+    [CC_RESULT_SILENCE] = "",
+    [CC_RESULT_DISCONNECTED] = "DISCONNECTED",
 };
 
 const char *cc_hresult2str(cc_hresult r){
-    if(r < 0 || r >= RESULT_NUM) return "BADRESULT";
+    if(r < 0 || r >= CC_RESULT_NUM) return "BADRESULT";
     return resmessages[r];
 }
 
 cc_hresult cc_str2hresult(const char *str){
-    for(cc_hresult res = 0; res < RESULT_NUM; ++res){
+    for(cc_hresult res = 0; res < CC_RESULT_NUM; ++res){
         if(!resmessages[res]) continue;
         if(0 == strcmp(resmessages[res], str)) return res;
     }
-    return RESULT_NUM; // didn't find
+    return CC_RESULT_NUM; // didn't find
 }
 
 /**
@@ -533,25 +535,25 @@ double cc_getAnsTmout(){return answer_timeout;}
  * @param fd - fd of socket
  * @param buf - buffer to store data read from socket
  * @param cmdwargs (i) - "par=val"
- * @return RESULT_OK if got same string or other error
+ * @return CC_RESULT_OK if got same string or other error
  */
 static cc_hresult ask4cmd(int fd, cc_strbuff *buf, const char *cmdwargs){
     DBG("ask for command %s", cmdwargs);
     char *keyptr = strdup(cmdwargs), *key = keyptr;
     cc_get_keyval(&key); // pick out key from `cmdwargs`
     int l = strlen(key);
-    cc_hresult ret = RESULT_FAIL;
+    cc_hresult ret = CC_RESULT_FAIL;
     for(int i = 0; i < ntries; ++i){
         DBG("Try %d time", i+1);
         if(!cc_sendstrmessage(fd, cmdwargs)) continue;
-        double t0 = dtime();
-        while(dtime() - t0 < answer_timeout){
+        double t0 = sl_dtime();
+        while(sl_dtime() - t0 < answer_timeout){
             int r = cc_canberead(fd);
             if(r == 0) continue;
             else if(r < 0){
                 LOGERR("Socket disconnected");
                 WARNX("Socket disconnected");
-                ret = RESULT_DISCONNECTED;
+                ret = CC_RESULT_DISCONNECTED;
                 goto rtn;
             }
             while(cc_refreshbuf(fd, buf));
@@ -563,11 +565,11 @@ static cc_hresult ask4cmd(int fd, cc_strbuff *buf, const char *cmdwargs){
                     LOGMSG("SERVER client fd=%d buffer overflow", fd);
                 }else if(got){
                     if(strncmp(buf->string, key, l) == 0){
-                        ret = RESULT_OK;
+                        ret = CC_RESULT_OK;
                         goto rtn;
                     }else{ // answers like 'OK' etc
                         cc_hresult r = cc_str2hresult(buf->string);
-                        if(r != RESULT_NUM){ // some other data
+                        if(r != CC_RESULT_NUM){ // some other data
                             ret = r;
                             goto rtn;
                         }
@@ -604,13 +606,13 @@ cc_hresult cc_getint(int fd, cc_strbuff *cbuf, const char *cmd, int *val){
     char buf[BBUFS+1];
     snprintf(buf, BBUFS, "%s\n", cmd);
     cc_hresult r = ask4cmd(fd, cbuf, buf);
-    if(r == RESULT_OK){
+    if(r == CC_RESULT_OK){
         char *p = cbuf->string;
         char *sv = cc_get_keyval(&p);
-        if(!sv) return RESULT_FAIL;
+        if(!sv) return CC_RESULT_FAIL;
         char *ep;
         long L = strtol(sv, &ep, 0);
-        if(sv == ep || L < INT_MIN || L > INT_MAX) return RESULT_BADVAL;
+        if(sv == ep || L < INT_MIN || L > INT_MAX) return CC_RESULT_BADVAL;
         if(val) *val = (int) L;
     }
     return r;
@@ -635,13 +637,13 @@ cc_hresult cc_getfloat(int fd, cc_strbuff *cbuf, const char *cmd, float *val){
     char buf[BBUFS+1];
     snprintf(buf, BBUFS, "%s\n", cmd);
     cc_hresult r = ask4cmd(fd, cbuf, buf);
-    if(r == RESULT_OK){
+    if(r == CC_RESULT_OK){
         char *p = cbuf->string;
         char *sv = cc_get_keyval(&p);
-        if(!sv) return RESULT_FAIL;
+        if(!sv) return CC_RESULT_FAIL;
         char *ep;
         double d = strtod(sv, &ep);
-        if(sv == ep || d < (-FLT_MAX) || d > FLT_MAX) return RESULT_BADVAL;
+        if(sv == ep || d < (-FLT_MAX) || d > FLT_MAX) return CC_RESULT_BADVAL;
         if(val) *val = (float)d;
     }
     return r;
@@ -672,7 +674,7 @@ char *cc_nextkw(char *buf, char record[FLEN_CARD+1], int newlines){
  */
 size_t cc_kwfromfile(cc_charbuff *b, char *filename){
     if(!b) return 0;
-    mmapbuf *buf = My_mmap(filename);
+    sl_mmapbuf_t *buf = sl_mmap(filename);
     if(!buf || buf->len < 1){
         WARNX("Can't add FITS records from file %s", filename);
         LOGWARN("Can't add FITS records from file %s", filename);
@@ -693,7 +695,7 @@ size_t cc_kwfromfile(cc_charbuff *b, char *filename){
         if(status) fits_report_error(stderr, status);
         else cc_charbufaddline(b, card);
     }while(data && *data);
-    My_munmap(buf);
+    sl_munmap(buf);
     return b->buflen - blen0;
 }
 
@@ -760,30 +762,30 @@ static size_t print_val(cc_partype_t t, void *val, char *buf, size_t bufl){
  * @param str - string like "par" (getter/cmd) or "par=val" (setter)
  * @param handlers - NULL-terminated array of handlers for custom commands
  * @param ans - buffer for output string
- * @return RESULT_OK if all OK or error code
+ * @return CC_RESULT_OK if all OK or error code
  */
 cc_hresult cc_plugin_customcmd(const char *str, cc_parhandler_t *handlers, cc_charbuff *ans){
-    if(!str || !handlers) return RESULT_FAIL;
+    if(!str || !handlers) return CC_RESULT_FAIL;
     char key[256], *kptr = key;
     snprintf(key, 255, "%s", str);
     char *val = cc_get_keyval(&kptr);
     cc_parhandler_t *phptr = handlers;
-    cc_hresult result = RESULT_BADKEY;
+    cc_hresult result = CC_RESULT_BADKEY;
     char buf[512];
 #define ADDL(...) do{if(ans){size_t l = snprintf(bptr, L, __VA_ARGS__); bptr += l; L -= l;}}while(0)
 #define PRINTVAL(v) do{if(ans){size_t l = print_val(phptr->type, phptr->v, bptr, L); bptr += l; L -= l;}}while(0)
     while(phptr->cmd){
         if(0 == strcmp(kptr, phptr->cmd)){
             char *bptr = buf; size_t L = 511;
-            result = RESULT_OK;
+            result = CC_RESULT_OK;
             if(phptr->checker) result = phptr->checker(str, ans);
             if(phptr->ptr){ // setter/getter
-                if(val){if(result == RESULT_OK){// setter: change value only if [handler] returns OK (`handler` could be value checker)
+                if(val){if(result == CC_RESULT_OK){// setter: change value only if [handler] returns OK (`handler` could be value checker)
                     int ival; float fval; double dval;
 #define UPDATE_VAL(type, val, pr) do{ \
-  if(phptr->max && val > *(type*)phptr->max){ADDL("max=" pr, *(type*)phptr->max); result = RESULT_BADVAL;} \
-  if(phptr->min && val < *(type*)phptr->min){ADDL("min=" pr, *(type*)phptr->min); result = RESULT_BADVAL;} \
-  if(result == RESULT_OK) *(type*)phptr->ptr = val;  \
+  if(phptr->max && val > *(type*)phptr->max){ADDL("max=" pr, *(type*)phptr->max); result = CC_RESULT_BADVAL;} \
+  if(phptr->min && val < *(type*)phptr->min){ADDL("min=" pr, *(type*)phptr->min); result = CC_RESULT_BADVAL;} \
+  if(result == CC_RESULT_OK) *(type*)phptr->ptr = val;  \
 }while(0)
                     switch(phptr->type){
                         case CC_PAR_INT:
@@ -803,12 +805,12 @@ cc_hresult cc_plugin_customcmd(const char *str, cc_parhandler_t *handlers, cc_ch
                             *(char**)phptr->ptr = strdup(val);
                         break;
                         default:
-                            result = RESULT_FAIL;
+                            result = CC_RESULT_FAIL;
                     }
 #undef UPDATE_VAL
-                }}else result = RESULT_SILENCE; // getter - don't show "OK"
+                }}else result = CC_RESULT_SILENCE; // getter - don't show "OK"
                 DBG("res=%d", result);
-                if(result == RESULT_SILENCE || result == RESULT_OK){
+                if(result == CC_RESULT_SILENCE || result == CC_RESULT_OK){
                     ADDL("%s=", phptr->cmd);
                     PRINTVAL(ptr);
                 }
@@ -818,7 +820,7 @@ cc_hresult cc_plugin_customcmd(const char *str, cc_parhandler_t *handlers, cc_ch
         }
         ++phptr;
     }
-    if(ans && result == RESULT_BADKEY){ // cmd not found - display full help
+    if(ans && result == CC_RESULT_BADKEY){ // cmd not found - display full help
         cc_charbufaddline(ans, "Custom plugin commands:\n");
         phptr = handlers;
         while(phptr->cmd){

@@ -105,7 +105,7 @@ static int campoll(cc_capture_status *st, float *remain){
              *st = CAPTURE_READY;
     }
     if(remain){
-        float diff = exptime - (dtime() - starttime);
+        float diff = exptime - (sl_dtime() - starttime);
         if(diff < 0.) diff = 0.;
         *remain = diff;
     }
@@ -141,7 +141,7 @@ static int startcapt(){
     camcancel();
     //red("ISDARK = %s\n", isdark ? "true" : "false");
     if(ASI_SUCCESS == ASIStartExposure(caminfo.CameraID, isdark)){
-        starttime = dtime();
+        starttime = sl_dtime();
         return TRUE;
     }
     return FALSE;

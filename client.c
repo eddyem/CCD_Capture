@@ -83,12 +83,12 @@ static int parseans(char *ans){
     if(!ans) return FALSE;
     //TIMESTAMP("parseans() begin");
     //DBG("Parsing of '%s'", ans);
-    if(0 == strcmp(cc_hresult2str(RESULT_BUSY), ans)){
+    if(0 == strcmp(cc_hresult2str(CC_RESULT_BUSY), ans)){
         WARNX("Server busy");
         return FALSE;
     }
-    if(0 == strcmp(cc_hresult2str(RESULT_FAIL), ans)) return TRUE;
-    if(0 == strcmp(cc_hresult2str(RESULT_OK), ans)) return TRUE;
+    if(0 == strcmp(cc_hresult2str(CC_RESULT_FAIL), ans)) return TRUE;
+    if(0 == strcmp(cc_hresult2str(CC_RESULT_OK), ans)) return TRUE;
     char *val = cc_get_keyval(&ans); // now `ans` is a key and `val` its value
     if(0 == strcmp(CC_CMD_EXPSTATE, ans)){
         expstate = atoi(val);
@@ -110,12 +110,12 @@ static int parseans(char *ans){
 // read until timeout all messages from server; return FALSE if there was no messages from server
 // if msg != NULL - wait for it in answer
 static int getans(int sock, const char *msg){
-    double t0 = dtime();
+    double t0 = sl_dtime();
     char *ans = NULL;
-    while(dtime() - t0 < answer_timeout){
+    while(sl_dtime() - t0 < answer_timeout){
         char *s = readmsg(sock);
         if(!s) continue;
-        t0 = dtime();
+        t0 = sl_dtime();
         ans = s;
         TIMESTAMP("Got from server: %s", ans);
         verbose(1, "\t%s", ans);
@@ -240,7 +240,7 @@ void client(int sock){
         return;
     }
     send_headers(sock);
-    double t0 = dtime(), tw = t0;
+    double t0 = sl_dtime(), tw = t0;
     int Nremain = 0, nframe = 1;
     // if client gives filename/prefix or Nframes, make exposition
     if((GP->outfile && *GP->outfile) || (GP->outfileprefix && *GP->outfileprefix) || GP->nframes > 0){
@@ -250,7 +250,7 @@ void client(int sock){
         SENDMSGW(CC_CMD_EXPSTATE, "=%d", CAMERA_CAPTURE);
     }else{
         int cntr = 0;
-        while(dtime() - t0 < CC_WAIT_TIMEOUT && cntr < 3)
+        while(sl_dtime() - t0 < CC_WAIT_TIMEOUT && cntr < 3)
             if(!getans(sock, NULL)) ++cntr;
         DBG("RETURN: no more data");
         return;
@@ -261,16 +261,16 @@ void client(int sock){
         expstate = CAMERA_CAPTURE; // could be changed earlier
         verbose(2, "Wait for exposition end");
     }
-    while(dtime() - t0 < timeout){
-        if(GP->waitexpend && dtime() - tw > CC_WAIT_TIMEOUT){
+    while(sl_dtime() - t0 < timeout){
+        if(GP->waitexpend && sl_dtime() - tw > CC_WAIT_TIMEOUT){
             SENDCMDW(CC_CMD_TREMAIN); // get remained time
-            tw = dtime();
+            tw = sl_dtime();
             sprintf(sendbuf, "%s", CC_CMD_EXPSTATE);
             cc_sendstrmessage(sock, sendbuf);
         }
         if(getans(sock, NULL)){ // got next portion of data
             DBG("server message");
-            t0 = dtime();
+            t0 = sl_dtime();
             if(expstate == CAMERA_ERROR){
                 WARNX(_("Can't make exposition"));
                 continue;
@@ -282,10 +282,10 @@ void client(int sock){
                 if(Nremain){
                     verbose(1, "\n");
                     if(GP->pause_len > 0){
-                        double delta, time1 = dtime() + GP->pause_len;
+                        double delta, time1 = sl_dtime() + GP->pause_len;
                         while(1){
                             SENDCMDW(CC_CMD_CAMTEMPER);
-                            if((delta = time1 - dtime()) < __FLT_EPSILON__) break;
+                            if((delta = time1 - sl_dtime()) < __FLT_EPSILON__) break;
                             if(delta > 1.) verbose(1, _("%d seconds till pause ends\n"), (int)delta);
                             if(delta > 6.) sleep(5);
                             else if(delta > 1.) sleep((int)delta);
@@ -303,6 +303,11 @@ void client(int sock){
         }
     }
     if(GP->waitexpend) WARNX(_("Server timeout"));
+    // clear "filename" and "filenameprefix"
+    SENDMSGW(CC_CMD_FILENAME, "=");
+    SENDMSGW(CC_CMD_FILENAMEPREFIX, "=");
+    // clear "rewrite"
+    SENDMSGW(CC_CMD_REWRITE, "=0");
     DBG("Timeout");
 }
 
@@ -323,8 +328,9 @@ void init_grab_sock(int sock){
  */
 static int readNbytes(int fd, size_t N, uint8_t *buf){
     size_t got = 0, need = N;
-    double t0 = dtime();
-    while(dtime() - t0 < CC_CLIENT_TIMEOUT /*&& cc_canberead(fd)*/ && need){
+    double t0 = sl_dtime();
+    while(sl_dtime() - t0 < CC_CLIENT_TIMEOUT /*&& cc_canberead(fd)*/ && need){
+        t0 = sl_dtime();
         ssize_t rd = read(fd, buf + got, need);
         if(rd <= 0){
             WARNX("Server disconnected");
@@ -344,8 +350,6 @@ static void getimage(){
     int imsock = -1;
     static double oldtimestamp = -1.;
     TIMESTAMP("Get image sizes");
-    /*SENDCMDW(CC_CMD_IMWIDTH);
-    SENDCMDW(CC_CMD_IMHEIGHT);*/
     if(shmima){ // read image from shared memory
         memcpy(&ima, shmima, sizeof(cc_IMG));
     }else{ // get image by socket
@@ -402,23 +406,23 @@ static void *grabnext(void _U_ *arg){ // daemon grabbing images through the net
         expstate = CAMERA_CAPTURE;
         TIMEINIT();
         SENDMSGW(CC_CMD_EXPSTATE, "=%d", CAMERA_CAPTURE); // start capture
-        double timeout = GP->exptime + CC_CLIENT_TIMEOUT, t0 = dtime();
+        double timeout = GP->exptime + CC_CLIENT_TIMEOUT, t0 = sl_dtime();
         useconds_t sleept = 500000; // 0.5s
         if(GP->exptime < 0.5){
             sleept = (useconds_t)(GP->exptime * 500000.);
             if(sleept < 1000) sleept = 1000;
         }
 //        double exptime = GP->exptime;
-        while(dtime() - t0 < timeout){
+        while(sl_dtime() - t0 < timeout){
             TIMESTAMP("Wait for exposition ends (%u us)", sleept);
             usleep(sleept);
             TIMESTAMP("check answer");
-            getans(sock, NULL);
+       //     getans(sock, NULL);
             //TIMESTAMP("EXPSTATE ===> %d", expstate);
             if(expstate != CAMERA_CAPTURE) break;
-            if(dtime() - t0 < GP->exptime + 0.5) sleept = 1000;
+            if(sl_dtime() - t0 < GP->exptime + 0.5) sleept = 1000;
         }
-        if(dtime() - t0 >= timeout || expstate != CAMERA_FRAMERDY){
+        if(sl_dtime() - t0 >= timeout || expstate != CAMERA_FRAMERDY){
             WARNX("Image wasn't received");
             continue;
         }

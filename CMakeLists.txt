@@ -3,7 +3,7 @@ set(PROJ ccd_capture)
 set(PROJLIB ccdcapture)
 set(MAJOR_VERSION "1")
 set(MID_VERSION "2")
-set(MINOR_VERSION "0")
+set(MINOR_VERSION "1")
 
 set(LIBSRC ccdcapture.c)
 set(SOURCES main.c cmdlnopts.c ccdfunc.c server.c client.c)

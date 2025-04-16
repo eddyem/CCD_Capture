@@ -91,14 +91,14 @@ typedef enum{
 } cc_fan_speed;
 
 typedef enum{
-    RESULT_OK,          // 0: all OK
-    RESULT_BUSY,        // 1: camera busy and no setters can be done
-    RESULT_FAIL,        // 2: failed running command
-    RESULT_BADVAL,      // 3: bad key's value
-    RESULT_BADKEY,      // 4: bad key
-    RESULT_SILENCE,     // 5: send nothing to client
-    RESULT_DISCONNECTED,// 6: client disconnected
-    RESULT_NUM
+    CC_RESULT_OK,          // 0: all OK
+    CC_RESULT_BUSY,        // 1: camera busy and no setters can be done
+    CC_RESULT_FAIL,        // 2: failed running command
+    CC_RESULT_BADVAL,      // 3: bad key's value
+    CC_RESULT_BADKEY,      // 4: bad key
+    CC_RESULT_SILENCE,     // 5: send nothing to client
+    CC_RESULT_DISCONNECTED,// 6: client disconnected
+    CC_RESULT_NUM
 } cc_hresult;
 
 // all setters and getters of Camera, Focuser and cc_Wheel should return TRUE if success or FALSE if failed or unsupported camera
