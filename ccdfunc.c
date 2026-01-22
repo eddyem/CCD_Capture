@@ -386,8 +386,7 @@ void focclose(){
  */
 void focusers(){
     FNAME();
-    void *dlh = NULL;
-    if(!startFocuser(&dlh)) return;
+    if(!startFocuser()) return;
     if(GP->listdevices){
         for(int i = 0; i < focuser->Ndevices; ++i){
             if(!focuser->setDevNo(i)) continue;
@@ -477,8 +476,7 @@ void closewheel(){
  */
 void wheels(){
     FNAME();
-    void *dlh = NULL;
-    if(!startWheel(&dlh)) return;
+    if(!startWheel()) return;
     if(GP->listdevices){
         for(int i = 0; i < wheel->Ndevices; ++i){
             if(!wheel->setDevNo(i)) continue;
@@ -582,8 +580,7 @@ void closecam(){
 int prepare_ccds(){
     FNAME();
     int rtn = FALSE;
-    void *dlh = NULL;
-    if(!startCCD(&dlh)) return FALSE;
+    if(!startCCD()) return FALSE;
     if(GP->listdevices){
         if(!camera->getModelName) WARNX(_("Camera plugin have no model name getter"));
         else for(int i = 0; i < camera->Ndevices; ++i){
