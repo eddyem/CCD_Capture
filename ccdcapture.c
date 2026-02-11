@@ -410,7 +410,7 @@ void cc_charbufclr(cc_charbuff *buf){
 // put `l` bytes of `s` to b->buf and add terminated zero
 void cc_charbufput(cc_charbuff *b, const char *s, size_t l){
     if(!cc_charbuftest(b, l+1)) return;
-    DBG("add %zd bytes to buff", l);
+    //DBG("add %zd bytes to buff", l);
     memcpy(b->buf + b->buflen, s, l);
     b->buflen += l;
     b->buf[b->buflen] = 0;

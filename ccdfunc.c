@@ -140,8 +140,9 @@ do{ int status = 0, kt = 0;                      \
     if(camera->getbrightness && camera->getbrightness(&tmpf))
         FORMFLT("CAMBRIGH", tmpf, "CMOS brightness value");
 
-    snprintf(templ, 2*FLEN_CARD, "TIMESTAM = %.3f / Time of acquisition end (UNIX)", img->timestamp);
+    snprintf(templ, 2*FLEN_CARD, "TIMESTAM = %.6f / Time of acquisition end (UNIX)", img->timestamp);
     FORMKW(templ);
+    FORMINT("IMSEQNO", (int)img->imnumber, "Number of image in full sequence");
     // BINNING / Binning
     snprintf(templ, FLEN_CARD, "BINNING = '%d x %d' / Binning (hbin x vbin)", GP->hbin, GP->vbin);
     FORMKW(templ);
@@ -285,64 +286,41 @@ static void stat8(cc_IMG *image){
     size_t size = image->w * image->h;
     uint8_t max = 0, min = UINT8_MAX;
     uint8_t *idata = (uint8_t*)image->data;
-#pragma omp parallel
-{
-    uint8_t maxpriv = 0, minpriv = UINT8_MAX;
-    double sumpriv = 0., sum2priv = 0.;
-    #pragma omp for nowait
+#pragma omp parallel for reduction(+:sum, sum2) reduction(max:max) reduction(min:min)
     for(size_t i = 0; i < size; ++i){
         uint8_t val = idata[i];
-        float pv = (float) val;
-        sum += pv;
-        sum2 += (pv * pv);
-        if(max < val) max = val;
-        if(min > val) min = val;
+        double pv = (double) val;
+        sum  += pv;
+        sum2 += pv * pv;
+        if (val > max) max = val;
+        if (val < min) min = val;
     }
-    #pragma omp critical
-    {
-        if(max < maxpriv) max = maxpriv;
-        if(min > minpriv) min = minpriv;
-        sum += sumpriv;
-        sum2 += sum2priv;
-    }
+    double sz = (double) size;
+    image->avr = sum / sz;
+    image->std = sqrt(fabs(sum2 / sz - image->avr * image->avr));
+    image->max = max;
+    image->min = min;
 }
-    double sz = (float)size;
-    double avr = sum/sz;
-    image->avr = avr;
-    image->std = sqrt(fabs(sum2/sz - avr*avr));
-    image->max = max; image->min = min;
-}
-static void stat16(cc_IMG *image){
-    double sum = 0., sum2 = 0.;
+
+static void stat16(cc_IMG *image) {
     size_t size = image->w * image->h;
+    uint16_t *idata = (uint16_t*) image->data;
+    double sum = 0.0, sum2 = 0.0;
     uint16_t max = 0, min = UINT16_MAX;
-    uint16_t *idata = (uint16_t*)image->data;
-#pragma omp parallel
-{
-    uint16_t maxpriv = 0, minpriv = UINT16_MAX;
-    double sumpriv = 0., sum2priv = 0.;
-    #pragma omp for nowait
+#pragma omp parallel for reduction(+:sum, sum2) reduction(max:max) reduction(min:min)
     for(size_t i = 0; i < size; ++i){
         uint16_t val = idata[i];
-        float pv = (float) val;
-        sum += pv;
-        sum2 += (pv * pv);
-        if(max < val) max = val;
-        if(min > val) min = val;
+        double pv = (double) val;
+        sum  += pv;
+        sum2 += pv * pv;
+        if (val > max) max = val;
+        if (val < min) min = val;
     }
-    #pragma omp critical
-    {
-        if(max < maxpriv) max = maxpriv;
-        if(min > minpriv) min = minpriv;
-        sum += sumpriv;
-        sum2 += sum2priv;
-    }
-}
-    double sz = (float)size;
-    double avr = sum/sz;
-    image->avr = avr;
-    image->std = sqrt(fabs(sum2/sz - avr*avr));
-    image->max = max; image->min = min;
+    double sz = (double) size;
+    image->avr = sum / sz;
+    image->std = sqrt(fabs(sum2 / sz - image->avr * image->avr));
+    image->max = max;
+    image->min = min;
 }
 
 
@@ -545,8 +523,8 @@ static cc_capture_status capt(){
             if(camera->getTbody && camera->getTbody(&tmpf)) verbose(1, "BODYTEMP=%.1f", tmpf);
         }
         if(tremain > 6.) sleep(5);
-        else if(tremain > 0.9) sleep((int)(tremain+0.99));
-        else usleep((int)(1e6*tremain) + 100000);
+        else if(tremain > 0.999999) sleep((int)(tremain+1e-6));
+        else usleep((int)(1e6*tremain));
         if(!camera) return CAPTURE_ABORTED;
     }
     DBG("Poll ends with %d", cs);
@@ -562,7 +540,7 @@ cc_Camera *startCCD(){
         if(!(camera = open_camera(plugin))) return NULL;
     }
     if(!camera->check()){
-        verbose(3, _("No cameras found"));
+        WARNX(_("No cameras found"));
         LOGWARN(_("No cameras found"));
         return NULL;
     }
@@ -579,15 +557,16 @@ void closecam(){
 // make base settings; return TRUE if all OK
 int prepare_ccds(){
     FNAME();
+    char buf[BUFSIZ];
     int rtn = FALSE;
     if(!startCCD()) return FALSE;
     if(GP->listdevices){
         if(!camera->getModelName) WARNX(_("Camera plugin have no model name getter"));
         else for(int i = 0; i < camera->Ndevices; ++i){
             if(camera->setDevNo && !camera->setDevNo(i)) continue;
-            char modname[256];
-            camera->getModelName(modname, 255);
-            printf("Found camera #%d: %s\n", i, modname);
+            // if camera have no setDevNo function, it could have getModelName
+            camera->getModelName(buf, BUFSIZ-1);
+            printf("Found camera #%d: %s\n", i, buf);
         }
     }
     int num = GP->camdevno;
@@ -607,9 +586,9 @@ int prepare_ccds(){
         else{
             char **p = GP->plugincmd;
             cc_charbuff *b = cc_charbufnew();
-            DBG("got %s", *p);
             int stop = FALSE;
             while(p && *p){
+                DBG("got %s", *p);
                 cc_charbufclr(b);
                 cc_hresult r = camera->plugincmd(*p, b);
                 if(r == CC_RESULT_OK || r == CC_RESULT_SILENCE) green("Command '%s'", *p);
@@ -636,7 +615,6 @@ int prepare_ccds(){
         }
     }
     int x0,x1, y0,y1;
-    char buf[BUFSIZ];
     if(camera->getModelName && camera->getModelName(buf, BUFSIZ))
         verbose(2, _("Camera model: %s"), buf);
     verbose(2, _("Pixel size: %g x %g"), camera->pixX, camera->pixY);
@@ -682,7 +660,7 @@ int prepare_ccds(){
     if(GP->setio > -1){
         verbose(1, _("Try to write %d to I/O port"), GP->setio);
         if(!camera->setio || !camera->setio(GP->setio))
-            WARNX(_("Can't set IOport"));
+            ERRX(_("Can't set IOport"));
     }
     if(GP->exptime < 0.) goto retn;
     if(!isnan(GP->gain)){
@@ -690,7 +668,7 @@ int prepare_ccds(){
         if(camera->setgain && camera->setgain(GP->gain)){
             if(camera->getgain) camera->getgain(&GP->gain);
             verbose(1, _("Set gain to %g"), GP->gain);
-        }else WARNX(_("Can't set gain to %g"), GP->gain);
+        }else ERRX(_("Can't set gain to %g"), GP->gain);
     }
     if(!isnan(GP->brightness)){
         if(camera->setbrightness && camera->setbrightness(GP->brightness)){
@@ -702,7 +680,7 @@ int prepare_ccds(){
     if(GP->hbin < 1) GP->hbin = 1;
     if(GP->vbin < 1) GP->vbin = 1;
     if(!camera->setbin || !camera->setbin(GP->hbin, GP->vbin)){
-        WARNX(_("Can't set binning %dx%d"), GP->hbin, GP->vbin);
+        ERRX(_("Can't set binning %dx%d"), GP->hbin, GP->vbin);
         if(camera->getbin) camera->getbin(&GP->hbin, &GP->vbin);
     }
     if(GP->X0 < 0) GP->X0 = x0; // default values
@@ -714,7 +692,7 @@ int prepare_ccds(){
     DBG("x1/x0: %d/%d", GP->X1, GP->X0);
     cc_frameformat fmt = {.w = GP->X1 - GP->X0, .h = GP->Y1 - GP->Y0, .xoff = GP->X0, .yoff = GP->Y0};
     if(!camera->setgeometry || !camera->setgeometry(&fmt))
-        WARNX(_("Can't set given geometry"));
+        ERRX(_("Can't set given geometry"));
     verbose(3, "Geometry: off=%d/%d, wh=%d/%d", fmt.xoff, fmt.yoff, fmt.w, fmt.h);
     if(GP->nflushes > 0){
         if(!camera->setnflushes || !camera->setnflushes(GP->nflushes))
@@ -723,7 +701,7 @@ int prepare_ccds(){
     }
     if(!camera->setexp) ERRX(_("Camera plugin have no exposition setter"));
     if(!camera->setexp(GP->exptime))
-        WARNX(_("Can't set exposure time to %f seconds"), GP->exptime);
+        ERRX(_("Can't set exposure time to %f seconds"), GP->exptime);
     tmpi = (GP->dark) ? 0 : 1;
     if(!camera->setframetype || !camera->setframetype(tmpi))
         WARNX(_("Can't change frame type"));
@@ -758,8 +736,8 @@ DBG("w=%d, h=%d", raw_width, raw_height);
     cc_IMG ima = {.data = img, .w = raw_width, .h = raw_height};
     if(GP->nframes < 1) GP->nframes = 1;
     for(int j = 0; j < GP->nframes; ++j){
-        TIMESTAMP("Start next cycle");
         TIMEINIT();
+        TIMESTAMP("Start next cycle");
         verbose(1, _("Capture frame %d"), j);
         if(!camera->startexposition) ERRX(_("Camera plugin have no function `start exposition`"));
         if(!camera->startexposition()){
@@ -778,6 +756,8 @@ DBG("w=%d, h=%d", raw_width, raw_height);
             WARNX(_("Can't grab image"));
             break;
         }
+        ima.timestamp = sl_dtime();
+        ++ima.imnumber;
         ima.gotstat = 0;
         TIMESTAMP("Calc stat");
         calculate_stat(&ima);

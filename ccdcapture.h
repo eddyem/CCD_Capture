@@ -143,9 +143,9 @@ typedef struct{
     int (*getio)(int *s);       // get IO-port state
     cc_hresult (*plugincmd)(const char *str, cc_charbuff *ans); // custom camera plugin command (get string as input, send string as output or NULL if failed)
     float pixX, pixY;           // pixel size in um
-    cc_frameformat field;          // max field of view (full CCD field without overscans)
-    cc_frameformat array;          // array format (with overscans)
-    cc_frameformat geometry;       // current geometry settings (as in setgeometry)
+    cc_frameformat field;       // max field of view (full CCD field without overscans)
+    cc_frameformat array;       // array format (with overscans)
+    cc_frameformat geometry;    // current geometry settings (as in setgeometry)
 } cc_Camera;
 
 // focuser

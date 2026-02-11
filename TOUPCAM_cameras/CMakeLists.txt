@@ -1,15 +1,12 @@
 cmake_minimum_required(VERSION 3.20)
-set(CCDLIB devhikrobot)
+set(CCDLIB devtoupcam)
 
 SET(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR})
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(${CCDLIB} REQUIRED mvs>=2.1 usefull_macros)
+pkg_check_modules(${CCDLIB} REQUIRED usefull_macros toupcam)
 
 aux_source_directory(${CMAKE_CURRENT_SOURCE_DIR} SRC)
 add_library(${CCDLIB} SHARED ${SRC})
-
-# set c99 as mvs library have "typedef" for "bool"
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c99")
 
 target_include_directories(${CCDLIB} PRIVATE ${${CCDLIB}_INCLUDE_DIRS} ..)
 target_link_directories(${CCDLIB} PRIVATE ${${CCDLIB}_LIBRARY_DIRS})
