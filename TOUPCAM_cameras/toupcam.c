@@ -17,6 +17,7 @@
  */
 
 #include <float.h>
+#include <pthread.h>
 #include <string.h>
 #include <toupcam.h>
 #include <usefull_macros.h>
@@ -38,11 +39,17 @@ typedef enum{
 // devices
 static ToupcamDeviceV2 g_dev[TOUPCAM_MAX] = {0};
 static struct{
-    ToupcamDeviceV2* dev;
-    HToupcam hcam;
-    unsigned long long flags;
-    void* data;
-    imstate_t state;
+    ToupcamDeviceV2* dev;       // device
+    HToupcam hcam;              // hcam for all functions
+    unsigned long long flags;   // flags (read on connect)
+    pthread_mutex_t mutex;      // lock mutex for `data` writing/reading
+    void* data;                 // image data
+    size_t imsz;                // size of current image in bytes
+    imstate_t state;            // current state
+    uint64_t imseqno;           // number of image from connection
+    uint64_t lastcapno;         // last captured image number
+    uint8_t bytepix;            // bytes per pixel
+    int curbin;                 // current binning
 } toupcam = {0};
 
 static int camgetbp(uint8_t *bp);
@@ -52,13 +59,38 @@ static double exptime = 0., starttime = 0.;
 
 #define TCHECK()    do{if(!toupcam.hcam) return FALSE;}while(0)
 
+// return constant string with error code description
+static const char *errcode(int ecode){
+    switch(ecode){
+        case 0: return "S_OK";
+        case 1: return "S_FALSE";
+        case 0x8000ffff: return "E_UNEXPECTED";
+        case 0x80004001: return "E_NOTIMPL";
+        case 0x80004002: return "E_NOINTERFACE";
+        case 0x80070005: return "E_ACCESSDENIED";
+        case 0x8007000e: return "E_OUTOFMEMORY";
+        case 0x80070057: return "E_INVALIDARG";
+        case 0x80004003: return "E_POINTER";
+        case 0x80004005: return "E_FAIL";
+        case 0x8001010e: return "E_WRONG_THREAD";
+        case 0x8007001f: return "E_GEN_FAILURE";
+        case 0x800700aa: return "E_BUSY";
+        case 0x8000000a: return "E_PENDING";
+        case 0x8001011f: return "E_TIMEOUT";
+        case 0x80072743: return "E_UNREACH";
+        default: return "Unknown error";
+    }
+}
+
 /**
  * @brief camcancel - camera.cancel - cancel exposition
  */
 static void camcancel(){
     if(!toupcam.hcam) return;
-    Toupcam_Trigger(toupcam.hcam, 0); // stop triggering
-    Toupcam_Stop(toupcam.hcam);
+    int e = Toupcam_Trigger(toupcam.hcam, 0); // stop triggering
+    if(e < 0) WARNX("Can't trigger 0: %s", errcode(e));
+    e = Toupcam_Stop(toupcam.hcam);
+    if(e < 0) WARNX("Can't stop: %s", errcode(e));
     toupcam.state = IM_SLEEP;
 }
 
@@ -90,23 +122,6 @@ static int initcam(){
     }
     camera.Ndevices = (int) N;
     return TRUE;
-}
-
-// callback of image ready event
-static void EventCallback(unsigned nEvent, void _U_ *pCallbackCtx){
-    DBG("CALLBACK with evt %d", nEvent);
-    if(!toupcam.hcam || !toupcam.data){ DBG("NO data!"); return; }
-    if(nEvent != TOUPCAM_EVENT_IMAGE){ DBG("Not image event"); return; }
-    ToupcamFrameInfoV4 info = {0};
-    if(Toupcam_PullImageV4(toupcam.hcam, toupcam.data, 0, 0, 0, &info) < 0){
-        DBG("Error pulling image");
-        toupcam.state = IM_ERROR;
-    }else{
-        DBG("Image ready!");
-        toupcam.state = IM_READY;
-        camera.geometry.h = info.v3.height;
-        camera.geometry.w = info.v3.width;
-    }
 }
 
 /**
@@ -143,15 +158,20 @@ static int setdevno(int n){
     DBG("pixsize (x/y): %g/%g", camera.pixX, camera.pixY);
     toupcam.flags = Toupcam_query_Model(toupcam.hcam)->flag;
     DBG("flags: 0x%llx", toupcam.flags);
-    DBG("Allocate data (%d bytes)", 2 * camera.array.w * camera.array.h);
+    DBG("Allocate data (%d bytes: 2*%d*%d)", 2 * camera.array.w * camera.array.h, camera.array.w, camera.array.h);
     toupcam.data = calloc(camera.array.w * camera.array.h, 2);
 #define OPT(opt, val, comment)  do{DBG(comment); if(Toupcam_put_Option(toupcam.hcam, opt, val) < 0){ DBG("Can't put this option"); }}while(0)
+    // 12 frames/sec
     OPT(TOUPCAM_OPTION_TRIGGER, 1, "Software/simulated trigger mode");
-    //OPT(TOUPCAM_OPTION_DFC, 0xff0000ff , "Enable dark field correction");
-    //OPT(TOUPCAM_OPTION_FFC, 0xff0000ff, "Enable flatfield correction");
     OPT(TOUPCAM_OPTION_RAW, 1, "Put to RAW mode");
 #undef OPT
     toupcam.state = IM_SLEEP;
+    toupcam.imseqno = toupcam.lastcapno = 0;
+    uint8_t bp;
+    if(!camera.getbitpix(&bp)) toupcam.bytepix = 2;
+    else toupcam.bytepix = (bp+7)/8;
+    if(!camera.getbin(NULL, NULL)) toupcam.curbin = 1;
+    pthread_mutex_init(&toupcam.mutex, NULL);
     return TRUE;
 }
 
@@ -193,6 +213,35 @@ static int campoll(cc_capture_status *st, float *remain){
     return ret;
 }
 
+// callback of image ready event
+static void EventCallback(unsigned nEvent, void _U_ *pCallbackCtx){
+    DBG("CALLBACK with evt %d", nEvent);
+    if(!toupcam.hcam || !toupcam.data){ DBG("NO data!"); return; }
+    if(nEvent != TOUPCAM_EVENT_IMAGE){ DBG("Not image event"); return; }
+    ToupcamFrameInfoV4 info = {0};
+    //DBG("LOCK");
+    pthread_mutex_lock(&toupcam.mutex);
+    if(Toupcam_PullImageV4(toupcam.hcam, toupcam.data, 0, 0, 0, &info) < 0){
+        DBG("Error pulling image");
+        toupcam.state = IM_ERROR;
+    }else{
+        ++toupcam.imseqno;
+        DBG("Image %lu (%dx%d) ready!", toupcam.imseqno, info.v3.width, info.v3.height);
+        toupcam.state = IM_READY;
+        toupcam.imsz = info.v3.height * info.v3.width * toupcam.bytepix;
+        // geometry.h/w WITHOUT binning!
+        camera.geometry.h = info.v3.height * toupcam.curbin;
+        camera.geometry.w = info.v3.width * toupcam.curbin;
+        if(toupcam.imseqno - toupcam.lastcapno > 5){
+            WARNX("5 uncaptured images -> cancel");
+            camera.cancel();
+            toupcam.imseqno = toupcam.lastcapno;
+        }
+    }
+    pthread_mutex_unlock(&toupcam.mutex);
+    //DBG("UNLOCK");
+}
+
 /**
  * @brief startexp - camera.startexposition - start exp if can
  * @return FALSE if failed
@@ -205,7 +254,16 @@ static int startexp(){
             return FALSE;
         }
     }
-    if(Toupcam_Trigger(toupcam.hcam, 1) < 0) return FALSE;
+    // Ask to trigger for several images (maximal speed available)
+    int e = Toupcam_Trigger(toupcam.hcam, 100);
+    if(e < 0){
+        DBG("Can't ask for images stream: %s; try 1", errcode(e));
+        e = Toupcam_Trigger(toupcam.hcam, 1);
+        if(e < 0){
+            WARNX("Can't ask for next image: %s", errcode(e));
+            return FALSE;
+        }
+    }
     toupcam.state = IM_STARTED;
     starttime = sl_dtime();
     return TRUE;
@@ -219,14 +277,22 @@ static int startexp(){
 static int camcapt(cc_IMG *ima){
     TCHECK();
     if(!ima || !ima->data || !toupcam.data) return FALSE;
-    uint8_t bp;
-    if(!camgetbp(&bp)) bp = 16;
-    size_t fullsz = camera.geometry.h * camera.geometry.w * (int)((bp+7)/8);
+    //DBG("LOCK");
+    pthread_mutex_lock(&toupcam.mutex);
+    size_t fullsz = ima->w * ima->h * toupcam.bytepix;
+    if(toupcam.imsz != fullsz){
+        if(toupcam.imsz < fullsz) fullsz = toupcam.imsz;
+        int realw = camera.geometry.w / toupcam.curbin;
+        if(ima->w != realw) ima->w = realw;
+        ima->h = fullsz / realw / toupcam.bytepix;
+        WARNX("Asked image size (%zd) not equal real (%zd); set w=%d, h=%d!",
+              ima->w * ima->h * toupcam.bytepix, toupcam.imsz, ima->w, ima->h);
+    }
     memcpy(ima->data, toupcam.data, fullsz);
-    ima->bitpix = bp;
-    ima->h = camera.geometry.h;
-    ima->w = camera.geometry.w;
-    ima->bytelen = fullsz;
+    ima->bitpix = toupcam.bytepix * 8;
+    toupcam.lastcapno = toupcam.imseqno;
+    pthread_mutex_unlock(&toupcam.mutex);
+    //DBG("UNLOCK");
     return TRUE;
 }
 
@@ -239,9 +305,12 @@ static int camsetbit(int b){
     TCHECK();
     DBG("set bitdepth %d", b);
     if(Toupcam_put_Option(toupcam.hcam, TOUPCAM_OPTION_BITDEPTH, b) < 0) return FALSE;
+    DBG("OK");
     int opt = (b) ? TOUPCAM_PIXELFORMAT_RAW16 : TOUPCAM_PIXELFORMAT_RAW8;
     DBG("set pixel format %d", opt);
     if(Toupcam_put_Option(toupcam.hcam, TOUPCAM_OPTION_PIXEL_FORMAT, opt) < 0) return FALSE;
+    DBG("OK");
+    toupcam.bytepix = (b) ? 2 : 1;
     return TRUE;
 }
 
@@ -275,10 +344,17 @@ static int camgetbp(uint8_t *bp){
  */
 static int camsetbrig(float b){
     TCHECK();
-    if(b < 0.f) return FALSE;
+    if(b < -255.f || b > 255.f){
+        WARNX("Available brightness: -255..255");
+        return FALSE;
+    }
     int br = (int) b;
     DBG("Try to set brightness to %d", br);
-    if(Toupcam_put_Brightness(toupcam.hcam, br)) return FALSE;
+    int e = Toupcam_put_Brightness(toupcam.hcam, br);
+    if(e < 0){
+        WARNX("Can't set brightness: %s", errcode(e));
+        return FALSE;
+    }
     DBG("OK");
     return TRUE;
 }
@@ -308,7 +384,11 @@ static int camsetexp(float t){
     if(t < FLT_EPSILON) return FALSE;
     unsigned int microseconds = (unsigned)(t * 1e6f);
     DBG("Set exptime to %dus", microseconds);
-    if(Toupcam_put_ExpoTime(toupcam.hcam, microseconds) < 0) return FALSE;
+    int e = Toupcam_put_ExpoTime(toupcam.hcam, microseconds);
+    if(e < 0){
+        WARNX("Can't set exp: %s", errcode(e));
+        return FALSE;
+    }
     DBG("OK");
     exptime = (double) t;
     return TRUE;
@@ -376,7 +456,11 @@ static int camgettc(float *t){
     if(!(toupcam.flags & TOUPCAM_FLAG_GETTEMPERATURE)) return FALSE; // cannot get T
     short T;
     DBG("Try to get T");
-    if(Toupcam_get_Temperature(toupcam.hcam, &T) < 0) return FALSE;
+    int g = Toupcam_get_Temperature(toupcam.hcam, &T);
+    if(g < 0){
+        WARNX("Can't get T: %s", errcode(g));
+        return FALSE;
+    }
     DBG("got %u", T);
     if(t) *t = ((float)T) / 10.f;
     return TRUE;
@@ -412,6 +496,14 @@ static int camsetbin(int h, int v){
     if(h != v) return FALSE;
     DBG("Try to set binning %d/%d", h,v);
     if(Toupcam_put_Option(toupcam.hcam, TOUPCAM_OPTION_BINNING, h) < 0) return FALSE;
+    if(Toupcam_get_Option(toupcam.hcam, TOUPCAM_OPTION_BINNING, &toupcam.curbin) < 0){
+        DBG("CANT get binning");
+        return FALSE;
+    }
+    if(h != toupcam.curbin){
+        DBG("Wrong binning: %d instead of %d!", toupcam.curbin, h);
+        return FALSE;
+    }
     DBG("OK");
     return TRUE;
 }
@@ -423,12 +515,11 @@ static int camsetbin(int h, int v){
  */
 static int camgetbin(int *binh, int *binv){
     TCHECK();
-    int bin;
     DBG("Get binning");
-    if(Toupcam_get_Option(toupcam.hcam, TOUPCAM_OPTION_BINNING, &bin) < 0) return FALSE;
-    DBG("Got: %d", bin);
-    if(binh) *binh = bin;
-    if(binv) *binv = bin;
+    if(Toupcam_get_Option(toupcam.hcam, TOUPCAM_OPTION_BINNING, &toupcam.curbin) < 0) return FALSE;
+    DBG("Got: %d", toupcam.curbin);
+    if(binh) *binh = toupcam.curbin;
+    if(binv) *binv = toupcam.curbin;
     return TRUE;
 }
 
@@ -437,10 +528,17 @@ static int camgetbin(int *binh, int *binv){
  * @param s - new command for shutter (open/close etc)
  * @return FALSE if failed or can't
  */
-static int camshutter(cc_shutter_op _U_ s){
+static int camshutter(cc_shutter_op s){
     TCHECK();
     if(!(toupcam.flags & TOUPCAM_FLAG_GLOBALSHUTTER)) return FALSE;
-    return FALSE;
+    if(s != SHUTTER_OPEN && s != SHUTTER_CLOSE) return FALSE;
+    int val = (s == SHUTTER_OPEN) ? 0 : 1;
+    int e = Toupcam_put_Option(toupcam.hcam, TOUPCAM_OPTION_MECHANICALSHUTTER, val);
+    if(e < 0){
+        WARNX("Can't run shutter command: %s", errcode(e));
+        return FALSE;
+    }
+    return TRUE;
 }
 
 /**
@@ -474,8 +572,11 @@ static int camgetnam(char *n, int l){
  * @param mg (o) - max gain
  * @return FALSE if can't change gain
  */
-static int camgmg(float _U_ *mg){
+static int camgmg(float *mg){
     TCHECK();
+    unsigned short gmin, gmax, gdef;
+    if(Toupcam_get_ExpoAGainRange(toupcam.hcam, &gmin, &gmax, &gdef) < 0) return FALSE;
+    if(mg) *mg = gmax;
     return FALSE;
 }
 
@@ -485,18 +586,10 @@ static int camgmg(float _U_ *mg){
  * @param step (o) - step for ROI change
  * @return
  */
-static int camggl(cc_frameformat _U_ *max, cc_frameformat _U_ *step){
+static int camggl(cc_frameformat *max, cc_frameformat _U_ *step){
     TCHECK();
-    return FALSE;
-}
-
-/**
- * @brief camgetio - camera.getio - get IO status
- * @param io (o) - GPIO status
- * @return FALSE if have no such property
- */
-static int camgetio(int _U_ *io){
-    TCHECK();
+    if(max) *max = camera.array;
+    if(step) *step = (cc_frameformat){.w = 1, .h = 1, .xoff = 1, .yoff = 1};
     return FALSE;
 }
 
@@ -509,8 +602,11 @@ static int camfan(cc_fan_speed spd){
     TCHECK();
     if(!(toupcam.flags & TOUPCAM_FLAG_FAN)) return FALSE; // don't have a fan
     DBG("Set fan to %d", spd);
-    if(Toupcam_put_Option(toupcam.hcam, TOUPCAM_OPTION_FAN, (int)spd) < 0){ DBG("Can't put this option"); }
-    return FALSE;
+    if(Toupcam_put_Option(toupcam.hcam, TOUPCAM_OPTION_FAN, (int)spd) < 0){
+        DBG("Can't put this option");
+        return FALSE;
+    }
+    return TRUE;
 }
 
 static cc_hresult setopt(const char *str, cc_charbuff *ans){
@@ -572,18 +668,18 @@ static cc_hresult plugincmd(const char _U_ *str, cc_charbuff _U_ *buf){
     return cc_plugin_customcmd(str, handlers, buf);
 }
 
-#if 0
-// stub for nonexistant properties
-static int stub(){
-    return FALSE;
-}
 
+#if 0
 // stub for void nonexistant functions
 static void vstub(){
     FNAME();
     return;
 }
 #endif
+// stub for nonexistant properties
+static int stubi(int _U_ *N){
+    return FALSE;
+}
 // stub for nonexistant integer setters
 static int istub(int _U_ N){
     return FALSE;
@@ -628,7 +724,7 @@ __attribute__ ((visibility("default"))) cc_Camera camera = {
     .getThot = camgetth,
     .getTbody = gettb,
     .getbin = camgetbin,
-    .getio = camgetio,
+    .getio = stubi,
     // these parameters could be filled after initialization
     .pixX = 10.,
     .pixY = 10.,

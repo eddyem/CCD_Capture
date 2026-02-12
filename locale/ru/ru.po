@@ -7,7 +7,7 @@
 msgid   ""
 msgstr  "Project-Id-Version: PACKAGE VERSION\n"
         "Report-Msgid-Bugs-To: \n"
-        "POT-Creation-Date: 2026-02-11 17:12+0300\n"
+        "POT-Creation-Date: 2026-02-12 17:25+0300\n"
         "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
         "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
         "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -21,7 +21,7 @@ msgstr  "Project-Id-Version: PACKAGE VERSION\n"
 msgid   "%.1f seconds till exposition ends"
 msgstr  "%.1f секунд до окончания экспозиции"
 
-#: ccdfunc.c:770 client.c:289
+#: ccdfunc.c:771 client.c:289
 #, c-format
 msgid   "%d seconds till pause ends\n"
 msgstr  "%d секунд до окончания паузы\n"
@@ -70,12 +70,12 @@ msgstr  "У плагина камеры нет особых команд"
 msgid   "Camera plugin have no fun speed setter"
 msgstr  "У плагина камеры нет особых команд"
 
-#: ccdfunc.c:754 ccdfunc.c:834 server.c:173 server.c:174
+#: ccdfunc.c:755 ccdfunc.c:835 server.c:177 server.c:178
 #, fuzzy
 msgid   "Camera plugin have no function `capture`"
 msgstr  "У плагина камеры нет особых команд"
 
-#: ccdfunc.c:742 ccdfunc.c:819 server.c:149 server.c:150
+#: ccdfunc.c:743 ccdfunc.c:820 server.c:153 server.c:154
 #, fuzzy
 msgid   "Camera plugin have no function `start exposition`"
 msgstr  "У плагина камеры нет особых команд"
@@ -90,7 +90,7 @@ msgstr  "У плагина камеры нет особых команд"
 msgid   "Camera plugin have no temperature setter"
 msgstr  "У плагина камеры нет особых команд"
 
-#: ccdfunc.c:749
+#: ccdfunc.c:750
 msgid   "Can't capture image"
 msgstr  "Не могу захватить изображение"
 
@@ -122,7 +122,7 @@ msgstr  "Не могу определить предельную позицию фокусера"
 msgid   "Can't get max wheel position"
 msgstr  "Не могу определить предельную позицию колеса"
 
-#: ccdfunc.c:756 ccdfunc.c:835
+#: ccdfunc.c:757 ccdfunc.c:836
 msgid   "Can't grab image"
 msgstr  "Не могу захватить изображение"
 
@@ -178,7 +178,7 @@ msgstr  "Не могу установить номер активного фокусера"
 msgid   "Can't set active wheel number"
 msgstr  "Не могу установить номер активного колеса"
 
-#: ccdfunc.c:683 server.c:280
+#: ccdfunc.c:683 server.c:284
 #, c-format
 msgid   "Can't set binning %dx%d"
 msgstr  "Не могу установить биннинг %dx%d"
@@ -206,7 +206,7 @@ msgstr  "Не могу установить скорость вентиляторов"
 msgid   "Can't set gain to %g"
 msgstr  "Не могу установить Gain в %g"
 
-#: ccdfunc.c:695 server.c:281
+#: ccdfunc.c:695 server.c:285
 msgid   "Can't set given geometry"
 msgstr  "Не могу установить геометрию"
 
@@ -229,11 +229,11 @@ msgstr  "Не могу установить скорость считывания"
 msgid   "Can't set wheel position %d"
 msgstr  "Не могу установить положение колеса %d"
 
-#: ccdfunc.c:744 ccdfunc.c:821 server.c:155 server.c:156
+#: ccdfunc.c:745 ccdfunc.c:822 server.c:159 server.c:160
 msgid   "Can't start exposition"
 msgstr  "Не могу начать экспозицию"
 
-#: ccdfunc.c:741
+#: ccdfunc.c:742
 #, c-format
 msgid   "Capture frame %d"
 msgstr  "Захват кадра %d"
@@ -308,7 +308,7 @@ msgstr  "Статистика по изображению: \n"
 msgid   "N flushes before exposing (default: 1)"
 msgstr  "N засвечиваний перед экспозицией (по умолчанию: 1)"
 
-#: server.c:201
+#: server.c:205
 msgid   "No camera device"
 msgstr  "Не указано устройство камеры"
 
@@ -333,7 +333,7 @@ msgstr  "Только отобразить статистику"
 msgid   "Pixel size: %g x %g"
 msgstr  "Размер пикселя: %g x %g"
 
-#: ccdfunc.c:752
+#: ccdfunc.c:753
 msgid   "Read grabbed image"
 msgstr  "Считывание изображения"
 
@@ -366,7 +366,7 @@ msgstr  "Установить Gain в %g"
 msgid   "Shutter command: %s\n"
 msgstr  "Команда затвора: %s\n"
 
-#: ccdfunc.c:832
+#: ccdfunc.c:833
 msgid   "Some error when capture"
 msgstr  "Ошибка при захвате"
 

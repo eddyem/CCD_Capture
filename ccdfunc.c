@@ -680,7 +680,7 @@ int prepare_ccds(){
     if(GP->hbin < 1) GP->hbin = 1;
     if(GP->vbin < 1) GP->vbin = 1;
     if(!camera->setbin || !camera->setbin(GP->hbin, GP->vbin)){
-        ERRX(_("Can't set binning %dx%d"), GP->hbin, GP->vbin);
+        WARNX(_("Can't set binning %dx%d"), GP->hbin, GP->vbin);
         if(camera->getbin) camera->getbin(&GP->hbin, &GP->vbin);
     }
     if(GP->X0 < 0) GP->X0 = x0; // default values
@@ -734,6 +734,7 @@ DBG("w=%d, h=%d", raw_width, raw_height);
     uint16_t *img = MALLOC(uint16_t, raw_width * raw_height);
     DBG("\n\nAllocated image 2x%dx%d=%d", raw_width, raw_height, 2 * raw_width * raw_height);
     cc_IMG ima = {.data = img, .w = raw_width, .h = raw_height};
+    if(!camera->getbitpix || !camera->getbitpix(&ima.bitpix)) ima.bitpix = 16;
     if(GP->nframes < 1) GP->nframes = 1;
     for(int j = 0; j < GP->nframes; ++j){
         TIMEINIT();

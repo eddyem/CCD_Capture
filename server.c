@@ -63,7 +63,8 @@ strpair allcommands[] = {
     { CC_CMD_CAMFANSPD,    "fan speed of camera" },
     { CC_CMD_CONFIO,       "camera IO configuration" },
     { CC_CMD_DARK,         "don't open shutter @ exposure" },
-    { CC_CMD_EXPSTATE,     "get exposition state" },
+    { CC_CMD_EXPSTATE,     "get exposition state (0: cancel, 1: capturing, 2: frame ready, 3: error) "
+                      "or set (0: cancel, 1: start exp)\n    also get camflags (bits: 0-start capture, 1-cancel, 2-restart server" },
     { CC_CMD_EXPOSITION,   "exposition time" },
     { CC_CMD_FASTSPD,      "fast readout speed" },
     { CC_CMD_FILENAME,     "save file with this name, like file.fits" },
@@ -134,6 +135,9 @@ static void fixima(){
     ima->w = raw_width;
     if(!camera->getbitpix || !camera->getbitpix(&ima->bitpix)) ima->bitpix = 16;
     if(ima->bitpix < 8 || ima->bitpix > 16) ima->bitpix = 16; // use maximum in any strange cases
+    DBG("bitpix=%d", ima->bitpix);
+    GP->_8bit = (ima->bitpix < 9) ? 1 : 0;
+    DBG("GP->_8bit=%d", GP->_8bit);
     ima->bytelen = raw_height * raw_width * cc_getNbytes(ima);
     DBG("new image: %dx%d", raw_width, raw_height);
 }
@@ -641,6 +645,11 @@ static cc_hresult expstatehandler(_U_ int fd, _U_ const char *key, _U_ const cha
             return CC_RESULT_OK;
         }
         else if(n == CAMERA_CAPTURE){ // start exposition
+            if(GP->exptime < 1e-9){
+                snprintf(buf, 63, CC_CMD_EXPOSITION "=%g", GP->exptime);
+                cc_sendstrmessage(fd, buf);
+                return CC_RESULT_FAIL;
+            }
             TIMESTAMP("Get FLAG_STARTCAPTURE");
             TIMEINIT();
             camflags |= FLAG_STARTCAPTURE;
@@ -987,6 +996,7 @@ static cc_hresult inftyhandler(int fd, _U_ const char *key, const char *val){
     if(val){
         int i = atoi(val);
         infty = (i) ? 1 : 0;
+        if(!infty) camflags |= FLAG_CANCEL;
     }
     snprintf(buf, 63, CC_CMD_INFTY "=%d", infty);
     if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;

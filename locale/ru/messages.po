@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-02-11 17:12+0300\n"
+"POT-Creation-Date: 2026-02-12 17:40+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -495,12 +495,12 @@ msgstr ""
 msgid "Can't set brightness to %g"
 msgstr ""
 
-#: ccdfunc.c:683 server.c:280
+#: ccdfunc.c:683 server.c:284
 #, c-format
 msgid "Can't set binning %dx%d"
 msgstr ""
 
-#: ccdfunc.c:695 server.c:281
+#: ccdfunc.c:695 server.c:285
 msgid "Can't set given geometry"
 msgstr ""
 
@@ -543,45 +543,45 @@ msgstr ""
 msgid "Can't get current binning"
 msgstr ""
 
-#: ccdfunc.c:741
+#: ccdfunc.c:742
 #, c-format
 msgid "Capture frame %d"
 msgstr ""
 
-#: ccdfunc.c:742 ccdfunc.c:819 server.c:149 server.c:150
+#: ccdfunc.c:743 ccdfunc.c:820 server.c:153 server.c:154
 msgid "Camera plugin have no function `start exposition`"
 msgstr ""
 
-#: ccdfunc.c:744 ccdfunc.c:821 server.c:155 server.c:156
+#: ccdfunc.c:745 ccdfunc.c:822 server.c:159 server.c:160
 msgid "Can't start exposition"
 msgstr ""
 
-#: ccdfunc.c:749
+#: ccdfunc.c:750
 msgid "Can't capture image"
 msgstr ""
 
-#: ccdfunc.c:752
+#: ccdfunc.c:753
 msgid "Read grabbed image"
 msgstr ""
 
-#: ccdfunc.c:754 ccdfunc.c:834 server.c:173 server.c:174
+#: ccdfunc.c:755 ccdfunc.c:835 server.c:177 server.c:178
 msgid "Camera plugin have no function `capture`"
 msgstr ""
 
-#: ccdfunc.c:756 ccdfunc.c:835
+#: ccdfunc.c:757 ccdfunc.c:836
 msgid "Can't grab image"
 msgstr ""
 
-#: ccdfunc.c:770 client.c:289
+#: ccdfunc.c:771 client.c:289
 #, c-format
 msgid "%d seconds till pause ends\n"
 msgstr ""
 
-#: ccdfunc.c:832
+#: ccdfunc.c:833
 msgid "Some error when capture"
 msgstr ""
 
-#: server.c:201
+#: server.c:205
 msgid "No camera device"
 msgstr ""
 

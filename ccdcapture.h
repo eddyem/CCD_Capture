@@ -145,7 +145,7 @@ typedef struct{
     float pixX, pixY;           // pixel size in um
     cc_frameformat field;       // max field of view (full CCD field without overscans)
     cc_frameformat array;       // array format (with overscans)
-    cc_frameformat geometry;    // current geometry settings (as in setgeometry)
+    cc_frameformat geometry;    // current geometry settings (as in setgeometry) WITHOUT BINNING!!!
 } cc_Camera;
 
 // focuser
