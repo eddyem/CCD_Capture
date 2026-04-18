@@ -377,11 +377,11 @@ void focusers(){
     if(num < 0) num = 0;
     if(num > focuser->Ndevices - 1){
         WARNX(_("Found %d focusers, you point number %d"), focuser->Ndevices, num);
-        goto retn;
+        return;
     }
     if(!focuser->setDevNo(num)){
         WARNX(_("Can't set active focuser number"));
-        goto retn;
+        return;
     }
     char buf[BUFSIZ];
     if(focuser->getModelName(buf, BUFSIZ)){
@@ -395,18 +395,18 @@ void focusers(){
     float minpos, maxpos, curpos;
     if(!focuser->getMinPos(&minpos) || !focuser->getMaxPos(&maxpos)){
         WARNX(_("Can't get focuser limit positions"));
-        goto retn;
+        return;
     }
     verbose(1, "FOCMINPOS=%g", minpos);
     verbose(1, "FOCMAXPOS=%g", maxpos);
     DBG("FOCMINPOS=%g, FOCMAXPOS=%g", minpos, maxpos);
     if(!focuser->getPos(&curpos)){
         WARNX(_("Can't get current focuser position"));
-        goto retn;
+        return;
     }
     verbose(1, "FOCPOS=%g", curpos);
     DBG("Curpos = %g", curpos);
-    if(isnan(GP->gotopos) && isnan(GP->addsteps)) goto retn; // no focuser commands
+    if(isnan(GP->gotopos) && isnan(GP->addsteps)) return; // no focuser commands
     float tagpos = 0.;
     if(!isnan(GP->gotopos)){ // set absolute position
         tagpos = GP->gotopos;
@@ -416,15 +416,13 @@ void focusers(){
     DBG("tagpos: %g", tagpos);
     if(tagpos < minpos || tagpos > maxpos){
         WARNX(_("Can't set position %g: out of limits [%g, %g]"), tagpos, minpos, maxpos);
-        goto retn;
+        return;
     }
     if(tagpos - minpos < __FLT_EPSILON__){
         if(!focuser->home(GP->async)) WARNX(_("Can't home focuser"));
     }else{
         if(!focuser->setAbsPos(GP->async, tagpos)) WARNX(_("Can't set position %g"), tagpos);
     }
-retn:
-    focclose();
 }
 
 cc_Wheel *startWheel(){
@@ -467,11 +465,11 @@ void wheels(){
     if(num < 0) num = 0;
     if(num > wheel->Ndevices - 1){
         WARNX(_("Found %d wheels, you point number %d"), wheel->Ndevices, num);
-        goto retn;
+        return;
     }
     if(!wheel->setDevNo(num)){
         WARNX(_("Can't set active wheel number"));
-        goto retn;
+        return;
     }
     char buf[BUFSIZ];
     if(wheel->getModelName(buf, BUFSIZ)){
@@ -487,19 +485,17 @@ void wheels(){
     }else WARNX("Can't get current wheel position");
     if(!wheel->getMaxPos(&maxpos)){
         WARNX(_("Can't get max wheel position"));
-        goto retn;
+        return;
     }
     verbose(1, "WHEELMAXPOS=%d", maxpos);
     pos = GP->setwheel;
-    if(pos == -1) goto retn; // no wheel commands
+    if(pos == -1) return; // no wheel commands
     if(pos < 0 || pos > maxpos){
         WARNX(_("Wheel position should be from 0 to %d"), maxpos);
-        goto retn;
+        return;
     }
     if(!wheel->setPos(pos))
         WARNX(_("Can't set wheel position %d"), pos);
-retn:
-    closewheel();
 }
 /*
 static void closeall(){

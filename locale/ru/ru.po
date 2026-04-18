@@ -7,7 +7,7 @@
 msgid   ""
 msgstr  "Project-Id-Version: PACKAGE VERSION\n"
         "Report-Msgid-Bugs-To: \n"
-        "POT-Creation-Date: 2026-02-12 17:25+0300\n"
+        "POT-Creation-Date: 2026-04-18 15:55+0300\n"
         "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
         "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
         "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -16,19 +16,15 @@ msgstr  "Project-Id-Version: PACKAGE VERSION\n"
         "Content-Type: text/plain; charset=koi8-r\n"
         "Content-Transfer-Encoding: 8bit\n"
 
-#: ccdfunc.c:521
+#: ccdfunc.c:517
 #, c-format
 msgid   "%.1f seconds till exposition ends"
 msgstr  "%.1f секунд до окончания экспозиции"
 
-#: ccdfunc.c:771 client.c:289
+#: ccdfunc.c:767 client.c:289
 #, c-format
 msgid   "%d seconds till pause ends\n"
 msgstr  "%d секунд до окончания паузы\n"
-
-#: imageview.c:51
-msgid   "Already initialized!"
-msgstr  "Уже инициализировано!"
 
 #: cmdlnopts.c:104
 msgid   "CMOS brightness level"
@@ -38,7 +34,7 @@ msgstr  "уровень яркости CMOS"
 msgid   "CMOS gain level"
 msgstr  "уровень Gain CMOS"
 
-#: ccdfunc.c:536
+#: ccdfunc.c:532
 msgid   "Camera device not pointed"
 msgstr  "Устройство свеоприемника не подключено"
 
@@ -46,67 +42,67 @@ msgstr  "Устройство свеоприемника не подключено"
 msgid   "Camera device unknown"
 msgstr  "Устройство свеоприемника не опознано"
 
-#: ccdfunc.c:619
+#: ccdfunc.c:615
 #, c-format
 msgid   "Camera model: %s"
 msgstr  "Модель светоприемника: %s"
 
-#: ccdfunc.c:515
+#: ccdfunc.c:511
 #, fuzzy
 msgid   "Camera plugin have no capture polling funtion."
 msgstr  "У плагина камеры нет особых команд"
 
-#: ccdfunc.c:585
+#: ccdfunc.c:581
 msgid   "Camera plugin have no custom commands"
 msgstr  "У плагина камеры нет особых команд"
 
-#: ccdfunc.c:702
+#: ccdfunc.c:698
 #, fuzzy
 msgid   "Camera plugin have no exposition setter"
 msgstr  "У плагина камеры нет особых команд"
 
-#: ccdfunc.c:610
+#: ccdfunc.c:606
 #, fuzzy
 msgid   "Camera plugin have no fun speed setter"
 msgstr  "У плагина камеры нет особых команд"
 
-#: ccdfunc.c:755 ccdfunc.c:835 server.c:177 server.c:178
+#: ccdfunc.c:751 ccdfunc.c:831 server.c:177 server.c:178
 #, fuzzy
 msgid   "Camera plugin have no function `capture`"
 msgstr  "У плагина камеры нет особых команд"
 
-#: ccdfunc.c:743 ccdfunc.c:820 server.c:153 server.c:154
+#: ccdfunc.c:739 ccdfunc.c:816 server.c:153 server.c:154
 #, fuzzy
 msgid   "Camera plugin have no function `start exposition`"
 msgstr  "У плагина камеры нет особых команд"
 
-#: ccdfunc.c:564
+#: ccdfunc.c:560
 #, fuzzy
 msgid   "Camera plugin have no model name getter"
 msgstr  "У плагина камеры нет особых команд"
 
-#: ccdfunc.c:634
+#: ccdfunc.c:630
 #, fuzzy
 msgid   "Camera plugin have no temperature setter"
 msgstr  "У плагина камеры нет особых команд"
 
-#: ccdfunc.c:750
+#: ccdfunc.c:746
 msgid   "Can't capture image"
 msgstr  "Не могу захватить изображение"
 
-#: ccdfunc.c:707
+#: ccdfunc.c:703
 msgid   "Can't change frame type"
 msgstr  "Не могу изменить тип кадра"
 
-#: ccdfunc.c:651
+#: ccdfunc.c:647
 msgid   "Can't configure (unsupported?)"
 msgstr  "Не могу сконфигурировать (опция не поддерживается?)"
 
-#: ccdfunc.c:658
+#: ccdfunc.c:654
 msgid   "Can't get IOport state (unsupported?)"
 msgstr  "Не могу получить состояние порта I/O (не поддерживается?)"
 
-#: ccdfunc.c:717
+#: ccdfunc.c:713
 msgid   "Can't get current binning"
 msgstr  "Не могу получить текущее значение биннинга"
 
@@ -118,11 +114,11 @@ msgstr  "Не могу определить текущую позицию фокусера"
 msgid   "Can't get focuser limit positions"
 msgstr  "Не могу определить предельную позицию фокусера"
 
-#: ccdfunc.c:489
+#: ccdfunc.c:487
 msgid   "Can't get max wheel position"
 msgstr  "Не могу определить предельную позицию колеса"
 
-#: ccdfunc.c:757 ccdfunc.c:836
+#: ccdfunc.c:753 ccdfunc.c:832
 msgid   "Can't grab image"
 msgstr  "Не могу захватить изображение"
 
@@ -130,19 +126,11 @@ msgstr  "Не могу захватить изображение"
 msgid   "Can't home focuser"
 msgstr  "Не могу установить фокусер в нуль"
 
-#: imageview.c:312
-msgid   "Can't init mutex!"
-msgstr  "Не могу инициализировать мьютекс!"
-
 #: client.c:275
 msgid   "Can't make exposition"
 msgstr  "Не могу выполнить экспозицию"
 
-#: imageview.c:704
-msgid   "Can't open OpenGL window, image preview will be inaccessible"
-msgstr  "Не могу открыть окно OpenGL, отображение будет недоступно"
-
-#: ccdfunc.c:646
+#: ccdfunc.c:642
 #, c-format
 msgid   "Can't run shutter command %s (unsupported?)"
 msgstr  "Не могу выполнить команду затвора %s (не поддерживается?)"
@@ -152,21 +140,21 @@ msgstr  "Не могу выполнить команду затвора %s (не поддерживается?)"
 msgid   "Can't save file with prefix %s"
 msgstr  "Не могу сохранить файл с префиксом %s"
 
-#: ccdfunc.c:699
+#: ccdfunc.c:695
 #, c-format
 msgid   "Can't set %d flushes"
 msgstr  "Не могу установить %d сбросов"
 
-#: ccdfunc.c:663
+#: ccdfunc.c:659
 msgid   "Can't set IOport"
 msgstr  "Не могу поменять значения порта I/O"
 
-#: ccdfunc.c:635
+#: ccdfunc.c:631
 #, c-format
 msgid   "Can't set T to %g degC"
 msgstr  "Не могу установить температуру в %g градЦ"
 
-#: ccdfunc.c:579
+#: ccdfunc.c:575
 msgid   "Can't set active camera number"
 msgstr  "Не могу установить номер активной камеры"
 
@@ -174,39 +162,39 @@ msgstr  "Не могу установить номер активной камеры"
 msgid   "Can't set active focuser number"
 msgstr  "Не могу установить номер активного фокусера"
 
-#: ccdfunc.c:473
+#: ccdfunc.c:471
 msgid   "Can't set active wheel number"
 msgstr  "Не могу установить номер активного колеса"
 
-#: ccdfunc.c:683 server.c:284
+#: ccdfunc.c:679 server.c:284
 #, c-format
 msgid   "Can't set binning %dx%d"
 msgstr  "Не могу установить биннинг %dx%d"
 
-#: ccdfunc.c:710
+#: ccdfunc.c:706
 msgid   "Can't set bit depth"
 msgstr  "Не могу установить разрядность АЦП"
 
-#: ccdfunc.c:677
+#: ccdfunc.c:673
 #, c-format
 msgid   "Can't set brightness to %g"
 msgstr  "Не могу установить яркость в %g"
 
-#: ccdfunc.c:704
+#: ccdfunc.c:700
 #, c-format
 msgid   "Can't set exposure time to %f seconds"
 msgstr  "Не могу установить экспозицию в %f секунд"
 
-#: ccdfunc.c:613
+#: ccdfunc.c:609
 msgid   "Can't set fan speed"
 msgstr  "Не могу установить скорость вентиляторов"
 
-#: ccdfunc.c:671
+#: ccdfunc.c:667
 #, c-format
 msgid   "Can't set gain to %g"
 msgstr  "Не могу установить Gain в %g"
 
-#: ccdfunc.c:695 server.c:285
+#: ccdfunc.c:691 server.c:285
 msgid   "Can't set given geometry"
 msgstr  "Не могу установить геометрию"
 
@@ -220,25 +208,25 @@ msgstr  "Не могу изменить позицию на %g"
 msgid   "Can't set position %g: out of limits [%g, %g]"
 msgstr  "Не могу установить позицию %g: вне пределов [%g, %g]"
 
-#: ccdfunc.c:712
+#: ccdfunc.c:708
 msgid   "Can't set readout speed"
 msgstr  "Не могу установить скорость считывания"
 
-#: ccdfunc.c:500
+#: ccdfunc.c:498
 #, c-format
 msgid   "Can't set wheel position %d"
 msgstr  "Не могу установить положение колеса %d"
 
-#: ccdfunc.c:745 ccdfunc.c:822 server.c:159 server.c:160
+#: ccdfunc.c:741 ccdfunc.c:818 server.c:159 server.c:160
 msgid   "Can't start exposition"
 msgstr  "Не могу начать экспозицию"
 
-#: ccdfunc.c:742
+#: ccdfunc.c:738
 #, c-format
 msgid   "Capture frame %d"
 msgstr  "Захват кадра %d"
 
-#: ccdfunc.c:632
+#: ccdfunc.c:628
 #, c-format
 msgid   "Current format: %s"
 msgstr  "Текущий формат: %s"
@@ -247,16 +235,11 @@ msgstr  "Текущий формат: %s"
 msgid   "Display image in OpenGL window"
 msgstr  "отображение изображения в окне OpenGL"
 
-#: imageview.c:746
-#, c-format
-msgid   "Equalization of histogram: %s"
-msgstr  "Эквализация гистограммы: %s"
-
 #: ccdfunc.c:278
 msgid   "Error saving file"
 msgstr  "Ошибка сохранения файла"
 
-#: ccdfunc.c:629
+#: ccdfunc.c:625
 #, c-format
 msgid   "Field of view: %s"
 msgstr  "Поле зрения: %s"
@@ -270,7 +253,7 @@ msgstr  "Файл сохранен как '%s'"
 msgid   "Focuser device not pointed"
 msgstr  "Устройство фокусера не указано"
 
-#: ccdfunc.c:575
+#: ccdfunc.c:571
 #, c-format
 msgid   "Found %d cameras, you point number %d"
 msgstr  "Обнаружено %d камер, вы указали %d"
@@ -280,20 +263,15 @@ msgstr  "Обнаружено %d камер, вы указали %d"
 msgid   "Found %d focusers, you point number %d"
 msgstr  "Обнаружено %d фокусеров, вы указали %d"
 
-#: ccdfunc.c:469
+#: ccdfunc.c:467
 #, c-format
 msgid   "Found %d wheels, you point number %d"
 msgstr  "Обнаружено %d колес, вы указали %d"
 
-#: ccdfunc.c:626
+#: ccdfunc.c:622
 #, c-format
 msgid   "Full array: %s"
 msgstr  "Полный формат: %s"
-
-#: imageview.c:425
-#, c-format
-msgid   "Histogram conversion: %s"
-msgstr  "Преобразование гистограммы: %s"
 
 #: cmdlnopts.c:109
 msgid   "INET image socket port"
@@ -312,7 +290,7 @@ msgstr  "N засвечиваний перед экспозицией (по умолчанию: 1)"
 msgid   "No camera device"
 msgstr  "Не указано устройство камеры"
 
-#: ccdfunc.c:543 ccdfunc.c:544
+#: ccdfunc.c:539 ccdfunc.c:540
 msgid   "No cameras found"
 msgstr  "Камер не обнаружено"
 
@@ -320,24 +298,24 @@ msgstr  "Камер не обнаружено"
 msgid   "No focusers found"
 msgstr  "Фокусеров не обнаружено"
 
-#: ccdfunc.c:439
+#: ccdfunc.c:437
 msgid   "No wheels found"
 msgstr  "Турелей не обнаружено"
 
-#: ccdfunc.c:714
+#: ccdfunc.c:710
 msgid   "Only show statistics"
 msgstr  "Только отобразить статистику"
 
-#: ccdfunc.c:620
+#: ccdfunc.c:616
 #, c-format
 msgid   "Pixel size: %g x %g"
 msgstr  "Размер пикселя: %g x %g"
 
-#: ccdfunc.c:753
+#: ccdfunc.c:749
 msgid   "Read grabbed image"
 msgstr  "Считывание изображения"
 
-#: ccdfunc.c:713
+#: ccdfunc.c:709
 #, c-format
 msgid   "Readout mode: %s"
 msgstr  "Режим считывания: %s"
@@ -346,36 +324,36 @@ msgstr  "Режим считывания: %s"
 msgid   "Server timeout"
 msgstr  "Таймаут сервера"
 
-#: ccdfunc.c:676
+#: ccdfunc.c:672
 #, c-format
 msgid   "Set brightness to %g"
 msgstr  "Установить яркость в %g"
 
-#: ccdfunc.c:614
+#: ccdfunc.c:610
 #, c-format
 msgid   "Set fan speed to %d"
 msgstr  "Не могу установить скорость вентиляторов в %d"
 
-#: ccdfunc.c:670
+#: ccdfunc.c:666
 #, c-format
 msgid   "Set gain to %g"
 msgstr  "Установить Gain в %g"
 
-#: ccdfunc.c:644
+#: ccdfunc.c:640
 #, c-format
 msgid   "Shutter command: %s\n"
 msgstr  "Команда затвора: %s\n"
 
-#: ccdfunc.c:833
+#: ccdfunc.c:829
 msgid   "Some error when capture"
 msgstr  "Ошибка при захвате"
 
-#: ccdfunc.c:649
+#: ccdfunc.c:645
 #, c-format
 msgid   "Try to configure I/O port as %d"
 msgstr  "Попытка сконфигурировать порт I/O как %d"
 
-#: ccdfunc.c:661
+#: ccdfunc.c:657
 #, c-format
 msgid   "Try to write %d to I/O port"
 msgstr  "Попытка записи %d в порт I/O"
@@ -384,11 +362,11 @@ msgstr  "Попытка записи %d в порт I/O"
 msgid   "UNIX socket name (command socket)"
 msgstr  "имя UNIX-сокета"
 
-#: ccdfunc.c:432
+#: ccdfunc.c:430
 msgid   "Wheel device not pointed"
 msgstr  "Устройство турели не указано"
 
-#: ccdfunc.c:496
+#: ccdfunc.c:494
 #, c-format
 msgid   "Wheel position should be from 0 to %d"
 msgstr  "Позиция колеса должна быть от 0 до %d"
@@ -535,14 +513,6 @@ msgstr  "имена наблюдателей"
 msgid   "observing program name"
 msgstr  "название программы"
 
-#: imageview.c:746
-msgid   "off"
-msgstr  "выкл"
-
-#: imageview.c:746
-msgid   "on"
-msgstr  "вкл"
-
 #: cmdlnopts.c:88
 msgid   "open shutter"
 msgstr  "открыть затвор"
@@ -630,3 +600,26 @@ msgstr  "ждать, пока не кончится экспозиция"
 #: cmdlnopts.c:52
 msgid   "wheel device plugin (e.g. devdummy.so)"
 msgstr  "плагин устройства турели (например, devdummy.so)"
+
+#~ msgid        "Already initialized!"
+#~ msgstr       "Уже инициализировано!"
+
+#~ msgid        "Can't init mutex!"
+#~ msgstr       "Не могу инициализировать мьютекс!"
+
+#~ msgid        "Can't open OpenGL window, image preview will be inaccessible"
+#~ msgstr       "Не могу открыть окно OpenGL, отображение будет недоступно"
+
+#, c-format
+#~ msgid        "Equalization of histogram: %s"
+#~ msgstr       "Эквализация гистограммы: %s"
+
+#, c-format
+#~ msgid        "Histogram conversion: %s"
+#~ msgstr       "Преобразование гистограммы: %s"
+
+#~ msgid        "off"
+#~ msgstr       "выкл"
+
+#~ msgid        "on"
+#~ msgstr       "вкл"
