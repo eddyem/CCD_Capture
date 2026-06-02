@@ -38,14 +38,13 @@ static _Atomic cc_camera_state camstate = CAMERA_IDLE;
 #define FLAG_CANCEL             (1<<1)
 #define FLAG_RESTARTSERVER      (1<<2)
 static atomic_int camflags = 0, camfanspd = 0, confio = 0, nflushes, infty = 0;
-static char *outfile = NULL, *lastfile = NULL; // current output file name/prefix; last name of saved file
 static cc_frameformat frmformatmax = {0}, curformat = {0}; // maximal format
 
 static float focmaxpos = 0., focminpos = 0.; // focuser extremal positions
 static int wmaxpos = 0.; // wheel max pos
 static float tremain = 0.; // time when capture done
 
-// IPC key for shared memory
+// IPC key for shared memory (for client's getter)
 static key_t shmkey = IPC_PRIVATE;
 
 typedef struct{
@@ -67,8 +66,6 @@ strpair allcommands[] = {
                       "or set (0: cancel, 1: start exp)\n    also get camflags (bits: 0-start capture, 1-cancel, 2-restart server" },
     { CC_CMD_EXPOSITION,   "exposition time" },
     { CC_CMD_FASTSPD,      "fast readout speed" },
-    { CC_CMD_FILENAME,     "save file with this name, like file.fits" },
-    { CC_CMD_FILENAMEPREFIX,"prefix of files, like ex (will be saved as exXXXX.fits)" },
     { CC_CMD_FDEVNO,       "focuser device number" },
     { CC_CMD_FOCLIST,      "list all connected focusers" },
     { CC_CMD_FGOTO,        "focuser position" },
@@ -76,7 +73,6 @@ strpair allcommands[] = {
     { CC_CMD_GAIN,         "camera gain" },
     { CC_CMD_GETHEADERS,   "get last file FITS headers" },
     { CC_CMD_HBIN,         "horizontal binning" },
-    { CC_CMD_HEADERFILES,  "add FITS records from these files (comma-separated list)" },
     { CC_CMD_HELP,         "show this help" },
     { CC_CMD_IMHEIGHT,     "last image height" },
     { CC_CMD_IMWIDTH,      "last image width" },
@@ -84,7 +80,6 @@ strpair allcommands[] = {
     { CC_CMD_INFTY,        "an infinity loop taking images until there's connected clients" },
     { CC_CMD_INSTRUMENT,   "FITS 'INSTRUME' field" },
     { CC_CMD_IO,           "get/set camera IO" },
-    { CC_CMD_LASTFNAME,    "path to last saved file"},
     { CC_CMD_FRAMEMAX,     "camera maximal available format" },
     { CC_CMD_NFLUSHES,     "camera number of preflushes" },
     { CC_CMD_OBJECT,       "FITS 'OBJECT' field" },
@@ -93,7 +88,6 @@ strpair allcommands[] = {
     { CC_CMD_PLUGINCMD,    "custom camera plugin command" },
     { CC_CMD_PROGRAM,      "FITS 'PROG-ID' field" },
     { CC_CMD_RESTART,      "restart server" },
-    { CC_CMD_REWRITE,      "rewrite file (if give `filename`, not `filenameprefix`)" },
     { CC_CMD_SHMEMKEY,     "get shared memory key" },
     { CC_CMD_SHUTTER,      "camera shutter's operations" },
     { CC_CMD_CAMTEMPER,    "camera chip temperature" },
@@ -116,18 +110,71 @@ static int lock(){
     return TRUE;
 }
 static void unlock(){
-    if(pthread_mutex_unlock(&locmutex)) ERR("Can't unlock mutex");
+    if(pthread_mutex_unlock(&locmutex)){
+        LOGERR("Can't unlock socket mutex");
+        ERR("Can't unlock socket mutex");
+    }
 }
 
 static cc_IMG *ima = NULL;
 
+// client-side SHM lock
+int client_lock_shm(cc_IMG *img){
+    if(!img) return FALSE;
+    if(pthread_mutex_trylock(&img->mutex))
+        return FALSE;
+    return TRUE;
+}
+
+// server-side SHM lock (first - try gracefully, next - force)
+static void server_lock_shm(cc_IMG *img){
+    if(!img) return;
+    double t0 = sl_dtime();
+    int locked = FALSE;
+    // lock socket operations
+    while(sl_dtime() - t0 < MUTEX_LOCK_TMOUT){
+        int l = pthread_mutex_trylock(&img->mutex);
+        if(0 == l){
+            locked = TRUE;
+            break;
+        }
+        if(l == EOWNERDEAD){ // locked while locking thread is dead
+            pthread_mutex_consistent(&img->mutex);
+        }
+    }
+    if(!locked) while(!client_lock_shm(img)) unlock_shm(img);
+}
+
+void unlock_shm(cc_IMG *img){
+    if(!img) return;
+    if(pthread_mutex_unlock(&img->mutex)){
+        LOGERR("Can't unlock image mutex");
+        ERR("Can't unlock image mutex");
+    }
+}
+
 static void fixima(){
     FNAME();
     if(!camera) return;
+    double t0 = sl_dtime();
+    int locked = FALSE;
+    // lock socket operations
+    while(!(locked = lock()) && sl_dtime() - t0 < 0.5);
+    if(!locked) while(!lock()) unlock(); // force unlocking if can't do this gracefully
     int raw_width = curformat.w / GP->hbin,  raw_height = curformat.h / GP->vbin;
     // allocate memory for largest possible image
-    if(!ima) ima = cc_getshm(GP->shmkey, camera->array.h * camera->array.w * 2);
+    if(!ima){
+        ima = cc_getshm(GP->shmkey, camera->array.h * camera->array.w * 2);
+        // init shared robust mutex
+        pthread_mutexattr_t att;
+        pthread_mutexattr_init(&att);
+        pthread_mutexattr_setrobust(&att, PTHREAD_MUTEX_ROBUST);
+        pthread_mutexattr_setpshared(&att, PTHREAD_PROCESS_SHARED);
+        pthread_mutex_init(&ima->mutex, &att);
+    }
     if(!ima) ERRX("Can't allocate memory for image");
+    locked = FALSE;
+    server_lock_shm(ima);
     shmkey = GP->shmkey;
     //if(raw_width == ima->w && raw_height == ima->h) return; // all OK
     DBG("curformat: %dx%d", curformat.w, curformat.h);
@@ -140,6 +187,8 @@ static void fixima(){
     DBG("GP->_8bit=%d", GP->_8bit);
     ima->bytelen = raw_height * raw_width * cc_getNbytes(ima);
     DBG("new image: %dx%d", raw_width, raw_height);
+    unlock_shm(ima);
+    unlock();
 }
 
 // functions for processCAM finite state machine
@@ -169,8 +218,8 @@ static inline void cameracapturestate(){ // capturing - wait for exposition ends
         if(cs != CAPTURE_PROCESS){
             TIMESTAMP("Capture ready");
             tremain = 0.;
-            // now save frame
-            if(!ima->data) LOGERR("Can't save image: not initialized");
+            // now capture frame
+            if(!ima || !ima->data) LOGERR("Can't capture image: data not initialized");
             else{
                 TIMESTAMP("start capture");
                 if(!camera->capture){
@@ -179,6 +228,7 @@ static inline void cameracapturestate(){ // capturing - wait for exposition ends
                     camstate = CAMERA_ERROR;
                     return;
                 }
+                server_lock_shm(ima);
                 if(!camera->capture(ima)){
                     LOGERR("Can't capture image");
                     camstate = CAMERA_ERROR;
@@ -186,12 +236,10 @@ static inline void cameracapturestate(){ // capturing - wait for exposition ends
                 }else{
                     ima->gotstat = 0; // fresh image without statistics - recalculate when save
                     ima->timestamp = sl_dtime(); // set timestamp
+                    fillFITSheader(ima);
                     ++ima->imnumber; // increment counter
-                    if(saveFITS(ima, &lastfile)){
-                        DBG("LAST file name changed");
-                    }
-                    TIMESTAMP("Image saved");
                 }
+                unlock_shm(ima);
             }
             camstate = CAMERA_FRAMERDY;
         }
@@ -267,8 +315,8 @@ static int camdevini(int n){
         LOGERR("Can't set active camera number");
         return FALSE;
     }
-    camdevno = n;
-    LOGMSG("Set camera device number to %d", camdevno);
+    atomic_store(&camdevno, n);
+    LOGMSG("Set camera device number to %d", n);
     cc_frameformat step;
     if(camera->getgeomlimits) camera->getgeomlimits(&frmformatmax, &step);
     curformat = frmformatmax;
@@ -291,8 +339,8 @@ static int focdevini(int n){
         LOGERR("Can't set active focuser number");
         return FALSE;
     }
-    focdevno = n;
-    LOGMSG("Set focuser device number to %d", focdevno);
+    atomic_store(&focdevno, n);
+    LOGMSG("Set focuser device number to %d", n);
     focuser->getMaxPos(&focmaxpos);
     focuser->getMinPos(&focminpos);
     return TRUE;
@@ -303,8 +351,8 @@ static int wheeldevini(int n){
         LOGERR("Can't set active wheel number");
         return FALSE;
     }
-    wheeldevno = n;
-    LOGMSG("Set wheel device number to %d", wheeldevno);
+    atomic_store(&wheeldevno, n);
+    LOGMSG("Set wheel device number to %d", n);
     wheel->getMaxPos(&wmaxpos);
     return TRUE;
 }
@@ -323,6 +371,7 @@ static cc_hresult restarthandler(_U_ int fd, _U_ const char *key, _U_ const char
 // image size
 static cc_hresult imsizehandler(int fd, const char *key, _U_ const char *val){
     char buf[64];
+    if(!ima) return CC_RESULT_FAIL;
     // send image width/height in pixels
     if(0 == strcmp(key, CC_CMD_IMHEIGHT)) snprintf(buf, 63, CC_CMD_IMHEIGHT "=%d", ima->h);
     else snprintf(buf, 63, CC_CMD_IMWIDTH "=%d", ima->w);
@@ -338,7 +387,8 @@ static cc_hresult camlisthandler(int fd, _U_ const char *key, _U_ const char *va
             snprintf(buf, BUFSIZ-1, CC_CMD_CAMLIST "='%s'", modname);
             if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
     }
-    if(camdevno > -1 && camera->setDevNo) camera->setDevNo(camdevno);
+    int devno = atomic_load(&camdevno);
+    if(devno > -1 && camera->setDevNo) camera->setDevNo(devno);
     return CC_RESULT_SILENCE;
 }
 static cc_hresult camsetNhandler(_U_ int fd, _U_ const char *key, _U_ const char *val){
@@ -350,7 +400,7 @@ static cc_hresult camsetNhandler(_U_ int fd, _U_ const char *key, _U_ const char
         }
         if(!camdevini(num)) return CC_RESULT_FAIL;
     }
-    snprintf(buf, 63, CC_CMD_CAMDEVNO "=%d", camdevno);
+    snprintf(buf, 63, CC_CMD_CAMDEVNO "=%d", atomic_load(&camdevno));
     if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
     return CC_RESULT_SILENCE;
 }
@@ -368,76 +418,6 @@ static cc_hresult exphandler(int fd, _U_ const char *key, const char *val){
     }
     DBG("expt: %g", GP->exptime);
     snprintf(buf, 63, CC_CMD_EXPOSITION "=%g", GP->exptime);
-    if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
-    return CC_RESULT_SILENCE;
-}
-// show last filename of saved FITS
-static cc_hresult lastfnamehandler(int fd, _U_ const char *key, _U_ const char *val){
-    char buf[PATH_MAX+32];
-    if(lastfile && *lastfile) snprintf(buf, PATH_MAX+31, CC_CMD_LASTFNAME "=%s", lastfile);
-    else snprintf(buf, PATH_MAX+31, CC_CMD_LASTFNAME "=");
-    if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
-    return CC_RESULT_SILENCE;
-}
-// filename setter/getter
-static cc_hresult namehandler(int fd, _U_ const char *key, const char *val){
-    char buf[PATH_MAX+32];
-    DBG("filename=%s", val);
-    if(val && *val){
-        DBG("Make abs path");
-        char *path = makeabspath(val, FALSE);
-        if(!path){
-            LOGERR("Can't create file '%s'", val);
-            return CC_RESULT_BADVAL;
-        }
-        FREE(outfile);
-        outfile = strdup(path);
-        GP->outfile = outfile;
-        GP->outfileprefix = NULL;
-    }else{ // clear names
-        DBG("Clear names");
-        GP->outfileprefix = NULL;
-        GP->outfile = NULL;
-        return CC_RESULT_OK;
-    }
-    if(!GP->outfile) return CC_RESULT_FAIL;
-    snprintf(buf, PATH_MAX+31, CC_CMD_FILENAME "=%s", GP->outfile);
-    if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
-    return CC_RESULT_SILENCE;
-}
-// filename prefix
-static cc_hresult nameprefixhandler(_U_ int fd, _U_ const char *key, const char *val){
-    char buf[PATH_MAX+32];
-    DBG("filename prefix=%s", val);
-    if(val){
-        char *path = makeabspath(val, FALSE);
-        if(!path){
-            LOGERR("Can't create file '%s'", val);
-            return CC_RESULT_BADVAL;
-        }
-        FREE(outfile);
-        outfile = strdup(path);
-        GP->outfileprefix = outfile;
-        GP->outfile = NULL;
-    }else{ // clear names
-        GP->outfileprefix = NULL;
-        GP->outfile = NULL;
-        return CC_RESULT_OK;
-    }
-    if(!GP->outfileprefix) return CC_RESULT_FAIL;
-    snprintf(buf, PATH_MAX+31, CC_CMD_FILENAMEPREFIX "=%s", GP->outfileprefix);
-    if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
-    return CC_RESULT_SILENCE;
-}
-// rewrite
-static cc_hresult rewritefilehandler(_U_ int fd, _U_ const char *key, const char *val){
-    char buf[64];
-    if(val){
-        int n = atoi(val);
-        if(n < 0 || n > 1) return CC_RESULT_BADVAL;
-        GP->rewrite = n;
-    }
-    snprintf(buf, 63, CC_CMD_REWRITE "=%d", GP->rewrite);
     if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
     return CC_RESULT_SILENCE;
 }
@@ -733,77 +713,6 @@ static cc_hresult FITSparhandler(int fd, const char *key, const char *val){
     if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
     return CC_RESULT_SILENCE;
 }
-static cc_hresult FITSheaderhandler(int fd, _U_ const char *key, const char *val){
-    char buf[BUFSIZ], **sptr;
-    static char *curhdr = NULL;
-    static int firstrun = 1;
-    if(val){
-        int sz = 10, amount = 0;
-        // first we should check `val`
-        char b2[BUFSIZ], *bptr = buf;
-        snprintf(b2, BUFSIZ-1, "%s", val);
-        char **list = MALLOC(char*, sz), **lptr = list;
-        int L = BUFSIZ;
-        for(char *s = b2; ; s = NULL){
-            char *tok = strtok(s, ",;");
-            if(!tok){
-                *lptr = NULL;
-                break;
-            }
-            // check path
-            char *newpath = makeabspath(tok, TRUE);
-            DBG("next token: %s, path: %s", tok, newpath);
-            if(!newpath){ // error! Free list and return err
-                DBG("No such file");
-                sptr = list;
-                while(*sptr){
-                    FREE(*sptr++);
-                }
-                FREE(list);
-                return CC_RESULT_BADVAL;
-            }
-            *lptr++ = strdup(newpath);
-            if(++amount == sz){
-                DBG("Realloc");
-                sz += 10;
-                list = realloc(list, sz*sizeof(char*));
-                bzero(&list[sz-10], 10*sizeof(char*));
-            }
-            int N = snprintf(bptr, L-1, "%s,", newpath);
-            bptr += N; L -= N;
-        }
-        // free old list and change its value
-        if(GP->addhdr){
-            DBG("Free old list");
-            sptr = GP->addhdr;
-            while(*sptr){
-                DBG("Free %s", *sptr);
-                free(*(sptr++));
-            }
-        }
-        GP->addhdr = list;
-        FREE(curhdr);
-        if(*val && *val != ',') curhdr = strdup(buf); // command with empty arg will clear curhdr
-        DBG("curhdr now: %s", curhdr);
-    }
-    if(!curhdr && firstrun){
-        firstrun = 0;
-        if(GP->addhdr && *GP->addhdr){
-            char *ptr = buf;
-            int L = BUFSIZ;
-            sptr = GP->addhdr;
-            while(*sptr){
-                DBG("Add to curhdr: %s", *sptr);
-                int N = snprintf(ptr, L-1, "%s,", *sptr++);
-                L -= N; ptr += N;
-            }
-            curhdr = strdup(buf);
-        }
-    }
-    snprintf(buf, BUFSIZ-1, CC_CMD_HEADERFILES "=%s", curhdr);
-    if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
-    return CC_RESULT_SILENCE;
-}
 /*
 static cc_hresult handler(_U_ int fd, _U_ const char *key, _U_ const char *val){
     char buf[64];
@@ -822,7 +731,8 @@ static cc_hresult wlisthandler(int fd, _U_ const char *key, _U_ const char *val)
         snprintf(buf, BUFSIZ-1, CC_CMD_WLIST "='%s'", modname);
         if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
     }
-    if(wheeldevno > -1) wheel->setDevNo(wheeldevno);
+    int devno = atomic_load(&wheeldevno);
+    if(devno > -1) wheel->setDevNo(devno);
     return CC_RESULT_SILENCE;
 }
 static cc_hresult wsetNhandler(int fd, _U_ const char *key, const char *val){
@@ -834,7 +744,7 @@ static cc_hresult wsetNhandler(int fd, _U_ const char *key, const char *val){
         }
         if(!wheeldevini(num)) return CC_RESULT_FAIL;
     }
-    snprintf(buf, 63, CC_CMD_WDEVNO "=%d", wheeldevno);
+    snprintf(buf, 63, CC_CMD_WDEVNO "=%d", atomic_load(&wheeldevno));
     if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
     return CC_RESULT_SILENCE;
 }
@@ -869,7 +779,8 @@ static cc_hresult foclisthandler(int fd, _U_ const char *key, _U_ const char *va
         snprintf(buf, BUFSIZ-1, CC_CMD_FOCLIST "='%s'", modname);
         if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
     }
-    if(focdevno > -1) focuser->setDevNo(focdevno);
+    int devno = atomic_load(&focdevno);
+    if(devno > -1) focuser->setDevNo(devno);
     return CC_RESULT_SILENCE;
 }
 static cc_hresult fsetNhandler(int fd, _U_ const char *key, const char *val){
@@ -881,7 +792,7 @@ static cc_hresult fsetNhandler(int fd, _U_ const char *key, const char *val){
         }
         if(!focdevini(num)) return CC_RESULT_FAIL;
     }
-    snprintf(buf, 63, CC_CMD_FDEVNO "=%d", focdevno);
+    snprintf(buf, 63, CC_CMD_FDEVNO "=%d", atomic_load(&focdevno));
     if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
     return CC_RESULT_SILENCE;
 }
@@ -921,12 +832,10 @@ static cc_hresult infohandler(int fd, _U_ const char *key, _U_ const char *val){
             if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
         }
 #define RUN(f, arg) do{if(CC_RESULT_DISCONNECTED == f(fd, arg, NULL)) return CC_RESULT_DISCONNECTED;}while(0)
-        RUN(namehandler, CC_CMD_FILENAME);
         RUN(binhandler, CC_CMD_HBIN);
         RUN(binhandler, CC_CMD_VBIN);
         RUN(temphandler, CC_CMD_CAMTEMPER);
         RUN(exphandler, CC_CMD_EXPOSITION);
-        RUN(lastfnamehandler, CC_CMD_LASTFNAME);
         RUN(expstatehandler, CC_CMD_EXPSTATE);
 #undef RUN
     }
@@ -981,7 +890,7 @@ static cc_hresult helphandler(int fd, _U_ const char *key, _U_ const char *val){
     return CC_RESULT_SILENCE;
 }
 
-// shared memory key
+// shared memory key getter
 static cc_hresult shmemkeyhandler(int fd, _U_ const char *key, _U_ const char *val){
     char buf[64];
     if(shmkey == IPC_PRIVATE) return CC_RESULT_FAIL;
@@ -1018,9 +927,15 @@ static cc_hresult pluginhandler(int fd, _U_ const char *key, const char *val){
 
 // get headers
 static cc_hresult gethdrshandler(int fd, _U_ const char *key, _U_ const char *val){
-    cc_charbuff *b = getFITSheader(ima);
-    if(!b) return CC_RESULT_FAIL;
-    if(!cc_sendstrmessage(fd, b->buf)) return CC_RESULT_DISCONNECTED;
+    if(!ima) return CC_RESULT_FAIL;
+    size_t nlines = ima->headerstrings;
+    if(nlines < 1) return CC_RESULT_FAIL;
+    char buf[FLEN_CARD+1];
+    for(size_t n = 0; n < nlines; ++n){
+        snprintf(buf, FLEN_CARD+1, "%s\n", ima->fitsheader[n]);
+        if(!cc_sendstrmessage(fd, buf))
+            return CC_RESULT_DISCONNECTED;
+    }
     return CC_RESULT_SILENCE;
 }
 
@@ -1063,7 +978,6 @@ static cc_handleritem items[] = {
     {chkcc,  camsetNhandler, CC_CMD_CAMDEVNO},
     {chkcc,  camfanhandler, CC_CMD_CAMFANSPD},
     {chkcc,  exphandler, CC_CMD_EXPOSITION},
-    {chkcc,  namehandler, CC_CMD_FILENAME},
     {chkcc,  binhandler, CC_CMD_HBIN},
     {chkcc,  binhandler, CC_CMD_VBIN},
     {chkcc,  temphandler, CC_CMD_CAMTEMPER},
@@ -1079,8 +993,6 @@ static cc_handleritem items[] = {
     {chktrue,shmemkeyhandler, CC_CMD_SHMEMKEY},
     {chktrue,imsizehandler, CC_CMD_IMWIDTH},
     {chktrue,imsizehandler, CC_CMD_IMHEIGHT},
-    {chkcc,  nameprefixhandler, CC_CMD_FILENAMEPREFIX},
-    {chkcc,  rewritefilehandler, CC_CMD_REWRITE},
     {chkcc,  _8bithandler, CC_CMD_8BIT},
     {chkcc,  fastspdhandler, CC_CMD_FASTSPD},
     {chkcc,  darkhandler, CC_CMD_DARK},
@@ -1094,8 +1006,6 @@ static cc_handleritem items[] = {
     {NULL,   FITSparhandler, CC_CMD_OBJECT},
     {NULL,   FITSparhandler, CC_CMD_PROGRAM},
     {NULL,   FITSparhandler, CC_CMD_OBJTYPE},
-    {NULL,   FITSheaderhandler, CC_CMD_HEADERFILES},
-    {NULL,   lastfnamehandler, CC_CMD_LASTFNAME},
     {chkfoc, foclisthandler, CC_CMD_FOCLIST},
     {chkfoc, fsetNhandler, CC_CMD_FDEVNO},
     {chkfoc, fgotohandler, CC_CMD_FGOTO},
@@ -1109,10 +1019,25 @@ static cc_handleritem items[] = {
 #define STRBUFSZ    (255)
 
 // send image as raw data
-static void sendimage(int client){
-    if(ima->h < 1 || ima->w < 1) return;
-    cc_senddata(client, ima, sizeof(cc_IMG));
-    cc_senddata(client, ima->data, ima->bytelen);
+static void *sendimage(void *C){
+    if(!C || !ima || !ima->data) return NULL;
+    int client = *(int*)C;
+    if(ima->h < 1 || ima->w < 1) return NULL;
+    DBG("client fd: %d", client);
+    do{
+        // send image body
+        if(!cc_senddata(client, ima, sizeof(cc_IMG))) break;
+        // send image itself (client can close socket if don't need image data)
+        if(!cc_senddata(client, ima->data, ima->bytelen)) break;
+        // send FITS header (client can close socket if don't need it)
+        for(size_t i = 0; i < ima->headerstrings; ++i){ // send header
+            if(!cc_senddata(client, &ima->fitsheader[i], FLEN_CARD)) break;
+        }
+    }while(0);
+    close(client);
+    TIMESTAMP("Image sent");
+    DBG("%d closed", client);
+    return NULL;
 }
 
 void server(int sock, int imsock){
@@ -1157,7 +1082,7 @@ void server(int sock, int imsock){
     poll_set[1].events = POLLIN;
     while(1){
         poll(poll_set, nfd, 1); // max timeout - 1ms
-        //if(imsock > -1 && cc_canberead(imsock) > 0){
+        //if(imsock > -1 && sl_canread(imsock) > 0){
         if(imsock > -1 && (poll_set[1].revents & POLLIN)){
             //uint8_t buf[32];
             //int l = read(imsock, buf, 32);
@@ -1166,13 +1091,23 @@ void server(int sock, int imsock){
             socklen_t len = sizeof(addr);
             int client = accept(imsock, (struct sockaddr*)&addr, &len);
             DBG("client=%d", client);
+            // sending image could be a very long operation -> run it in separate thread
             if(client > -1){
-                DBG("client fd: %d", client);
-                sendimage(client);
-                close(client);
-                DBG("%d closed", client);
+                pthread_t sendthread;
+                if(pthread_create(&sendthread, NULL, sendimage, (void*)&client)){
+                    WARN("pthread_create()");
+                    LOGWARN("pthread_create() error");
+                    close(client);
+                }else{
+                    DBG("Thread created -> detach");
+                    if(pthread_detach(sendthread)){
+                        WARN("pthread_detach()");
+                        LOGWARN("pthread_detach() error");
+                        pthread_cancel(sendthread);
+                        close(client);
+                    }else DBG("Thread detached");
+                }
             }else{WARN("accept()"); DBG("disconnected");}
-            TIMESTAMP("Image sent");
         }
         if(poll_set[0].revents & POLLIN){ // check main for accept()
             struct sockaddr_in addr;
@@ -1202,11 +1137,6 @@ void server(int sock, int imsock){
             for(int i = 2; i < nfd; ++i){
                 TIMESTAMP("Send message that all ready");
                 cc_sendstrmessage(poll_set[i].fd, buff);
-            }
-            if(camstate == CAMERA_FRAMERDY && (GP->outfile || GP->outfileprefix)){ // send to all last file name if file saved
-                snprintf(buff, PATH_MAX+31, CC_CMD_LASTFNAME "=%s", lastfile);
-                for(int i = 2; i < nfd; ++i)
-                    cc_sendstrmessage(poll_set[i].fd, buff);
             }
             camstate = CAMERA_IDLE;
         }
@@ -1274,7 +1204,7 @@ char *makeabspath(const char *path, int shouldbe){
     }
     if(!realpath(path, buf)){
         WARN("realpath()");
-        return NULL;
+        LOGWARN("realpath() error for %s", path);
     }else ret = buf;
     fclose(f);
     if(unl) unlink(path);

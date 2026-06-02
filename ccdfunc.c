@@ -73,15 +73,20 @@ static int check_filenameprefix(char *buff, int buflen){
     return FALSE;
 }
 
-cc_charbuff *getFITSheader(cc_IMG *img){
-    static cc_charbuff charbuf = {0};
-    cc_charbufclr(&charbuf);
-    char card[FLEN_CARD+1], templ[2*FLEN_CARD+1], bufc[FLEN_CARD+1];
+/**
+ * @brief fillFITSheader (server-side only!) - update img->fitsheader by image data and additional headers
+ * @param img (io) - image to update
+ * @return img->headerstrings
+ */
+size_t fillFITSheader(cc_IMG *img){
+    if(!img) return 0;
+    img->headerstrings = 0;
+    char card[FLEN_CARD], templ[2*FLEN_CARD], bufc[FLEN_CARD];
 #define FORMKW(in)                              \
 do{ int status = 0, kt = 0;                      \
     fits_parse_template(in, card, &kt, &status);  \
     if(status) fits_report_error(stderr, status);\
-    else{cc_charbufaddline(&charbuf, card);} \
+    else if(img->headerstrings < FITS_HEADER_STRINGS_MAX) snprintf(img->fitsheader[img->headerstrings++], FLEN_CARD, "%s", card); \
 }while(0)
 #define FORMINT(key, val, comment) do{ \
     snprintf(templ, FLEN_CARD, "%s = %d / %s", key, val, comment); \
@@ -98,12 +103,6 @@ do{ int status = 0, kt = 0;                      \
     calculate_stat(img);
     float tmpf = 0.0;
     int tmpi = 0;
-   /* FORMKW("COMMENT this is just a test comment - 0");
-    FORMKW("COMMENT this is just a test comment - 1");
-    FORMKW("COMMENT this is just a test comment - 2");
-    FORMKW("HIERARCH longsome1 = 'this is just a test comment'");
-    FORMKW("HIERARCH longsome2 = 'this is just a test comment'");
-    FORMKW("HIERARCH longsome3 = 'this is just a test comment'");*/
     FORMKW("ORIGIN = 'SAO RAS' / Organization responsible for the data");
     FORMKW("OBSERVAT = 'Special Astrophysical Observatory, Russia' / Observatory name");
     FORMKW("INSTRUME = 'direct imaging'  / Instrument");
@@ -171,10 +170,10 @@ do{ int status = 0, kt = 0;                      \
         if(wheel->getTbody && wheel->getTbody(&tmpf))
             FORMFLT("FILTTEMP", tmpf, "Filter wheel body temperature, degr C");
     }
-    if(GP->addhdr){ // add records from files
+    if(GP->addhdr){ // add records from server-side files
         char **nxtfile = GP->addhdr;
         while(*nxtfile){
-            cc_kwfromfile(&charbuf, *(nxtfile++));
+            cc_kwfromfile(img, *(nxtfile++));
         }
     }
     // add these keywords after all to override records from files
@@ -185,7 +184,7 @@ do{ int status = 0, kt = 0;                      \
     if(camera->getModelName && camera->getModelName(bufc, FLEN_CARD))
         FORMSTR("DETECTOR", bufc, "Detector model");
     if(GP->instrument) FORMSTR("INSTRUME", GP->instrument, "Instrument");
-    return &charbuf;
+    return img->headerstrings;
 }
 
 // save FITS file `img` into GP->outfile or GP->outfileprefix_XXXX.fits
@@ -193,14 +192,10 @@ do{ int status = 0, kt = 0;                      \
 // return FALSE if failed
 int saveFITS(cc_IMG *img, char **outp){
     int ret = FALSE;
-    if(!camera){
-        LOGERR("Can't save image: no camera device");
-        WARNX(_("Camera device unknown"));
-        return FALSE;
-    }
     char fnam[PATH_MAX+1];
     if(!GP->outfile && !GP->outfileprefix){
         LOGWARN("Image not saved: neither filename nor filename prefix pointed");
+        WARNX("Image not saved: neither filename nor filename prefix pointed");
         return FALSE;
     }
     if(GP->outfile){ // pointed specific output file name like "file.fits", check it
@@ -236,8 +231,20 @@ int saveFITS(cc_IMG *img, char **outp){
     if(nbytes == 1) TRYFITS(fits_create_img, fp, BYTE_IMG, 2, naxes);
     else TRYFITS(fits_create_img, fp, USHORT_IMG, 2, naxes);
     if(fitserror) goto cloerr;
-    cc_charbuff *bufhdr = getFITSheader(img);
-    cc_charbuf2kw(bufhdr, fp);
+    // write header
+    char key[FLEN_KEYWORD];
+    for(size_t i = 0; i < img->headerstrings; ++i){
+        char *rec = img->fitsheader[i];
+        char *eq = strchr(rec, '=');
+        int status = 0;
+        if(eq){ // found 'key = value / comment'
+            size_t l = eq - rec;
+            if(l > FLEN_KEYWORD-1) l = FLEN_KEYWORD-1;
+            memcpy(key, rec, l); key[l] = 0;
+            fits_update_card(fp, key, rec, &status);
+        }else fits_write_record(fp, rec, &status);
+        if(status) fits_report_error(stderr, status);
+    }
     // creation date/time
     int s = 0;
     fits_write_date(fp, &s);

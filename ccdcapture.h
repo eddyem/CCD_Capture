@@ -23,12 +23,16 @@
 #include <stdint.h>
 #include <stdlib.h> // for size_t
 
+// max strings in header
+#define FITS_HEADER_STRINGS_MAX (1000)
+
 // magic to mark our SHM
 #define CC_SHM_MAGIC   (0xdeadbeef)
 
 // base image parameters - sent by socket and stored in shared memory
-typedef struct __attribute__((packed, aligned(4))){
+typedef struct {
     uint32_t MAGICK;            // magick (DEADBEEF) - to mark our shm
+    pthread_mutex_t mutex;      // shared mutex
     double timestamp;           // timestamp of image taken
     uint8_t bitpix;             // bits per pixel (8 or 16)
     int w, h;                   // image size
@@ -39,6 +43,8 @@ typedef struct __attribute__((packed, aligned(4))){
     size_t imnumber;            // counter of images captured from server's start
     void *data;                 // pointer to data (next byte after this struct) - only for server
     /* `data` is uint8_t or uint16_t depending on `bitpix` */
+    char fitsheader[FITS_HEADER_STRINGS_MAX][FLEN_CARD]; // FITS-header for given image
+    size_t headerstrings;       // amount of records in header
 } cc_IMG;
 
 typedef struct{
@@ -230,11 +236,7 @@ typedef enum{
 #define CC_CMD_CAMLIST     "camlist"
 #define CC_CMD_CAMDEVNO    "camdevno"
 #define CC_CMD_EXPOSITION  "exptime"
-#define CC_CMD_LASTFNAME   "lastfilename"
-#define CC_CMD_FILENAME    "filename"
-#define CC_CMD_FILENAMEPREFIX "filenameprefix"
 // rewrite=1 will rewrite files, =0 - not (only for `filename`)
-#define CC_CMD_REWRITE     "rewrite"
 #define CC_CMD_HBIN        "hbin"
 #define CC_CMD_VBIN        "vbin"
 #define CC_CMD_CAMTEMPER   "tcold"
@@ -250,7 +252,7 @@ typedef enum{
 // expstate=CAMERA_CAPTURE will start exposition, CAMERA_IDLE - cancel
 #define CC_CMD_EXPSTATE    "expstate"
 #define CC_CMD_TREMAIN     "tremain"
-#define CC_CMD_8BIT        "8bit"
+#define CC_CMD_8BIT        "lowres"
 #define CC_CMD_FASTSPD     "fastspeed"
 #define CC_CMD_DARK        "dark"
 #define CC_CMD_INFTY       "infty"
@@ -262,7 +264,6 @@ typedef enum{
 #define CC_CMD_OBJECT      "object"
 #define CC_CMD_PROGRAM     "program"
 #define CC_CMD_OBJTYPE     "objtype"
-#define CC_CMD_HEADERFILES "headerfiles"
 
 // focuser
 #define CC_CMD_FOCLIST     "foclist"
@@ -328,12 +329,11 @@ int cc_sendmessage(int fd, const char *msg, int l);
 int cc_sendstrmessage(int fd, const char *msg);
 char *cc_get_keyval(char **keyval);
 cc_IMG *cc_getshm(key_t key, size_t imsize);
-int cc_canberead(int fd);
 cc_hresult cc_setint(int fd, cc_strbuff *cbuf, const char *cmd, int val);
 cc_hresult cc_getint(int fd, cc_strbuff *cbuf, const char *cmd, int *val);
 cc_hresult cc_setfloat(int fd, cc_strbuff *cbuf, const char *cmd, float val);
 cc_hresult cc_getfloat(int fd, cc_strbuff *cbuf, const char *cmd, float *val);
 
-char *cc_nextkw(char *buf, char record[FLEN_CARD+1], int newlines);
-size_t cc_kwfromfile(cc_charbuff *b, char *filename);
-int cc_charbuf2kw(cc_charbuff *b, fitsfile *f);
+char *cc_nextkw(char *buf, char record[FLEN_CARD], int newlines);
+size_t cc_kwfromfile(cc_IMG *img, char *filename);
+//int cc_charbuf2kw(cc_charbuff *b, fitsfile *f);

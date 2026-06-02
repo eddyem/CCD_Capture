@@ -134,15 +134,19 @@ int cc_senddata(int fd, void *data, size_t l){
     DBG("fd=%d, l=%zd", fd, l);
     if(fd < 1 || !data || l < 1) return TRUE; // empty message
     DBG("send new data (size=%zd) to fd %d", l, fd);
-//strncpy((char*)data, "TEST image data\n", 17);
-//l = 16;
-    if(l != (size_t)send(fd, data, l, MSG_NOSIGNAL)){
-        WARN("write()");
-        LOGWARN("write()");
-        return FALSE;
+    size_t total = 0;
+    while(total < l){
+        ssize_t sent = send(fd, (char*)data + total, l - total, MSG_NOSIGNAL);
+        if(sent <= 0){
+            WARN("send()");
+            LOGWARN("send()");
+            break; // error
+        }
+        total += sent;
     }
+    if(total != l) return FALSE;
     DBG("success");
-    if(sl_globlog)  LOGDBG("SEND data (size=%d) to fd %d", l, fd);
+    LOGDBG("SEND data (size=%d) to fd %d", l, fd);
     return TRUE;
 }
 
@@ -155,25 +159,36 @@ int cc_sendmessage(int fd, const char *msg, int l){
     static int buflen = 0;
     if(l + 1 > buflen){
         buflen = 1024 * (1 + l/1024);
-        tmpbuf = realloc(tmpbuf, buflen);
+        char *newbuf = realloc(tmpbuf, buflen);
+        if(!newbuf){
+            LOGERR("realloc())");
+            return FALSE;
+        }
+        tmpbuf = newbuf;
     }
     DBG("send to fd %d:\n%s[%d]", fd, msg, l);
     memcpy(tmpbuf, msg, l);
     if(msg[l-1] != '\n') tmpbuf[l++] = '\n';
-    if(l != send(fd, tmpbuf, l, MSG_NOSIGNAL)){
-        WARN("write()");
-        LOGWARN("write()");
-        pthread_mutex_unlock(&mutex);
-        return FALSE;
-    }else{
-        //DBG("success");
+    int total = 0;
+    while(total < l){
+        ssize_t sent = send(fd, tmpbuf + total, l - total, MSG_NOSIGNAL);
+        if(sent <= 0){
+            WARN("send()");
+            LOGWARN("send()");
+            break; // error
+        }
+        total += sent;
+    }
+    int ret = FALSE;
+    if(total == l){
+        ret = TRUE;
         if(sl_globlog){ // logging turned ON
             tmpbuf[l-1] = 0; // remove trailing '\n' for logging
             LOGDBG("SEND '%s'", tmpbuf);
         }
     }
     pthread_mutex_unlock(&mutex);
-    return TRUE;
+    return ret;
 }
 int cc_sendstrmessage(int fd, const char *msg){
     if(fd < 1 || !msg) return TRUE; // empty message
@@ -228,36 +243,6 @@ char *cc_get_keyval(char **keyval){
     // now we have key (`str`) and val (or NULL)
     //DBG("key=%s, val=%s", keyval, val);
     return val;
-}
-
-/**
- * check data from  fd (polling function for client)
- * @param fd - file descriptor
- * @return 0 in case of timeout, 1 in case of fd have data, -1 if error
- */
-int cc_canberead(int fd){
-    fd_set fds;
-    struct timeval timeout;
-    timeout.tv_sec = 0;
-    timeout.tv_usec = 100;
-    FD_ZERO(&fds);
-    FD_SET(fd, &fds);
-    do{
-        int rc = select(fd+1, &fds, NULL, NULL, &timeout);
-        if(rc < 0){
-            if(errno != EINTR){
-                LOGWARN("select()");
-                WARN("select()");
-                return -1;
-            }
-            continue;
-        }
-        break;
-    }while(1);
-    if(FD_ISSET(fd, &fds)){
-        return 1;
-    }
-    return 0;
 }
 
 /**
@@ -453,8 +438,14 @@ int cc_read2buf(int fd, cc_strbuff *buf){
     pthread_mutex_lock(&buf->mutex);
     if(!buf->buf || buf->buflen >= buf->bufsize) goto ret;
     size_t maxlen = buf->bufsize - buf->buflen;
-    ssize_t rd = read(fd, buf->buf + buf->buflen, maxlen);
-    if(rd <= 0) goto ret;
+    ssize_t rd;
+    do{
+        rd = read(fd, buf->buf + buf->buflen, maxlen);
+        if(rd <= 0){
+            if(errno == EAGAIN || errno == EWOULDBLOCK) continue;
+            goto ret;
+        }else break;
+    }while(1);
     DBG("got %zd bytes", rd);
     if(rd) buf->buflen += rd;
     ret = TRUE;
@@ -470,7 +461,7 @@ ret:
  * @return TRUE if got data
  */
 int cc_refreshbuf(int fd, cc_strbuff *buf){
-    if(!cc_canberead(fd)) return FALSE;
+    if(!sl_canread(fd)) return FALSE;
     return cc_read2buf(fd, buf);
 }
 
@@ -548,7 +539,7 @@ static cc_hresult ask4cmd(int fd, cc_strbuff *buf, const char *cmdwargs){
         if(!cc_sendstrmessage(fd, cmdwargs)) continue;
         double t0 = sl_dtime();
         while(sl_dtime() - t0 < answer_timeout){
-            int r = cc_canberead(fd);
+            int r = sl_canread(fd);
             if(r == 0) continue;
             else if(r < 0){
                 LOGERR("Socket disconnected");
@@ -651,54 +642,59 @@ cc_hresult cc_getfloat(int fd, cc_strbuff *cbuf, const char *cmd, float *val){
 
 
 // get next record from external buffer, newlines==1 if every record ends with '\n'
-char *cc_nextkw(char *buf, char record[FLEN_CARD+1], int newlines){
+char *cc_nextkw(char *buf, char record[FLEN_CARD], int newlines){
     char *nextline = NULL;
-    int l = FLEN_CARD - 1;
+    int l = FLEN_CARD;
     if(newlines){
         char *e = strchr(buf, '\n');
         if(e){
-            if(e - buf < FLEN_CARD) l = e - buf;
+            if(e - buf < FLEN_CARD) l = e - buf + 1;
             nextline = e + 1;
         }
     }else nextline = buf + (FLEN_CARD - 1);
     strncpy(record, buf, l);
-    record[l] = 0;
     return nextline;
 }
 
 /**
  * @brief cc_kwfromfile - add records from file
- * @param b - buffer to add
+ * @param img - buffer to add
  * @param filename - file name with FITS headers ('\n'-terminated or by 80 chars)
  * @return amount of bytes added
  */
-size_t cc_kwfromfile(cc_charbuff *b, char *filename){
-    if(!b) return 0;
+size_t cc_kwfromfile(cc_IMG *img, char *filename){
+    if(!img) return 0;
     sl_mmapbuf_t *buf = sl_mmap(filename);
     if(!buf || buf->len < 1){
         WARNX("Can't add FITS records from file %s", filename);
         LOGWARN("Can't add FITS records from file %s", filename);
         return 0;
     }
-    size_t blen0 = b->buflen;
-    char rec[FLEN_CARD+1], card[FLEN_CARD+1];
+    char rec[FLEN_CARD], card[FLEN_CARD];
     char *data = buf->data, *x = strchr(data, '\n'), *eodata = buf->data + buf->len;
     int newlines = 0;
     if(x && (x - data) < FLEN_CARD){ // we found newline -> this is a format with newlines
         newlines = 1;
     }
+    size_t written = 0;
     do{
         data = cc_nextkw(data, rec, newlines);
         if(data > eodata) break;
         int status = 0, kt = 0;
         fits_parse_template(rec, card, &kt, &status);
         if(status) fits_report_error(stderr, status);
-        else cc_charbufaddline(b, card);
+        else{
+            if(img->headerstrings < FITS_HEADER_STRINGS_MAX){
+                ++written;
+                snprintf(img->fitsheader[img->headerstrings++], FLEN_CARD, "%s", card);
+            }else break;
+        }
     }while(data && *data);
     sl_munmap(buf);
-    return b->buflen - blen0;
+    return written;
 }
 
+#if 0
 /**
  * @brief cc_charbuf2kw - write all keywords from `b` to file `f`
  * `b` should be prepared by cc_kwfromfile or similar
@@ -734,6 +730,7 @@ int cc_charbuf2kw(cc_charbuff *b, fitsfile *f){
     }
     return TRUE;
 }
+#endif
 
 static size_t print_val(cc_partype_t t, void *val, char *buf, size_t bufl){
     size_t l = 0;

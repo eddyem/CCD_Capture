@@ -37,6 +37,7 @@
 extern double answer_timeout;
 
 static char sendbuf[BUFSIZ];
+static char *lastfilename = NULL;
 // send message and wait any answer
 #define SENDMSG(...) do{DBG("SENDMSG"); snprintf(sendbuf, BUFSIZ-1, __VA_ARGS__); verbose(2, "\t> %s", sendbuf); cc_sendstrmessage(sock, sendbuf); while(getans(sock, NULL));} while(0)
 // send message and wait answer starting with 'cmd'
@@ -47,13 +48,13 @@ static volatile atomic_int expstate = CAMERA_CAPTURE;
 static int xm0,ym0,xm1,ym1; // max format
 static int xc0,yc0,xc1,yc1; // current format
 
-#ifdef IMAGEVIEW
-static volatile atomic_int grabno = 0, oldgrabno = 0;
+static volatile atomic_int grabno = 0;
+static int oldgrabno = 0;
 // IPC key for shared memory
 static cc_IMG ima = {0}, *shmima = NULL; // ima - local storage, shmima - shm (if available)
 static size_t imbufsz = 0; // image buffer for allocated `ima`
 static uint8_t *imbuf = NULL;
-#endif
+
 
 // read message from queue or file descriptor
 static char *readmsg(int fd){
@@ -70,7 +71,7 @@ static char *readmsg(int fd){
         return FALSE;
     }
     if(test()) return buf->string;
-    if(1 == cc_canberead(fd)){
+    if(1 == sl_canread(fd)){
         if(cc_read2buf(fd, buf)){
             if(test()) return buf->string;
         }else ERRX("Server disconnected");
@@ -78,33 +79,37 @@ static char *readmsg(int fd){
     return NULL;
 }
 
+#define CMP_ANS(cmd, ans)   strncmp(cmd, ans, sizeof(cmd)-1)
 // parser of CCD server messages; return TRUE to exit from polling cycle of `getans` (if receive 'FAIL', 'OK' or 'BUSY')
-static int parseans(char *ans){
-    if(!ans) return FALSE;
+static cc_hresult parseans(char *ans){
+    if(!ans) return CC_RESULT_BADKEY;
     //TIMESTAMP("parseans() begin");
     //DBG("Parsing of '%s'", ans);
-    if(0 == strcmp(cc_hresult2str(CC_RESULT_BUSY), ans)){
-        WARNX("Server busy");
-        return FALSE;
+    if(0 == strcmp(cc_hresult2str(CC_RESULT_OK), ans)) return CC_RESULT_OK;
+    for(cc_hresult res = CC_RESULT_BUSY; res < CC_RESULT_NUM; ++res){
+        const char *resmsg = cc_hresult2str(res);
+        if(0 == strcmp(resmsg, ans)){
+            WARNX("Server answered: %s", resmsg);
+            return res;
+        }
     }
-    if(0 == strcmp(cc_hresult2str(CC_RESULT_FAIL), ans)) return TRUE;
-    if(0 == strcmp(cc_hresult2str(CC_RESULT_OK), ans)) return TRUE;
     char *val = cc_get_keyval(&ans); // now `ans` is a key and `val` its value
-    if(0 == strcmp(CC_CMD_EXPSTATE, ans)){
-        expstate = atoi(val);
-        DBG("Exposition state: %d", expstate);
-        return TRUE;
-    }else if(0 == strcmp(CC_CMD_FRAMEMAX, ans)){
+    if(0 == CMP_ANS(CC_CMD_EXPSTATE, ans)){
+        int st = atoi(val);
+        atomic_store(&expstate, st);
+        DBG("Exposition state: %d", st);
+        return CC_RESULT_OK;
+    }else if(0 == CMP_ANS(CC_CMD_FRAMEMAX, ans)){
         sscanf(val, "%d,%d,%d,%d", &xm0, &ym0, &xm1, &ym1);
         DBG("Got maxformat: %d,%d,%d,%d", xm0, ym0, xm1, ym1);
-        return TRUE;
-    }else if(0 == strcmp(CC_CMD_FRAMEFORMAT, ans)){
+        return CC_RESULT_OK;
+    }else if(0 == CMP_ANS(CC_CMD_FRAMEFORMAT, ans)){
         sscanf(val, "%d,%d,%d,%d", &xc0, &yc0, &xc1, &yc1);
         DBG("Got current format: %d,%d,%d,%d", xc0, yc0, xc1, yc1);
-        return TRUE;
-    }else if(0 == strcmp(CC_CMD_INFTY, ans)) return TRUE;
+        return CC_RESULT_OK;
+    }
     //TIMESTAMP("parseans() end");
-    return FALSE;
+    return CC_RESULT_SILENCE; // echo of sent command or something else
 }
 
 // read until timeout all messages from server; return FALSE if there was no messages from server
@@ -112,23 +117,30 @@ static int parseans(char *ans){
 static int getans(int sock, const char *msg){
     double t0 = sl_dtime();
     char *ans = NULL;
-    while(sl_dtime() - t0 < answer_timeout){
-        char *s = readmsg(sock);
-        if(!s) continue;
+    double tmout = answer_timeout;
+    if(msg) tmout *= 5.; // make first timeout larger for slow networks
+    cc_hresult res = CC_RESULT_FAIL;
+    while(sl_dtime() - t0 < tmout){
+        ans = readmsg(sock);
+        if(!ans) continue;
+        // got answer -> make timeout less
+        tmout = answer_timeout;
         t0 = sl_dtime();
-        ans = s;
         TIMESTAMP("Got from server: %s", ans);
         verbose(1, "\t%s", ans);
-DBG("1 msg-> %s, ans -> %s", msg, ans);
-        if(parseans(ans)){
-            DBG("2 msg-> %s, ans -> %s", msg, ans);
-            if(msg && strncmp(ans, msg, strlen(msg))) continue;
-            DBG("BREAK");
-            break;
+        DBG("1 msg-> %s, ans -> %s", msg, ans);
+        res = parseans(ans);
+        DBG("2 msg-> %s, ans -> %s; result: %d", msg, ans, res);
+        if(res == CC_RESULT_SILENCE && msg){
+            if(strncmp(ans, msg, strlen(msg))) continue;
+            else res = CC_RESULT_OK;
         }
-
+        DBG("Got answer -> break");
+        break;
     }
-    return ((ans) ? TRUE : FALSE);
+    if(!ans) DBG("Got no answer from server");
+    if(res == CC_RESULT_OK) return TRUE;
+    return FALSE;
 }
 
 /**
@@ -200,16 +212,6 @@ static void send_headers(int sock){
         if(GP->dark) SENDMSGW(CC_CMD_DARK, "=1");
         else SENDMSGW(CC_CMD_DARK, "=0");
     }
-    if(GP->outfile){
-        if(!*GP->outfile) SENDMSGW(CC_CMD_FILENAME, "=");
-        else SENDMSGW(CC_CMD_FILENAME, "=%s", makeabspath(GP->outfile, FALSE));
-        if(GP->rewrite) SENDMSGW(CC_CMD_REWRITE, "=1");
-        else SENDMSGW(CC_CMD_REWRITE, "=0");
-    }
-    if(GP->outfileprefix){
-        if(!*GP->outfileprefix) SENDMSGW(CC_CMD_FILENAMEPREFIX, "=");
-        else SENDMSGW(CC_CMD_FILENAMEPREFIX, "=%s", makeabspath(GP->outfileprefix, FALSE));
-    }
     // FITS header keywords:
 #define CHKHDR(x, cmd)   do{if(x) SENDMSG(cmd "=%s", x);}while(0)
     CHKHDR(GP->author, CC_CMD_AUTHOR);
@@ -219,107 +221,6 @@ static void send_headers(int sock){
     CHKHDR(GP->prog_id, CC_CMD_PROGRAM);
     CHKHDR(GP->objtype, CC_CMD_OBJTYPE);
 #undef CHKHDR
-    if(GP->addhdr){
-        char buf[1024], *ptr = buf, **sptr = GP->addhdr;
-        *buf = 0;
-        int L = 1024;
-        while(*sptr){
-            if(!**sptr){
-                ++sptr; continue;
-            }
-            int N = snprintf(ptr, L-1, "%s,", *sptr++);
-            L -= N; ptr += N;
-        }
-        SENDMSGW(CC_CMD_HEADERFILES, "=%s", buf);
-    }
-}
-
-void client(int sock){
-    if(GP->restart){
-        SENDCMDW(CC_CMD_RESTART);
-        return;
-    }
-    send_headers(sock);
-    double t0 = sl_dtime(), tw = t0;
-    int Nremain = 0, nframe = 1;
-    // if client gives filename/prefix or Nframes, make exposition
-    if((GP->outfile && *GP->outfile) || (GP->outfileprefix && *GP->outfileprefix) || GP->nframes > 0){
-        Nremain = GP->nframes - 1;
-        if(Nremain < 1) Nremain = 0;
-        else GP->waitexpend = TRUE; // N>1 - wait for exp ends
-        SENDMSGW(CC_CMD_EXPSTATE, "=%d", CAMERA_CAPTURE);
-    }else{
-        int cntr = 0;
-        while(sl_dtime() - t0 < CC_WAIT_TIMEOUT && cntr < 3)
-            if(!getans(sock, NULL)) ++cntr;
-        DBG("RETURN: no more data");
-        return;
-    }
-    double timeout = GP->waitexpend ? CC_CLIENT_TIMEOUT : CC_WAIT_TIMEOUT;
-    verbose(1, "Exposing frame 1...");
-    if(GP->waitexpend){
-        expstate = CAMERA_CAPTURE; // could be changed earlier
-        verbose(2, "Wait for exposition end");
-    }
-    while(sl_dtime() - t0 < timeout){
-        if(GP->waitexpend && sl_dtime() - tw > CC_WAIT_TIMEOUT){
-            SENDCMDW(CC_CMD_TREMAIN); // get remained time
-            tw = sl_dtime();
-            sprintf(sendbuf, "%s", CC_CMD_EXPSTATE);
-            cc_sendstrmessage(sock, sendbuf);
-        }
-        if(getans(sock, NULL)){ // got next portion of data
-            DBG("server message");
-            t0 = sl_dtime();
-            if(expstate == CAMERA_ERROR){
-                WARNX(_("Can't make exposition"));
-                continue;
-            }
-            //if(expstate != CAMERA_CAPTURE){
-            if(expstate == CAMERA_FRAMERDY){
-                verbose(2, "Frame ready!");
-                expstate = CAMERA_IDLE;
-                if(Nremain){
-                    verbose(1, "\n");
-                    if(GP->pause_len > 0){
-                        double delta, time1 = sl_dtime() + GP->pause_len;
-                        while(1){
-                            SENDCMDW(CC_CMD_CAMTEMPER);
-                            if((delta = time1 - sl_dtime()) < __FLT_EPSILON__) break;
-                            if(delta > 1.) verbose(1, _("%d seconds till pause ends\n"), (int)delta);
-                            if(delta > 6.) sleep(5);
-                            else if(delta > 1.) sleep((int)delta);
-                            else usleep((int)(delta*1e6 + 1));
-                        }
-                    }
-                    verbose(1, "Exposing frame %d...", ++nframe);
-                    --Nremain;
-                    SENDMSGW(CC_CMD_EXPSTATE, "=%d", CAMERA_CAPTURE);
-                }else{
-                    GP->waitexpend = 0;
-                    timeout = answer_timeout; // wait for last file name
-                }
-            }
-        }
-    }
-    if(GP->waitexpend) WARNX(_("Server timeout"));
-    // clear "filename" and "filenameprefix"
-    SENDMSGW(CC_CMD_FILENAME, "=");
-    SENDMSGW(CC_CMD_FILENAMEPREFIX, "=");
-    // clear "rewrite"
-    SENDMSGW(CC_CMD_REWRITE, "=0");
-    DBG("Timeout");
-}
-
-#ifdef IMAGEVIEW
-static int controlfd = -1; // control socket FD
-void init_grab_sock(int sock){
-    if(sock < 0) ERRX("Can't run without command socket");
-    controlfd = sock;
-    send_headers(sock);
-    if(!GP->forceimsock && !shmima){ // init shm buffer if user don't ask to work through image socket
-        shmima = cc_getshm(GP->shmkey, 0); // try to init client shm
-    }
 }
 
 /**
@@ -329,10 +230,11 @@ void init_grab_sock(int sock){
 static int readNbytes(int fd, size_t N, uint8_t *buf){
     size_t got = 0, need = N;
     double t0 = sl_dtime();
-    while(sl_dtime() - t0 < CC_CLIENT_TIMEOUT /*&& cc_canberead(fd)*/ && need){
+    while(sl_dtime() - t0 < CC_CLIENT_TIMEOUT /*&& sl_canread(fd)*/ && need){
         t0 = sl_dtime();
         ssize_t rd = read(fd, buf + got, need);
         if(rd <= 0){
+            if(errno == EAGAIN || errno == EWOULDBLOCK) continue;
             WARNX("Server disconnected");
             signals(1);
         }
@@ -344,13 +246,27 @@ static int readNbytes(int fd, size_t N, uint8_t *buf){
 
 /**
  * @brief getimage - read image from shared memory or socket
+ * @param askheader == TRUE for storing FITS-header
+ * @return FALSE if failed to catch image
  */
-static void getimage(){
+static int getimage(int askheader){
     FNAME();
-    int imsock = -1;
+    int imsock = -1, shmlocked = FALSE, ret = FALSE;
     static double oldtimestamp = -1.;
     TIMESTAMP("Get image sizes");
     if(shmima){ // read image from shared memory
+        double t0 = sl_dtime();
+        while(sl_dtime() - t0 < MUTEX_LOCK_TMOUT){
+            if(client_lock_shm(shmima)){
+                shmlocked = TRUE;
+                break;
+            }
+            usleep(100);
+        }
+        if(!shmlocked){
+            WARNX("Can't lock shared memory");
+            return FALSE;
+        }
         memcpy(&ima, shmima, sizeof(cc_IMG));
     }else{ // get image by socket
         imsock = cc_open_socket(FALSE, GP->imageport, TRUE);
@@ -379,31 +295,165 @@ static void getimage(){
         uint8_t *datastart = (uint8_t*)shmima + sizeof(cc_IMG);
         memcpy(imbuf, datastart, ima.bytelen);
         TIMESTAMP("Got by shared memory");
+        if(!askheader){
+            unlock_shm(shmima);
+            shmlocked = FALSE;
+        }
+        ret = TRUE;
     }else{
         if(!readNbytes(imsock, ima.bytelen, imbuf)){
             WARNX("Can't read image data");
             goto eofg;
         }
+        ret = TRUE;
         TIMESTAMP("Got by socket");
     }
-    DBG("timestamps old-new=%g; imno: %zd", oldtimestamp-ima.timestamp, ima.imnumber);
+    DBG("timestamps new-old=%g; imno: %zd", ima.timestamp - oldtimestamp, ima.imnumber);
     if(ima.timestamp != oldtimestamp){ // test if image is really new
         oldtimestamp = ima.timestamp;
-        grabno = ima.imnumber;
+        atomic_store(&grabno, ima.imnumber);
         TIMESTAMP("Got image #%zd", ima.imnumber);
+        if(askheader){ // read FITS-header for later saving
+            if(shmima){
+                size_t rsz = FLEN_CARD * ima.headerstrings;
+                memcpy(ima.fitsheader, shmima->fitsheader, rsz);
+            }else{
+                uint8_t card[FLEN_CARD];
+                for(size_t i = 0; i < ima.headerstrings; ++i){
+                    if(!readNbytes(imsock, FLEN_CARD, card)){
+                        WARNX("Can't read full header, got %zd records from %zd", i, ima.headerstrings);
+                        break;
+                    }
+                    memcpy(&ima.fitsheader[i], card, FLEN_CARD);
+                }
+            }
+            if(GP->addhdr){ // add records from client-side files
+                char **nxtfile = GP->addhdr;
+                while(*nxtfile){
+                    cc_kwfromfile(&ima, *(nxtfile++));
+                }
+            }
+        }else ima.headerstrings = 0;
     }else WARNX("Still got old image");
 eofg:
-    if(!shmima) close(imsock);
+    if(imsock != -1) close(imsock);
+    if(shmlocked) unlock_shm(shmima);
+    return ret;
 }
 
-static void *grabnext(void _U_ *arg){ // daemon grabbing images through the net
+void client(int sock){
+    if(GP->restart){
+        SENDCMDW(CC_CMD_RESTART);
+        return;
+    }
+    TIMEINIT();
+    send_headers(sock);
+    TIMESTAMP("Got headers");
+    double t0 = sl_dtime(), tw = t0;
+    int Nremain = 0, nframe = 1;
+    // if client gives filename/prefix or Nframes, make exposition
+    if((GP->outfile && *GP->outfile) || (GP->outfileprefix && *GP->outfileprefix) || GP->nframes > 0){
+        Nremain = GP->nframes;
+        if(Nremain < 1) Nremain = 1;
+        else GP->waitexpend = TRUE; // N>1 - wait for exp ends
+        SENDMSGW(CC_CMD_EXPSTATE, "=%d", CAMERA_CAPTURE);
+    }else{
+        int cntr = 0;
+        while(sl_dtime() - t0 < CC_WAIT_TIMEOUT && cntr < 3)
+            if(!getans(sock, NULL)) ++cntr;
+        DBG("RETURN: no more data");
+        return;
+    }
+    double timeout = GP->waitexpend ? CC_CLIENT_TIMEOUT : CC_WAIT_TIMEOUT;
+    verbose(1, "Exposing frame 1...");
+    if(GP->waitexpend){
+        atomic_store(&expstate, CAMERA_CAPTURE); // could be changed earlier
+        verbose(2, "Wait for exposition end");
+    }
+    while(sl_dtime() - t0 < timeout){
+        if(GP->waitexpend && sl_dtime() - tw > CC_WAIT_TIMEOUT){
+            SENDCMDW(CC_CMD_TREMAIN); // get remained time
+            tw = sl_dtime();
+            sprintf(sendbuf, "%s", CC_CMD_EXPSTATE);
+            cc_sendstrmessage(sock, sendbuf);
+        }
+        if(getans(sock, NULL)){ // got next portion of data
+            DBG("server message");
+            t0 = sl_dtime();
+            int curst = atomic_load(&expstate);
+            if(curst == CAMERA_ERROR){
+                WARNX(_("Can't make exposition"));
+                if(Nremain > 1){
+                    verbose(1, "Exposing frame %d...", nframe);
+                    SENDMSGW(CC_CMD_EXPSTATE, "=%d", CAMERA_CAPTURE);
+                }
+                continue;
+            }
+            //if(expstate != CAMERA_CAPTURE){
+            if(curst == CAMERA_FRAMERDY){
+                atomic_store(&expstate, CAMERA_IDLE);
+                if(Nremain > 1){
+                    verbose(1, "Exposing frame %d...", nframe+1);
+                    SENDMSGW(CC_CMD_EXPSTATE, "=%d", CAMERA_CAPTURE);
+                }
+                verbose(2, "Frame ready, try to grab");
+                int failed = TRUE;
+                if(!getimage(TRUE)){
+                    WARNX("Can't get next image");
+                }else{
+                    if(saveFITS(&ima, &lastfilename)){
+                        --Nremain;
+                        ++nframe;
+                        failed = FALSE;
+                    }
+                }
+                if(failed && Nremain == 1){ // last image -> should re-expose
+                    verbose(1, "Exposing frame %d...", nframe);
+                    SENDMSGW(CC_CMD_EXPSTATE, "=%d", CAMERA_CAPTURE);
+                }
+                if(Nremain > 0){
+                    if(GP->pause_len > 0){
+                        double delta, time1 = sl_dtime() + GP->pause_len;
+                        while(1){
+                            SENDCMDW(CC_CMD_CAMTEMPER);
+                            if((delta = time1 - sl_dtime()) < __FLT_EPSILON__) break;
+                            if(delta > 1.) verbose(1, _("%d seconds till pause ends\n"), (int)delta);
+                            if(delta > 6.) sleep(5);
+                            else if(delta > 1.) sleep((int)delta);
+                            else usleep((int)(delta*1e6 + 1));
+                        }
+                    }
+                }else{
+                    GP->waitexpend = 0;
+                    DBG("All images saved -> exit");
+                    break;
+                }
+            }
+        }
+    }
+    if(GP->waitexpend) WARNX(_("Server timeout"));
+}
+
+#ifdef IMAGEVIEW
+static int controlfd = -1; // control socket FD
+void init_grab_sock(int sock){
+    if(sock < 0) ERRX("Can't run without command socket");
+    controlfd = sock;
+    send_headers(sock);
+    if(!GP->forceimsock && !shmima){ // init shm buffer if user don't ask to work through image socket
+        shmima = cc_getshm(GP->shmkey, 0); // try to init client shm
+    }
+}
+
+// grab image for active viewer
+static void *grabnext(void _U_ *arg){
     FNAME();
     if(controlfd < 0) return NULL;
     int sock = controlfd;
     while(1){
         if(!getWin()) exit(1);
         TIMESTAMP("End of cycle, start new");
-        expstate = CAMERA_CAPTURE;
+        atomic_store(&expstate, CAMERA_CAPTURE);
         TIMEINIT();
         SENDMSGW(CC_CMD_EXPSTATE, "=%d", CAMERA_CAPTURE); // start capture
         double timeout = GP->exptime + CC_CLIENT_TIMEOUT, t0 = sl_dtime();
@@ -413,45 +463,45 @@ static void *grabnext(void _U_ *arg){ // daemon grabbing images through the net
             if(sleept < 1000) sleept = 1000;
         }
 //        double exptime = GP->exptime;
+        TIMESTAMP("Wait for exposition ends (%g s)", timeout);
         while(sl_dtime() - t0 < timeout){
-            TIMESTAMP("Wait for exposition ends (%u us)", sleept);
             usleep(sleept);
-            TIMESTAMP("check answer");
        //     getans(sock, NULL);
             //TIMESTAMP("EXPSTATE ===> %d", expstate);
-            if(expstate != CAMERA_CAPTURE) break;
+            if(atomic_load(&expstate) != CAMERA_CAPTURE) break;
             if(sl_dtime() - t0 < GP->exptime + 0.5) sleept = 1000;
         }
-        if(sl_dtime() - t0 >= timeout || expstate != CAMERA_FRAMERDY){
+        if(sl_dtime() - t0 >= timeout || atomic_load(&expstate) != CAMERA_FRAMERDY){
             WARNX("Image wasn't received");
             continue;
         }
         TIMESTAMP("Frame ready");
-        getimage();
+        getimage(FALSE);
     }
     return NULL;
 }
 
-static void *waitimage(void _U_ *arg){ // passive waiting for next image
+// passive waiting for next image
+static void *waitimage(void _U_ *arg){
     FNAME();
     if(controlfd < 0) return NULL;
     int sock = controlfd;
     while(1){
         if(!getWin()) exit(1);
         getans(sock, NULL);
-        if(expstate != CAMERA_FRAMERDY){
+        if(atomic_load(&expstate) != CAMERA_FRAMERDY){
             usleep(1000);
             continue;
         }
         TIMESTAMP("End of cycle, start new");
         TIMEINIT();
-        getimage();
-        expstate = CAMERA_IDLE;
+        getimage(FALSE);
+        atomic_store(&expstate, CAMERA_IDLE);
     }
     return NULL;
 }
 
-// try to capture images through socket
+// try to capture images for viewer
 int sockcaptured(cc_IMG **imgptr){
     //TIMESTAMP("sockcaptured() start");
     if(!imgptr) return FALSE;
@@ -484,13 +534,12 @@ int sockcaptured(cc_IMG **imgptr){
            }
         }
     }else{ // grab in process
-        if(grabno != oldgrabno){ // image is ready
-            TIMESTAMP("Image #%d ready", grabno);
+        int curno = atomic_load(&grabno);
+        if(curno != oldgrabno){ // image is ready
+            TIMESTAMP("Image #%d ready", curno);
             if(*imgptr && (*imgptr != &ima)) free(*imgptr);
-            *imgptr = &ima; /*
-            ssize_t delta = ima.imnumber - oldgrabno;
-            if(delta > 0 && delta != 1) WARNX("sockcaptured(): missed %zd images", delta-1);*/
-            oldgrabno = grabno;
+            *imgptr = &ima;
+            oldgrabno = curno;
             framerate();
             //TIMESTAMP("sockcaptured() end, return TRUE");
             return TRUE;

@@ -18,6 +18,11 @@
 
 #pragma once
 
+#include "ccdcapture.h"
+
+// timeout of trying to lock mutex (if gone, force locking for server)
+#define MUTEX_LOCK_TMOUT    0.5
+
 // pause (seconds) between temperature logging
 #define TLOG_PAUSE  60.
 
@@ -25,3 +30,5 @@
 void server(int fd, int imsock);
 char *makeabspath(const char *path, int shouldbe);
 
+int client_lock_shm(cc_IMG *img);
+void unlock_shm(cc_IMG *img);

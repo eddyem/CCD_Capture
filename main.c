@@ -129,6 +129,7 @@ int main(int argc, char **argv){
     signal(SIGTERM, signals);
     signal(SIGHUP, SIG_IGN);
     signal(SIGTSTP, SIG_IGN);
+    signal(SIGPIPE, SIG_IGN);
     signal(SIGUSR1, signals); // restart server
     if(!isserver){ // run in standalone or client mode
         int camerainit = FALSE;
