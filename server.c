@@ -16,13 +16,16 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <stdatomic.h>
+#include <fcntl.h>
 #include <netdb.h>
 #include <pthread.h>
 #include <poll.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/mman.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <usefull_macros.h>
 
 #include "ccdfunc.h"
@@ -46,6 +49,7 @@ static float tremain = 0.; // time when capture done
 
 // IPC key for shared memory (for client's getter)
 static key_t shmkey = IPC_PRIVATE;
+static int isrunning = 1;
 
 typedef struct{
     const char *key;
@@ -54,21 +58,24 @@ typedef struct{
 
 // cat | awk '{print "{ " $3 ", \"\" }," }' | sort
 strpair allcommands[] = {
-    { CC_CMD_8BIT,         "run in 8 bit mode instead of 16 bit" },
     { CC_CMD_AUTHOR,       "FITS 'AUTHOR' field" },
     { CC_CMD_BRIGHTNESS,   "camera brightness" },
     { CC_CMD_CAMDEVNO,     "camera device number" },
+    { CC_CMD_CAMFLAGS,     "get camflags (bits: 0-start capture, 1-cancel, 2-restart server"},
     { CC_CMD_CAMLIST,      "list all connected cameras" },
     { CC_CMD_CAMFANSPD,    "fan speed of camera" },
     { CC_CMD_CONFIO,       "camera IO configuration" },
     { CC_CMD_DARK,         "don't open shutter @ exposure" },
     { CC_CMD_EXPSTATE,     "get exposition state (0: cancel, 1: capturing, 2: frame ready, 3: error) "
-                      "or set (0: cancel, 1: start exp)\n    also get camflags (bits: 0-start capture, 1-cancel, 2-restart server" },
+                               "or set (0: cancel, 1: start exp)\n" },
     { CC_CMD_EXPOSITION,   "exposition time" },
     { CC_CMD_FASTSPD,      "fast readout speed" },
     { CC_CMD_FDEVNO,       "focuser device number" },
     { CC_CMD_FOCLIST,      "list all connected focusers" },
+    { CC_CMD_FMAXPOS,      "get maximal focuser position"},
+    { CC_CMD_FMINPOS,      "get minimal focuser position"},
     { CC_CMD_FGOTO,        "focuser position" },
+    { CC_CMD_FTEMP,        "get focuser body temperature"},
     { CC_CMD_FRAMEFORMAT,  "camera frame format (X0,Y0,X1,Y1)" },
     { CC_CMD_GAIN,         "camera gain" },
     { CC_CMD_GETHEADERS,   "get last file FITS headers" },
@@ -76,10 +83,10 @@ strpair allcommands[] = {
     { CC_CMD_HELP,         "show this help" },
     { CC_CMD_IMHEIGHT,     "last image height" },
     { CC_CMD_IMWIDTH,      "last image width" },
-    { CC_CMD_INFO,         "connected devices state" },
     { CC_CMD_INFTY,        "an infinity loop taking images until there's connected clients" },
     { CC_CMD_INSTRUMENT,   "FITS 'INSTRUME' field" },
     { CC_CMD_IO,           "get/set camera IO" },
+    { CC_CMD_8BIT,         "run in 8 bit mode instead of 16 bit" },
     { CC_CMD_FRAMEMAX,     "camera maximal available format" },
     { CC_CMD_NFLUSHES,     "camera number of preflushes" },
     { CC_CMD_OBJECT,       "FITS 'OBJECT' field" },
@@ -95,7 +102,9 @@ strpair allcommands[] = {
     { CC_CMD_VBIN,         "vertical binning" },
     { CC_CMD_WDEVNO,       "wheel device number" },
     { CC_CMD_WLIST,        "list all connected wheels" },
+    { CC_CMD_WMAXPOS,      "get maximap wheel position"},
     { CC_CMD_WPOS,         "wheel position" },
+    { CC_CMD_WTEMP,        "get wheel body temperature"},
     {NULL, NULL},
 };
 
@@ -118,39 +127,17 @@ static void unlock(){
 
 static cc_IMG *ima = NULL;
 
-// client-side SHM lock
-int client_lock_shm(cc_IMG *img){
-    if(!img) return FALSE;
-    if(pthread_mutex_trylock(&img->mutex))
-        return FALSE;
-    return TRUE;
-}
-
-// server-side SHM lock (first - try gracefully, next - force)
-static void server_lock_shm(cc_IMG *img){
-    if(!img) return;
+// cleanup semaphore, stop server processes
+void stop_server(){
+    isrunning = 0;
     double t0 = sl_dtime();
-    int locked = FALSE;
-    // lock socket operations
-    while(sl_dtime() - t0 < MUTEX_LOCK_TMOUT){
-        int l = pthread_mutex_trylock(&img->mutex);
-        if(0 == l){
-            locked = TRUE;
-            break;
-        }
-        if(l == EOWNERDEAD){ // locked while locking thread is dead
-            pthread_mutex_consistent(&img->mutex);
-        }
+    // wait no more than 1s for graceful closing
+    while(sl_dtime() - t0 < 1.){
+        if(isrunning == -1) break;
+        usleep(1000);
     }
-    if(!locked) while(!client_lock_shm(img)) unlock_shm(img);
-}
-
-void unlock_shm(cc_IMG *img){
-    if(!img) return;
-    if(pthread_mutex_unlock(&img->mutex)){
-        LOGERR("Can't unlock image mutex");
-        ERR("Can't unlock image mutex");
-    }
+    // destroy semaphore
+    cc_remove_sem();
 }
 
 static void fixima(){
@@ -165,16 +152,11 @@ static void fixima(){
     // allocate memory for largest possible image
     if(!ima){
         ima = cc_getshm(GP->shmkey, camera->array.h * camera->array.w * 2);
-        // init shared robust mutex
-        pthread_mutexattr_t att;
-        pthread_mutexattr_init(&att);
-        pthread_mutexattr_setrobust(&att, PTHREAD_MUTEX_ROBUST);
-        pthread_mutexattr_setpshared(&att, PTHREAD_PROCESS_SHARED);
-        pthread_mutex_init(&ima->mutex, &att);
+        if(!ima) ERR("Can't allocate memory for image");
+        // init shared semaphore
+        cc_init_sem(TRUE);
     }
-    if(!ima) ERRX("Can't allocate memory for image");
-    locked = FALSE;
-    server_lock_shm(ima);
+    cc_lock_shm(TRUE);
     shmkey = GP->shmkey;
     //if(raw_width == ima->w && raw_height == ima->h) return; // all OK
     DBG("curformat: %dx%d", curformat.w, curformat.h);
@@ -187,7 +169,7 @@ static void fixima(){
     DBG("GP->_8bit=%d", GP->_8bit);
     ima->bytelen = raw_height * raw_width * cc_getNbytes(ima);
     DBG("new image: %dx%d", raw_width, raw_height);
-    unlock_shm(ima);
+    cc_unlock_shm();
     unlock();
 }
 
@@ -228,7 +210,7 @@ static inline void cameracapturestate(){ // capturing - wait for exposition ends
                     camstate = CAMERA_ERROR;
                     return;
                 }
-                server_lock_shm(ima);
+                cc_lock_shm(TRUE);
                 if(!camera->capture(ima)){
                     LOGERR("Can't capture image");
                     camstate = CAMERA_ERROR;
@@ -239,7 +221,7 @@ static inline void cameracapturestate(){ // capturing - wait for exposition ends
                     fillFITSheader(ima);
                     ++ima->imnumber; // increment counter
                 }
-                unlock_shm(ima);
+                cc_unlock_shm();
             }
             camstate = CAMERA_FRAMERDY;
         }
@@ -253,11 +235,20 @@ static void* processCAM(_U_ void *d){
         ERRX(_("No camera device"));
     }
     double logt = 0;
-    while(1){
+#ifdef EBUG
+    double T = sl_dtime();
+#endif
+    while(isrunning){
         if(camflags & FLAG_RESTARTSERVER){
             LOGERR("User asks to restart");
             signals(1);
         }
+#ifdef EBUG
+        if(sl_dtime() - T > 5.){
+            T = sl_dtime();
+            printf("\t\t\tprocessCAM(), 5 seconds\n");
+        }
+#endif
         usleep(100);
         if(tremain < 0.5 && tremain > 0.) usleep(tremain*1e6);
         if(lock()){
@@ -616,7 +607,7 @@ static cc_hresult nflusheshandler(_U_ int fd, _U_ const char *key, _U_ const cha
     if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
     return CC_RESULT_SILENCE;
 }
-static cc_hresult expstatehandler(_U_ int fd, _U_ const char *key, _U_ const char *val){
+static cc_hresult expstatehandler(int fd, _U_ const char *key, const char *val){
     char buf[64];
     if(val){
         int n = atoi(val);
@@ -625,11 +616,10 @@ static cc_hresult expstatehandler(_U_ int fd, _U_ const char *key, _U_ const cha
             return CC_RESULT_OK;
         }
         else if(n == CAMERA_CAPTURE){ // start exposition
-            if(GP->exptime < 1e-9){
-                snprintf(buf, 63, CC_CMD_EXPOSITION "=%g", GP->exptime);
-                cc_sendstrmessage(fd, buf);
+            if(GP->exptime < 1e-9){ // need exposition time to be set
                 return CC_RESULT_FAIL;
             }
+            if(camstate == CAMERA_CAPTURE) return CC_RESULT_BUSY; // in progress
             TIMESTAMP("Get FLAG_STARTCAPTURE");
             TIMEINIT();
             camflags |= FLAG_STARTCAPTURE;
@@ -639,6 +629,10 @@ static cc_hresult expstatehandler(_U_ int fd, _U_ const char *key, _U_ const cha
     }
     snprintf(buf, 63, CC_CMD_EXPSTATE "=%d", camstate);
     if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
+    return CC_RESULT_SILENCE;
+}
+static cc_hresult camflagshandler(int fd, _U_ const char *key, _U_ const char *val){
+    char buf[64];
     snprintf(buf, 63, "camflags=%d", camflags);
     if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
     return CC_RESULT_SILENCE;
@@ -722,6 +716,22 @@ static cc_hresult handler(_U_ int fd, _U_ const char *key, _U_ const char *val){
 /*******************************************************************************
  ***************************** cc_Wheel handlers **********************************
  ******************************************************************************/
+static cc_hresult wmaxposhandler(int fd, const char *key, _U_ const char *val){
+    if(wheel->Ndevices < 1) return CC_RESULT_FAIL;
+    char buf[64];
+    snprintf(buf, 63, "%s=%d", key, wmaxpos);
+    if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
+    return CC_RESULT_SILENCE;
+}
+static cc_hresult wtemphandler(int fd, const char *key, _U_ const char *val){
+    if(wheel->Ndevices < 1 || !wheel->getTbody) return CC_RESULT_FAIL;
+    char buf[64];
+    float t;
+    if(!wheel->getTbody(&t)) return CC_RESULT_FAIL;
+    snprintf(buf, 63, "%s=%.1f", key, t);
+    if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
+    return CC_RESULT_SILENCE;
+}
 static cc_hresult wlisthandler(int fd, _U_ const char *key, _U_ const char *val){
     if(wheel->Ndevices < 1) return CC_RESULT_FAIL;
     for(int i = 0; i < wheel->Ndevices; ++i){
@@ -769,18 +779,42 @@ static cc_hresult wgotohandler(_U_ int fd, _U_ const char *key, _U_ const char *
 /*******************************************************************************
  **************************** Focuser handlers *********************************
  ******************************************************************************/
-
+static cc_hresult fminposhandler(int fd, const char *key, _U_ const char *val){
+    if(focuser->Ndevices < 1) return CC_RESULT_FAIL;
+    char buf[64];
+    snprintf(buf, 63, "%s=%g", key, focminpos);
+    if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
+    return CC_RESULT_SILENCE;
+}
+static cc_hresult fmaxposhandler(int fd, const char *key, _U_ const char *val){
+    if(focuser->Ndevices < 1) return CC_RESULT_FAIL;
+    char buf[64];
+    snprintf(buf, 63, "%s=%g", key, focmaxpos);
+    if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
+    return CC_RESULT_SILENCE;
+}
+static cc_hresult ftemphandler(int fd, const char *key, _U_ const char *val){
+    if(focuser->Ndevices < 1 || !focuser->getTbody) return CC_RESULT_FAIL;
+    char buf[64];
+    float t;
+    if(!focuser->getTbody(&t)) return CC_RESULT_FAIL;
+    snprintf(buf, 63, "%s=%.1f", key, t);
+    if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
+    return CC_RESULT_SILENCE;
+}
 static cc_hresult foclisthandler(int fd, _U_ const char *key, _U_ const char *val){
     if(focuser->Ndevices < 1) return CC_RESULT_FAIL;
     for(int i = 0; i < focuser->Ndevices; ++i){
         char modname[256], buf[BUFSIZ];
-        if(!focuser->setDevNo(i)) continue;
+        if(focuser->setDevNo){
+            if(!focuser->setDevNo(i)) continue;
+        }
         focuser->getModelName(modname, 255);
         snprintf(buf, BUFSIZ-1, CC_CMD_FOCLIST "='%s'", modname);
         if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
     }
     int devno = atomic_load(&focdevno);
-    if(devno > -1) focuser->setDevNo(devno);
+    if(devno > -1 && focuser->setDevNo) focuser->setDevNo(devno);
     return CC_RESULT_SILENCE;
 }
 static cc_hresult fsetNhandler(int fd, _U_ const char *key, const char *val){
@@ -821,63 +855,6 @@ static cc_hresult fgotohandler(int fd, _U_ const char *key, const char *val){
  **************************** Common handlers **********************************
  ******************************************************************************/
 
-// information about everything
-static cc_hresult infohandler(int fd, _U_ const char *key, _U_ const char *val){
-    char buf[BUFSIZ], buf1[256];
-    float f;
-    int i;
-    if(camera){
-        if(camera->getModelName && camera->getModelName(buf1, 255)){
-            snprintf(buf, BUFSIZ-1, CC_CMD_CAMLIST "='%s'", buf1);
-            if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
-        }
-#define RUN(f, arg) do{if(CC_RESULT_DISCONNECTED == f(fd, arg, NULL)) return CC_RESULT_DISCONNECTED;}while(0)
-        RUN(binhandler, CC_CMD_HBIN);
-        RUN(binhandler, CC_CMD_VBIN);
-        RUN(temphandler, CC_CMD_CAMTEMPER);
-        RUN(exphandler, CC_CMD_EXPOSITION);
-        RUN(expstatehandler, CC_CMD_EXPSTATE);
-#undef RUN
-    }
-    if(wheel){
-        DBG("chk wheel");
-        if(wheel->getModelName(buf1, 255)){
-            snprintf(buf, BUFSIZ-1, CC_CMD_WLIST "='%s'", buf1);
-            if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
-        }
-        if(wheel->getTbody(&f)){
-            snprintf(buf, BUFSIZ-1, "wtemp=%.1f", f);
-            if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
-        }
-        if(wheel->getPos(&i)){
-            snprintf(buf, BUFSIZ-1, CC_CMD_WPOS "=%d", i);
-            if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
-        }
-        snprintf(buf, BUFSIZ-1, "wmaxpos=%d", wmaxpos);
-        if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
-    }
-    if(focuser){
-        DBG("Chk focuser");
-        if(focuser->getModelName(buf1, 255)){
-            snprintf(buf, BUFSIZ-1, CC_CMD_FOCLIST "='%s'", buf1);
-            if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
-        }
-        if(focuser->getTbody(&f)){
-            snprintf(buf, BUFSIZ-1, "foctemp=%.1f", f);
-            if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
-        }
-        snprintf(buf, BUFSIZ-1, "focminpos=%g", focminpos);
-        if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
-        snprintf(buf, BUFSIZ-1, "focmaxpos=%g", focmaxpos);
-        if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
-        if(focuser->getPos(&f)){
-            snprintf(buf, BUFSIZ-1, CC_CMD_FGOTO "=%g", f);
-            if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
-        }
-    }
-    DBG("EOF");
-    return CC_RESULT_SILENCE;
-}
 // show help
 static cc_hresult helphandler(int fd, _U_ const char *key, _U_ const char *val){
     char buf[256];
@@ -971,10 +948,10 @@ static cc_hresult chkfoc(char *val){
     return CC_RESULT_FAIL;
 }
 static cc_handleritem items[] = {
-    {chktrue,infohandler, CC_CMD_INFO},
     {NULL,   helphandler, CC_CMD_HELP},
     {NULL,   restarthandler, CC_CMD_RESTART},
     {chkcc,  camlisthandler, CC_CMD_CAMLIST},
+    {chkcc,  camflagshandler, CC_CMD_CAMFLAGS},
     {chkcc,  camsetNhandler, CC_CMD_CAMDEVNO},
     {chkcc,  camfanhandler, CC_CMD_CAMFANSPD},
     {chkcc,  exphandler, CC_CMD_EXPOSITION},
@@ -1009,9 +986,14 @@ static cc_handleritem items[] = {
     {chkfoc, foclisthandler, CC_CMD_FOCLIST},
     {chkfoc, fsetNhandler, CC_CMD_FDEVNO},
     {chkfoc, fgotohandler, CC_CMD_FGOTO},
+    {chkfoc, fminposhandler, CC_CMD_FMINPOS},
+    {chkfoc, fmaxposhandler, CC_CMD_FMAXPOS},
+    {chkfoc, ftemphandler, CC_CMD_FTEMP},
     {chkwhl, wlisthandler, CC_CMD_WLIST},
     {chkwhl, wsetNhandler, CC_CMD_WDEVNO},
     {chkwhl, wgotohandler, CC_CMD_WPOS},
+    {chkwhl, wmaxposhandler, CC_CMD_WMAXPOS},
+    {chkwhl, wtemphandler, CC_CMD_WTEMP},
     {NULL, NULL, NULL},
 };
 
@@ -1046,12 +1028,12 @@ void server(int sock, int imsock){
     if(imsock < 0) WARNX("Server run without image transport socket");
     else if(listen(imsock, CC_MAXCLIENTS) == -1){
         WARN("listen()");
-        LOGWARN("listen()");
+        LOGERR("server(): error in listen() for image socket");
         return;
     }
     if(listen(sock, CC_MAXCLIENTS) == -1){
         WARN("listen()");
-        LOGWARN("listen()");
+        LOGERR("server(): error in listen() for command socket");
         return;
     }
     // init everything
@@ -1062,11 +1044,17 @@ void server(int sock, int imsock){
     wheeldevini(0);
     if(startCCD()) --ctr;
     camdevini(0);
-    if(ctr == 3) ERRX("No devices found");
+    if(ctr == 3){
+        LOGERR("server(): no devices found");
+        WARNX("No devices found");
+    }
     // start camera thread
     pthread_t camthread;
     if(camera){
-        if(pthread_create(&camthread, NULL, processCAM, NULL)) ERR("pthread_create()");
+        if(pthread_create(&camthread, NULL, processCAM, NULL)){
+            WARN("pthread_create()");
+            LOGERR("server(): pthread_create()");
+        }
     }
     int nfd = 2; // only two listening sockets @start: command and image
     struct pollfd poll_set[CC_MAXCLIENTS+2];
@@ -1080,8 +1068,19 @@ void server(int sock, int imsock){
     poll_set[0].events = POLLIN;
     poll_set[1].fd = imsock;
     poll_set[1].events = POLLIN;
-    while(1){
+#ifdef EBUG
+    double T = sl_dtime();
+#endif
+    while(isrunning == 1){
+#ifdef EBUG
+        if(sl_dtime() - T > 5.){
+            T = sl_dtime();
+            printf("\t\t\tserver(), 5 seconds\n");
+        }
+#endif
+        DBG("poll");
         poll(poll_set, nfd, 1); // max timeout - 1ms
+        DBG("chk imsock");
         //if(imsock > -1 && sl_canread(imsock) > 0){
         if(imsock > -1 && (poll_set[1].revents & POLLIN)){
             //uint8_t buf[32];
@@ -1093,22 +1092,28 @@ void server(int sock, int imsock){
             DBG("client=%d", client);
             // sending image could be a very long operation -> run it in separate thread
             if(client > -1){
-                pthread_t sendthread;
-                if(pthread_create(&sendthread, NULL, sendimage, (void*)&client)){
-                    WARN("pthread_create()");
-                    LOGWARN("pthread_create() error");
+                if(ima->imnumber == 0){
+                    WARNX("Client wants an image, but there's no data");
                     close(client);
                 }else{
-                    DBG("Thread created -> detach");
-                    if(pthread_detach(sendthread)){
-                        WARN("pthread_detach()");
-                        LOGWARN("pthread_detach() error");
-                        pthread_cancel(sendthread);
+                    pthread_t sendthread;
+                    if(pthread_create(&sendthread, NULL, sendimage, (void*)&client)){
+                        WARN("pthread_create()");
+                        LOGWARN("pthread_create() error");
                         close(client);
-                    }else DBG("Thread detached");
+                    }else{
+                        DBG("Thread created -> detach");
+                        if(pthread_detach(sendthread)){
+                            WARN("pthread_detach()");
+                            LOGWARN("pthread_detach() error");
+                            pthread_cancel(sendthread);
+                            close(client);
+                        }else DBG("Thread detached");
+                    }
                 }
             }else{WARN("accept()"); DBG("disconnected");}
         }
+        DBG("chk cmd sock");
         if(poll_set[0].revents & POLLIN){ // check main for accept()
             struct sockaddr_in addr;
             socklen_t len = sizeof(addr);
@@ -1128,6 +1133,7 @@ void server(int sock, int imsock){
                 }
             }
         }
+#if 0
         // process some data & send messages to ALL
         if(camstate == CAMERA_FRAMERDY || camstate == CAMERA_ERROR){
             DBG("new image: timestamp=%.1f, num=%zd", ima->timestamp, ima->imnumber);
@@ -1140,6 +1146,8 @@ void server(int sock, int imsock){
             }
             camstate = CAMERA_IDLE;
         }
+#endif
+        DBG("scan connections");
         // scan connections
         for(int fdidx = 2; fdidx < nfd; ++fdidx){
             if((poll_set[fdidx].revents & POLLIN) == 0) continue;
@@ -1165,8 +1173,9 @@ void server(int sock, int imsock){
                 --nfd;
             }
         }
+        DBG("Check infty");
         // check `infty`
-        if(camstate == CAMERA_IDLE && infty){ // start new exposition
+        if(camstate != CAMERA_CAPTURE && infty){ // start new exposition
             // mark to start new capture in infinity loop when at least one client connected
             if(nfd > 2){
                 camflags |= FLAG_STARTCAPTURE;
@@ -1174,11 +1183,13 @@ void server(int sock, int imsock){
                 TIMEINIT();
             }
         }
+        DBG("OK ->");
     }
-    // never reached
+    WARNX("SERVER STOPPED!");
+    camstop();
     focclose();
     closewheel();
-    closecam();
+    isrunning = -1;
 }
 
 /**

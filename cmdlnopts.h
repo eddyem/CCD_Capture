@@ -42,9 +42,9 @@ typedef struct{
     char **addhdr;      // list of files from which to add header records
     char **plugincmd;   // plugin commands
     int restart;        // restart server
-    int waitexpend;     // wait while exposition ends
     int cancelexpose;   // cancel exp (for Grasshopper - forbid forever)
     int client;         // run as client
+    int info;           // show main information about camera etc. in client's terminal
     int viewer;         // passive client (only get last images)
     int listdevices;    // list connected devices
     int fanspeed;       // fan speed: 0-2

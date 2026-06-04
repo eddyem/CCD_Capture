@@ -34,6 +34,7 @@
 #ifdef IMAGEVIEW
 #include "imageview.h"
 #endif
+#include "server.h"
 #include "socket.h"
 
 static int isserver = FALSE;
@@ -56,6 +57,7 @@ void signals(int signo){
     if(signo) WARNX("Get signal %d - exit", signo);
     if(!GP->client){
         DBG("Cancel capturing and close all");
+        stop_server();
         camstop();
         closewheel();
         focclose();
@@ -107,11 +109,14 @@ int main(int argc, char **argv){
         if(!GP->client) isserver = TRUE;
     }
     if(GP->path && !GP->client) isserver = TRUE;
+    if(!GP->path && !GP->port){
+        WARNX("Point one of options: `port` or `path` for command socket");
+    }
     if((isserver || GP->client) && !GP->imageport){
         GP->imageport = MALLOC(char, 32);
         if(!GP->port) sprintf(GP->imageport, "12345");
         else snprintf(GP->imageport, 31, "%d", 1+atoi(GP->port));
-        verbose(1, "Set image port to %s", GP->imageport);
+        printf("Set image port to %s\n", GP->imageport);
     }
     if(GP->client && (GP->commondev || GP->focuserdev || GP->cameradev || GP->wheeldev))
        ERRX("Can't be client and standalone in same time!");
@@ -123,6 +128,7 @@ int main(int argc, char **argv){
         OPENLOG(GP->logfile, lvl, 1);
         if(!sl_globlog) WARNX("Can't create log file");
     }
+    if(GP->info && GP->verbose < 2) GP->verbose = 2; // increase verbose messages level for `info`
     signal(SIGINT, signals);
     signal(SIGQUIT, signals);
     signal(SIGABRT, signals);

@@ -24,6 +24,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/ioctl.h>
+#include <sys/stat.h>
 #include <sys/un.h>  // unix socket
 #include <unistd.h>
 #include <usefull_macros.h>
@@ -42,6 +43,82 @@ double __t0 = 0.;
 
 static int ntries = 2;  // amount of tries to send messages controlling the answer
 double answer_timeout = 0.1; // timeout of waiting answer from server (not static for client.c)
+
+static sem_t *sem = SEM_FAILED;
+
+// client-side SHM lock
+int cc_lock_shm(int isserver){
+    if(sem == SEM_FAILED){
+        DBG("Can't lock NULL");
+        return FALSE;
+    }
+    struct timespec ts = {.tv_sec = 0, .tv_nsec = 10000000};
+    DBG("Try to lock");
+    if(isserver){
+        int locked = TRUE;
+        while(sem_timedwait(sem, &ts) && locked){
+            switch(errno){
+            case EINTR:
+                DBG("Interrupt -> try to lock again");
+                break;
+            default: // timeout or other error -> force locking
+                DBG("Error locking -> force unlock");
+                locked = FALSE;
+            }
+        }
+        if(locked){
+            double t0 = sl_dtime();
+            while(sem_trywait(sem) && sl_dtime() - t0 < 0.1) sem_post(sem); // force locking
+        }
+    }else{
+        if(sem_timedwait(sem, &ts)){
+            DBG("Image semaphore is locked too long by other side");
+            return FALSE; // can't lock
+        }
+    }
+    DBG("Semaphore locked");
+    return TRUE;
+}
+
+void cc_unlock_shm(){
+    if(sem == SEM_FAILED){
+        DBG("Can't unlock NULL");
+        return;
+    }
+    if(sem_post(sem)){
+        switch(errno){
+        case EOVERFLOW: // already unlocked
+            break;
+        default: // not a valid? or other?
+            WARN("Can't unlock image semaphore");
+            LOGERR("Can't unlock image semaphore");
+            return;
+        }
+    }
+    DBG("Semaphore unlocked");
+}
+
+void cc_init_sem(int isserver){
+    if(sem != SEM_FAILED) return;
+    umask(0); // for read-write semaphore
+    // create samaphore if no
+    if(isserver){
+        sem = sem_open(SEM_NAME, O_CREAT, 0666, 1);
+    }else{
+        sem = sem_open(SEM_NAME, 0);
+    }
+    if(sem == SEM_FAILED){
+        LOGERR("sem_open failed: %s", strerror(errno));
+    }
+}
+
+void cc_remove_sem(){
+    if(sem == SEM_FAILED) return;
+    sem_close(sem);
+    DBG("semaphore closed\n");
+    if(-1 == sem_unlink(SEM_NAME))
+        LOGERR("Can't delete semaphore");
+}
 
 /**
  * @brief cc_open_socket - create socket and open it
@@ -253,7 +330,7 @@ char *cc_get_keyval(char **keyval){
 cc_IMG *cc_getshm(key_t key, size_t imsize){
     size_t shmsize = sizeof(cc_IMG) + imsize;
     shmsize = 1024 * (1 + shmsize / 1024);
-    DBG("Allocate %zd bytes in shared memory", shmsize);
+    DBG("Shared memory; sizeof(cc_IMG)=%zd, imsize=%zd", sizeof(cc_IMG), imsize);
     int shmid = -1;
     int flags = (imsize) ? IPC_CREAT | 0666 : 0;
     shmid = shmget(key, 0, flags);
@@ -272,9 +349,15 @@ cc_IMG *cc_getshm(key_t key, size_t imsize){
             WARN("Can't create shared memory segment %d", key);
             return NULL;
         }
+    }else{
+#ifdef EBUG
+        struct shmid_ds buf;
+        if(shmctl(shmid, IPC_STAT, &buf)) WARNX("Can't get SHM data");
+        else DBG("SHM size = %zd", buf.shm_segsz);
+#endif
     }
     flags = (imsize) ? 0 : SHM_RDONLY; // client opens memory in readonly mode
-    cc_IMG *ptr = shmat(shmid, NULL, flags);
+    cc_IMG *ptr = shmat(shmid, NULL, 0);
     if(ptr == (void*)-1){
         if(imsize) WARN("Can't attach SHM segment %d", key);
         return NULL;

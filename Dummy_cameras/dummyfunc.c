@@ -49,7 +49,7 @@ static int campoll(cc_capture_status *st, float *remain){
     if(capstat != CAPTURE_PROCESS){
         if(st) *st = capstat;
         if(remain) *remain = 0.;
-        return TRUE;
+        return FALSE;
     }
     if(sl_dtime() - texpstart > exptime){
         if(st) *st = CAPTURE_READY;

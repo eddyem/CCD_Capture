@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-06-02 18:19+0300\n"
+"POT-Creation-Date: 2026-06-04 18:22+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -62,7 +62,8 @@ msgid "rewrite output file if exists"
 msgstr ""
 
 #: cmdlnopts.c:59
-msgid "verbose level (-V - messages, -VV - debug, -VVV - all shit)"
+msgid ""
+"verbose level (-V - main messages, -VV - secondary messages, -VVV - debug)"
 msgstr ""
 
 #: cmdlnopts.c:60
@@ -117,140 +118,142 @@ msgstr ""
 msgid "output file name"
 msgstr ""
 
-#: cmdlnopts.c:74
-msgid "wait while exposition ends"
-msgstr ""
-
-#: cmdlnopts.c:76
+#: cmdlnopts.c:75
 msgid "N flushes before exposing (default: 1)"
 msgstr ""
 
-#: cmdlnopts.c:77
+#: cmdlnopts.c:76
 msgid "horizontal binning to N pixels"
 msgstr ""
 
-#: cmdlnopts.c:78
+#: cmdlnopts.c:77
 msgid "vertical binning to N pixels"
 msgstr ""
 
-#: cmdlnopts.c:79
+#: cmdlnopts.c:78
 msgid "make series of N frames"
 msgstr ""
 
-#: cmdlnopts.c:80
+#: cmdlnopts.c:79
 msgid "make pause for N seconds between expositions"
 msgstr ""
 
-#: cmdlnopts.c:81
+#: cmdlnopts.c:80
 msgid "set exposure time to given value (seconds!)"
 msgstr ""
 
-#: cmdlnopts.c:82
+#: cmdlnopts.c:81
 msgid "cancel current exposition"
 msgstr ""
 
-#: cmdlnopts.c:83
+#: cmdlnopts.c:82
 msgid ""
 "absolute (not divided by binning!) frame X0 coordinate (-1 - all with "
 "overscan)"
 msgstr ""
 
-#: cmdlnopts.c:84
+#: cmdlnopts.c:83
 msgid "absolute frame Y0 coordinate (-1 - all with overscan)"
 msgstr ""
 
-#: cmdlnopts.c:85
+#: cmdlnopts.c:84
 msgid "absolute frame X1 coordinate (-1 - all with overscan)"
 msgstr ""
 
-#: cmdlnopts.c:86
+#: cmdlnopts.c:85
 msgid "absolute frame Y1 coordinate (-1 - all with overscan)"
 msgstr ""
 
-#: cmdlnopts.c:88
+#: cmdlnopts.c:87
 msgid "open shutter"
 msgstr ""
 
-#: cmdlnopts.c:89
+#: cmdlnopts.c:88
 msgid "close shutter"
 msgstr ""
 
-#: cmdlnopts.c:90
+#: cmdlnopts.c:89
 msgid "run exposition on LOW @ pin5 I/O port"
 msgstr ""
 
-#: cmdlnopts.c:91
+#: cmdlnopts.c:90
 msgid "run exposition on HIGH @ pin5 I/O port"
 msgstr ""
 
-#: cmdlnopts.c:92
+#: cmdlnopts.c:91
 msgid "get value of I/O port pins"
 msgstr ""
 
-#: cmdlnopts.c:93
+#: cmdlnopts.c:92
 msgid "move stepper motor asynchronous"
 msgstr ""
 
-#: cmdlnopts.c:95
+#: cmdlnopts.c:94
 msgid "set I/O port pins to given value (decimal number, pin1 is LSB)"
 msgstr ""
 
-#: cmdlnopts.c:96
+#: cmdlnopts.c:95
 msgid ""
 "configure I/O port pins to given value (decimal number, pin1 is LSB, 1 == "
 "output, 0 == input)"
 msgstr ""
 
-#: cmdlnopts.c:98
+#: cmdlnopts.c:97
 msgid "move focuser to absolute position, mm"
 msgstr ""
 
-#: cmdlnopts.c:99
+#: cmdlnopts.c:98
 msgid "move focuser to relative position, mm (only for standalone)"
 msgstr ""
 
-#: cmdlnopts.c:101
+#: cmdlnopts.c:100
 msgid "set wheel position"
 msgstr ""
 
-#: cmdlnopts.c:103
+#: cmdlnopts.c:102
 msgid "CMOS gain level"
 msgstr ""
 
-#: cmdlnopts.c:104
+#: cmdlnopts.c:103
 msgid "CMOS brightness level"
 msgstr ""
 
-#: cmdlnopts.c:106
+#: cmdlnopts.c:105
 msgid "logging file name (if run as server)"
 msgstr ""
 
-#: cmdlnopts.c:107
+#: cmdlnopts.c:106
 msgid "UNIX socket name (command socket)"
 msgstr ""
 
-#: cmdlnopts.c:108
+#: cmdlnopts.c:107
 msgid "local INET command socket port"
 msgstr ""
 
-#: cmdlnopts.c:109
+#: cmdlnopts.c:108
 msgid "INET image socket port"
 msgstr ""
 
-#: cmdlnopts.c:110
+#: cmdlnopts.c:109
 msgid "run as client"
 msgstr ""
 
-#: cmdlnopts.c:111
+#: cmdlnopts.c:110
 msgid "passive viewer (only get last images)"
 msgstr ""
 
-#: cmdlnopts.c:112
+#: cmdlnopts.c:111
 msgid "restart image server"
 msgstr ""
 
-#: cmdlnopts.c:113
+#: cmdlnopts.c:112
 msgid "network answer timeout (default: 0.1s)"
+msgstr ""
+
+#: cmdlnopts.c:113
+msgid ""
+"get base information about connected hardware (also increasing text messages "
+"level to 2)"
 msgstr ""
 
 #: cmdlnopts.c:115
@@ -491,12 +494,12 @@ msgstr ""
 msgid "Can't set brightness to %g"
 msgstr ""
 
-#: ccdfunc.c:690 server.c:332
+#: ccdfunc.c:690 server.c:323
 #, c-format
 msgid "Can't set binning %dx%d"
 msgstr ""
 
-#: ccdfunc.c:702 server.c:333
+#: ccdfunc.c:702 server.c:324
 msgid "Can't set given geometry"
 msgstr ""
 
@@ -544,11 +547,11 @@ msgstr ""
 msgid "Capture frame %d"
 msgstr ""
 
-#: ccdfunc.c:750 ccdfunc.c:827 server.c:202 server.c:203
+#: ccdfunc.c:750 ccdfunc.c:827 server.c:184 server.c:185
 msgid "Camera plugin have no function `start exposition`"
 msgstr ""
 
-#: ccdfunc.c:752 ccdfunc.c:829 server.c:208 server.c:209
+#: ccdfunc.c:752 ccdfunc.c:829 server.c:190 server.c:191
 msgid "Can't start exposition"
 msgstr ""
 
@@ -560,7 +563,7 @@ msgstr ""
 msgid "Read grabbed image"
 msgstr ""
 
-#: ccdfunc.c:762 ccdfunc.c:842 server.c:226 server.c:227
+#: ccdfunc.c:762 ccdfunc.c:842 server.c:208 server.c:209
 msgid "Camera plugin have no function `capture`"
 msgstr ""
 
@@ -568,7 +571,7 @@ msgstr ""
 msgid "Can't grab image"
 msgstr ""
 
-#: ccdfunc.c:778 client.c:420
+#: ccdfunc.c:778 client.c:447
 #, c-format
 msgid "%d seconds till pause ends\n"
 msgstr ""
@@ -577,15 +580,15 @@ msgstr ""
 msgid "Some error when capture"
 msgstr ""
 
-#: server.c:253
+#: server.c:235
 msgid "No camera device"
 msgstr ""
 
-#: client.c:385
+#: client.c:409
 msgid "Can't make exposition"
 msgstr ""
 
-#: client.c:434
+#: client.c:459
 msgid "Server timeout"
 msgstr ""
 

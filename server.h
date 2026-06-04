@@ -30,5 +30,4 @@
 void server(int fd, int imsock);
 char *makeabspath(const char *path, int shouldbe);
 
-int client_lock_shm(cc_IMG *img);
-void unlock_shm(cc_IMG *img);
+void stop_server();

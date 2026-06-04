@@ -56,7 +56,7 @@ sl_option_t cmdlnopts[] = {
     {"focdevno",NEED_ARG,   NULL,    NA,    arg_int,    APTR(&G.focdevno),  N_("focuser device number (if many: 0, 1, 2 etc)")},
     {"help",    NO_ARGS,    &help,   1,     arg_none,   NULL,               N_("show this help")},
     {"rewrite", NO_ARGS,    &G.rewrite,1,   arg_none,   NULL,               N_("rewrite output file if exists")},
-    {"verbose", NO_ARGS,    NULL,   'V',    arg_none,   APTR(&G.verbose),   N_("verbose level (-V - messages, -VV - debug, -VVV - all shit)")},
+    {"verbose", NO_ARGS,    NULL,   'V',    arg_none,   APTR(&G.verbose),   N_("verbose level (-V - main messages, -VV - secondary messages, -VVV - debug)")},
     {"dark",    NO_ARGS,    NULL,   'd',    arg_int,    APTR(&G.dark),      N_("not open shutter, when exposing (\"dark frames\")")},
     {"8bit",    NO_ARGS,    NULL,   '8',    arg_int,    APTR(&G._8bit),     N_("run in 8-bit mode")},
     {"fast",    NO_ARGS,    NULL,   'f',    arg_none,   APTR(&G.fast),      N_("fast readout mode")},
@@ -71,7 +71,6 @@ sl_option_t cmdlnopts[] = {
     {"prog-id", NEED_ARG,   NULL,   'P',    arg_string, APTR(&G.prog_id),   N_("observing program name")},
     {"addrec",  MULT_PAR,   NULL,   'r',    arg_string, APTR(&G.addhdr),    N_("add records to header from given file[s]")},
     {"outfile", NEED_ARG,   NULL,   'o',    arg_string, APTR(&G.outfile),   N_("output file name")},
-    {"wait",    NO_ARGS,    &G.waitexpend,1,arg_none,   NULL,               N_("wait while exposition ends")},
 
     {"nflushes",NEED_ARG,   NULL,   'l',    arg_int,    APTR(&G.nflushes),  N_("N flushes before exposing (default: 1)")},
     {"hbin",    NEED_ARG,   NULL,   'h',    arg_int,    APTR(&G.hbin),      N_("horizontal binning to N pixels")},
@@ -111,6 +110,7 @@ sl_option_t cmdlnopts[] = {
     {"viewer",  NO_ARGS,    &G.viewer,1,    arg_none,   NULL,               N_("passive viewer (only get last images)")},
     {"restart", NO_ARGS,    &G.restart,1,   arg_none,   NULL,               N_("restart image server")},
     {"timeout", NEED_ARG,   NULL,   '0',    arg_double, APTR(&G.anstmout),  N_("network answer timeout (default: 0.1s)")},
+    {"info",    NO_ARGS,    &G.info, 1,     arg_none,   NULL,               N_("get base information about connected hardware (also increasing text messages level to 2)")},
 
     {"shmkey", NEED_ARG,    NULL,   'k',    arg_int,    APTR(&G.shmkey),    N_("shared memory (with image data) key (default: 7777777)")},
     {"forceimsock",NO_ARGS, &G.forceimsock,1, arg_none, NULL,               N_("force using image through socket transition even if can use SHM")},

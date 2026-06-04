@@ -20,6 +20,7 @@
 
 #include <fitsio.h> // FLEN_CARD
 #include <pthread.h>
+#include <semaphore.h>
 #include <stdint.h>
 #include <stdlib.h> // for size_t
 
@@ -29,10 +30,12 @@
 // magic to mark our SHM
 #define CC_SHM_MAGIC   (0xdeadbeef)
 
+// semaphore for SHM protection
+#define SEM_NAME "ccdcapture"
+
 // base image parameters - sent by socket and stored in shared memory
-typedef struct {
+typedef struct __attribute__((packed)){
     uint32_t MAGICK;            // magick (DEADBEEF) - to mark our shm
-    pthread_mutex_t mutex;      // shared mutex
     double timestamp;           // timestamp of image taken
     uint8_t bitpix;             // bits per pixel (8 or 16)
     int w, h;                   // image size
@@ -221,7 +224,6 @@ typedef enum{
 } cc_camera_state;
 
 // common information about everything
-#define CC_CMD_INFO        "info"
 #define CC_CMD_HELP        "help"
 // restart server
 #define CC_CMD_RESTART     "restartTheServer"
@@ -240,7 +242,8 @@ typedef enum{
 #define CC_CMD_HBIN        "hbin"
 #define CC_CMD_VBIN        "vbin"
 #define CC_CMD_CAMTEMPER   "tcold"
-#define CC_CMD_CAMFANSPD   "ccdfanspeed"
+#define CC_CMD_CAMFANSPD   "camfanspeed"
+#define CC_CMD_CAMFLAGS    "camflags"
 #define CC_CMD_SHUTTER     "shutter"
 #define CC_CMD_CONFIO      "confio"
 #define CC_CMD_IO          "io"
@@ -269,11 +272,16 @@ typedef enum{
 #define CC_CMD_FOCLIST     "foclist"
 #define CC_CMD_FDEVNO      "focdevno"
 #define CC_CMD_FGOTO       "focpos"
+#define CC_CMD_FMINPOS     "focminpos"
+#define CC_CMD_FMAXPOS     "focmaxpos"
+#define CC_CMD_FTEMP       "foctemp"
 
 // wheel
 #define CC_CMD_WLIST       "wlist"
 #define CC_CMD_WDEVNO      "wdevno"
 #define CC_CMD_WPOS        "wpos"
+#define CC_CMD_WMAXPOS     "wmaxpos"
+#define CC_CMD_WTEMP       "wtemp"
 
 typedef enum{ // parameter type
     CC_PAR_NONE, // no parameter
@@ -337,3 +345,8 @@ cc_hresult cc_getfloat(int fd, cc_strbuff *cbuf, const char *cmd, float *val);
 char *cc_nextkw(char *buf, char record[FLEN_CARD], int newlines);
 size_t cc_kwfromfile(cc_IMG *img, char *filename);
 //int cc_charbuf2kw(cc_charbuff *b, fitsfile *f);
+
+void cc_init_sem(int isserver);
+int cc_lock_shm(int isserver);
+void cc_unlock_shm();
+void cc_remove_sem();
