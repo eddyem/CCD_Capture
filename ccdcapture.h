@@ -201,9 +201,11 @@ typedef struct{
 // wait for mutex locking
 #define CC_BUSY_TIMEOUT    (1.0)
 // wait for exposition ends (between subsequent check calls)
-#define CC_WAIT_TIMEOUT    (2.0)
+#define CC_WAIT_TIMEOUT    (15.0)
 // client will disconnect after this time from last server message
-#define CC_CLIENT_TIMEOUT  (3.0)
+#define CC_CLIENT_TIMEOUT  (30.0)
+// minimal sleep (us) time when client waits for exp end
+#define CC_IMWAIT_SLEEP     (1000)
 
 // fd - socket fd to send private messages, key, val - key and its value
 typedef cc_hresult (*cc_mesghandler)(int fd, const char *key, const char *val);
@@ -234,6 +236,7 @@ typedef enum{
 #define CC_CMD_SHMEMKEY    "shmemkey"
 
 // CCD/CMOS
+#define CC_CMD_IMNUMBER    "imnumber"
 #define CC_CMD_PLUGINCMD   "plugincmd"
 #define CC_CMD_CAMLIST     "camlist"
 #define CC_CMD_CAMDEVNO    "camdevno"

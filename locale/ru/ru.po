@@ -7,7 +7,7 @@
 msgid   ""
 msgstr  "Project-Id-Version: PACKAGE VERSION\n"
         "Report-Msgid-Bugs-To: \n"
-        "POT-Creation-Date: 2026-06-04 18:16+0300\n"
+        "POT-Creation-Date: 2026-06-08 16:46+0300\n"
         "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
         "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
         "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -21,7 +21,7 @@ msgstr  "Project-Id-Version: PACKAGE VERSION\n"
 msgid   "%.1f seconds till exposition ends"
 msgstr  "%.1f секунд до окончания экспозиции"
 
-#: ccdfunc.c:778 client.c:447
+#: ccdfunc.c:778 client.c:491
 #, c-format
 msgid   "%d seconds till pause ends\n"
 msgstr  "%d секунд до окончания паузы\n"
@@ -66,12 +66,12 @@ msgstr  "У плагина камеры нет особых команд"
 msgid   "Camera plugin have no fun speed setter"
 msgstr  "У плагина камеры нет особых команд"
 
-#: ccdfunc.c:762 ccdfunc.c:842 server.c:208 server.c:209
+#: ccdfunc.c:762 ccdfunc.c:842 server.c:218 server.c:219
 #, fuzzy
 msgid   "Camera plugin have no function `capture`"
 msgstr  "У плагина камеры нет особых команд"
 
-#: ccdfunc.c:750 ccdfunc.c:827 server.c:184 server.c:185
+#: ccdfunc.c:750 ccdfunc.c:827 server.c:194 server.c:195
 #, fuzzy
 msgid   "Camera plugin have no function `start exposition`"
 msgstr  "У плагина камеры нет особых команд"
@@ -130,7 +130,7 @@ msgstr  "Не могу установить фокусер в нуль"
 msgid   "Can't init mutex!"
 msgstr  "Не могу инициализировать мьютекс!"
 
-#: client.c:409
+#: client.c:449
 msgid   "Can't make exposition"
 msgstr  "Не могу выполнить экспозицию"
 
@@ -174,7 +174,7 @@ msgstr  "Не могу установить номер активного фокусера"
 msgid   "Can't set active wheel number"
 msgstr  "Не могу установить номер активного колеса"
 
-#: ccdfunc.c:690 server.c:323
+#: ccdfunc.c:690 server.c:330
 #, c-format
 msgid   "Can't set binning %dx%d"
 msgstr  "Не могу установить биннинг %dx%d"
@@ -202,7 +202,7 @@ msgstr  "Не могу установить скорость вентиляторов"
 msgid   "Can't set gain to %g"
 msgstr  "Не могу установить Gain в %g"
 
-#: ccdfunc.c:702 server.c:324
+#: ccdfunc.c:702 server.c:331
 msgid   "Can't set given geometry"
 msgstr  "Не могу установить геометрию"
 
@@ -225,7 +225,7 @@ msgstr  "Не могу установить скорость считывания"
 msgid   "Can't set wheel position %d"
 msgstr  "Не могу установить положение колеса %d"
 
-#: ccdfunc.c:752 ccdfunc.c:829 server.c:190 server.c:191
+#: ccdfunc.c:752 ccdfunc.c:829 server.c:200 server.c:201
 msgid   "Can't start exposition"
 msgstr  "Не могу начать экспозицию"
 
@@ -304,7 +304,7 @@ msgstr  "Статистика по изображению: \n"
 msgid   "N flushes before exposing (default: 1)"
 msgstr  "N засвечиваний перед экспозицией (по умолчанию: 1)"
 
-#: server.c:235
+#: server.c:247
 msgid   "No camera device"
 msgstr  "Не указано устройство камеры"
 
@@ -338,7 +338,7 @@ msgstr  "Считывание изображения"
 msgid   "Readout mode: %s"
 msgstr  "Режим считывания: %s"
 
-#: client.c:459
+#: client.c:503
 msgid   "Server timeout"
 msgstr  "Таймаут сервера"
 

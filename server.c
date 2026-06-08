@@ -82,6 +82,7 @@ strpair allcommands[] = {
     { CC_CMD_HBIN,         "horizontal binning" },
     { CC_CMD_HELP,         "show this help" },
     { CC_CMD_IMHEIGHT,     "last image height" },
+    { CC_CMD_IMNUMBER,     "grabbed image number from server start"},
     { CC_CMD_IMWIDTH,      "last image width" },
     { CC_CMD_INFTY,        "an infinity loop taking images until there's connected clients" },
     { CC_CMD_INSTRUMENT,   "FITS 'INSTRUME' field" },
@@ -116,6 +117,7 @@ static int lock(){
         //DBG("\n\nAlready locked");
         return FALSE;
     }
+    //DBG("LOCK()");
     return TRUE;
 }
 static void unlock(){
@@ -123,6 +125,7 @@ static void unlock(){
         LOGERR("Can't unlock socket mutex");
         ERR("Can't unlock socket mutex");
     }
+    //DBG("UNLOCK()");
 }
 
 static cc_IMG *ima = NULL;
@@ -145,10 +148,15 @@ static void fixima(){
     if(!camera) return;
     double t0 = sl_dtime();
     int locked = FALSE;
+    TIMESTAMP("Lock socket");
     // lock socket operations
-    while(!(locked = lock()) && sl_dtime() - t0 < 0.5);
-    if(!locked) while(!lock()) unlock(); // force unlocking if can't do this gracefully
+    while(!(locked = lock()) && sl_dtime() - t0 < 0.5) usleep(1000);
+    if(!locked){
+        DBG("Still locked from outside -> unlock/lock");
+        while(!lock()) unlock(); // force unlocking if can't do this gracefully
+    }else DBG("LOCK takes %gs", sl_dtime()-t0);
     int raw_width = curformat.w / GP->hbin,  raw_height = curformat.h / GP->vbin;
+    TIMESTAMP("Check SHM image");
     // allocate memory for largest possible image
     if(!ima){
         ima = cc_getshm(GP->shmkey, camera->array.h * camera->array.w * 2);
@@ -156,6 +164,7 @@ static void fixima(){
         // init shared semaphore
         cc_init_sem(TRUE);
     }
+    TIMESTAMP("Lock SHM image");
     cc_lock_shm(TRUE);
     shmkey = GP->shmkey;
     //if(raw_width == ima->w && raw_height == ima->h) return; // all OK
@@ -171,6 +180,7 @@ static void fixima(){
     DBG("new image: %dx%d", raw_width, raw_height);
     cc_unlock_shm();
     unlock();
+    TIMESTAMP("All OK");
 }
 
 // functions for processCAM finite state machine
@@ -216,12 +226,14 @@ static inline void cameracapturestate(){ // capturing - wait for exposition ends
                     camstate = CAMERA_ERROR;
                     return;
                 }else{
+                    TIMESTAMP("Fill FITS header");
                     ima->gotstat = 0; // fresh image without statistics - recalculate when save
                     ima->timestamp = sl_dtime(); // set timestamp
                     fillFITSheader(ima);
                     ++ima->imnumber; // increment counter
                 }
                 cc_unlock_shm();
+                TIMESTAMP("Captured and unlocked");
             }
             camstate = CAMERA_FRAMERDY;
         }
@@ -249,7 +261,7 @@ static void* processCAM(_U_ void *d){
             printf("\t\t\tprocessCAM(), 5 seconds\n");
         }
 #endif
-        usleep(100);
+        usleep(1000);
         if(tremain < 0.5 && tremain > 0.) usleep(tremain*1e6);
         if(lock()){
             // log
@@ -276,22 +288,17 @@ static void* processCAM(_U_ void *d){
                 unlock();
                 continue;
             }
+            unlock();
             cc_camera_state curstate = camstate;
             switch(curstate){
-                case CAMERA_IDLE:
-                    cameraidlestate();
-                break;
                 case CAMERA_CAPTURE:
                     cameracapturestate();
                 break;
-                case CAMERA_FRAMERDY:
-    // do nothing: when `server` got this state it sends "expstate=2" to all clients and changes state to IDLE
-                break;
-                case CAMERA_ERROR:
-    // do nothing: when `server` got this state it sends "expstate=3" to all clients and changes state to IDLE
+                default:
+                    cameraidlestate();
                 break;
             }
-            unlock();
+
         }
     }
     return NULL;
@@ -363,9 +370,7 @@ static cc_hresult restarthandler(_U_ int fd, _U_ const char *key, _U_ const char
 static cc_hresult imsizehandler(int fd, const char *key, _U_ const char *val){
     char buf[64];
     if(!ima) return CC_RESULT_FAIL;
-    // send image width/height in pixels
-    if(0 == strcmp(key, CC_CMD_IMHEIGHT)) snprintf(buf, 63, CC_CMD_IMHEIGHT "=%d", ima->h);
-    else snprintf(buf, 63, CC_CMD_IMWIDTH "=%d", ima->w);
+    snprintf(buf, 63, "%s=%d", key, (0 == strcmp(key, CC_CMD_IMHEIGHT)) ? ima->h : ima->w);
     if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
     return CC_RESULT_SILENCE;
 }
@@ -488,19 +493,21 @@ static cc_hresult camfanhandler(int fd, _U_ const char *key, _U_ const char *val
 }
 const char *shutterstr[] = {"open", "close", "expose @high", "expose @low"};
 static cc_hresult shutterhandler(_U_ int fd, _U_ const char *key, const char *val){
+    char buf[64];
     if(!camera->shuttercmd) return CC_RESULT_FAIL;
-    if(val){
-        int x = atoi(val);
-        if(x < 0 || x >= SHUTTER_AMOUNT) return CC_RESULT_BADVAL;
-        int r = camera->shuttercmd((cc_shutter_op)x);
-        if(r){
-           LOGMSG("Shutter command '%s'", shutterstr[x]);
-        }else{
-            LOGWARN("Can't run shutter command '%s'", shutterstr[x]);
-            return CC_RESULT_FAIL;
-        }
+    if(!val) return CC_RESULT_BADVAL;
+    int x = atoi(val);
+    if(x < 0 || x >= SHUTTER_AMOUNT) return CC_RESULT_BADVAL;
+    int r = camera->shuttercmd((cc_shutter_op)x);
+    if(r){
+       LOGMSG("Shutter command '%s'", shutterstr[x]);
+    }else{
+        LOGWARN("Can't run shutter command '%s'", shutterstr[x]);
+        return CC_RESULT_FAIL;
     }
-    return CC_RESULT_OK;
+    snprintf(buf, 63, "%s=%d", key, x);
+    if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
+    return CC_RESULT_SILENCE;
 }
 static cc_hresult confiohandler(_U_ int fd, _U_ const char *key, _U_ const char *val){
     char buf[64];
@@ -613,17 +620,18 @@ static cc_hresult expstatehandler(int fd, _U_ const char *key, const char *val){
         int n = atoi(val);
         if(n == CAMERA_IDLE){ // cancel expositions
             camflags |= FLAG_CANCEL;
-            return CC_RESULT_OK;
         }
         else if(n == CAMERA_CAPTURE){ // start exposition
             if(GP->exptime < 1e-9){ // need exposition time to be set
                 return CC_RESULT_FAIL;
             }
-            if(camstate == CAMERA_CAPTURE) return CC_RESULT_BUSY; // in progress
+            if(camstate == CAMERA_CAPTURE){
+                DBG("Capture in process when user ask '%s=%s'", key, val);
+                return CC_RESULT_BUSY; // in progress
+            }
             TIMESTAMP("Get FLAG_STARTCAPTURE");
             TIMEINIT();
             camflags |= FLAG_STARTCAPTURE;
-            return CC_RESULT_OK;
         }
         else return CC_RESULT_BADVAL;
     }
@@ -654,6 +662,16 @@ static cc_hresult _8bithandler(int fd, _U_ const char *key, const char *val){
         GP->_8bit = s;
     }
     snprintf(buf, 63, CC_CMD_8BIT "=%d", GP->_8bit);
+    if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
+    return CC_RESULT_SILENCE;
+}
+static cc_hresult imnohandler(int fd, const char *key, const char _U_ *val){
+    if(!ima) return CC_RESULT_FAIL;
+    char buf[64];
+    cc_lock_shm(TRUE);
+    int No = ima->imnumber;
+    cc_unlock_shm();
+    snprintf(buf, 63, "%s=%d", key, No);
     if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
     return CC_RESULT_SILENCE;
 }
@@ -955,6 +973,7 @@ static cc_handleritem items[] = {
     {chkcc,  camsetNhandler, CC_CMD_CAMDEVNO},
     {chkcc,  camfanhandler, CC_CMD_CAMFANSPD},
     {chkcc,  exphandler, CC_CMD_EXPOSITION},
+    {chkcc,  imnohandler, CC_CMD_IMNUMBER},
     {chkcc,  binhandler, CC_CMD_HBIN},
     {chkcc,  binhandler, CC_CMD_VBIN},
     {chkcc,  temphandler, CC_CMD_CAMTEMPER},
@@ -1078,9 +1097,7 @@ void server(int sock, int imsock){
             printf("\t\t\tserver(), 5 seconds\n");
         }
 #endif
-        DBG("poll");
         poll(poll_set, nfd, 1); // max timeout - 1ms
-        DBG("chk imsock");
         //if(imsock > -1 && sl_canread(imsock) > 0){
         if(imsock > -1 && (poll_set[1].revents & POLLIN)){
             //uint8_t buf[32];
@@ -1113,7 +1130,6 @@ void server(int sock, int imsock){
                 }
             }else{WARN("accept()"); DBG("disconnected");}
         }
-        DBG("chk cmd sock");
         if(poll_set[0].revents & POLLIN){ // check main for accept()
             struct sockaddr_in addr;
             socklen_t len = sizeof(addr);
@@ -1147,11 +1163,11 @@ void server(int sock, int imsock){
             camstate = CAMERA_IDLE;
         }
 #endif
-        DBG("scan connections");
         // scan connections
         for(int fdidx = 2; fdidx < nfd; ++fdidx){
             if((poll_set[fdidx].revents & POLLIN) == 0) continue;
             int fd = poll_set[fdidx].fd;
+            DBG("Got active fd=%d", fd);
             cc_strbuff *curbuff = buffers[fdidx-1];
             int disconnected = 0;
             if(cc_read2buf(fd, curbuff)){
@@ -1173,7 +1189,6 @@ void server(int sock, int imsock){
                 --nfd;
             }
         }
-        DBG("Check infty");
         // check `infty`
         if(camstate != CAMERA_CAPTURE && infty){ // start new exposition
             // mark to start new capture in infinity loop when at least one client connected
@@ -1183,7 +1198,6 @@ void server(int sock, int imsock){
                 TIMEINIT();
             }
         }
-        DBG("OK ->");
     }
     WARNX("SERVER STOPPED!");
     camstop();

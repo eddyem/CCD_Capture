@@ -525,8 +525,11 @@ int cc_read2buf(int fd, cc_strbuff *buf){
     do{
         rd = read(fd, buf->buf + buf->buflen, maxlen);
         if(rd <= 0){
-            if(errno == EAGAIN || errno == EWOULDBLOCK) continue;
-            goto ret;
+            if(errno == EINTR){
+                DBG("errno=%d, '%s'", errno, strerror(errno));
+                continue;
+            }
+            goto ret; // EAGAIN or other error -> client disconnected
         }else break;
     }while(1);
     DBG("got %zd bytes", rd);
@@ -736,6 +739,7 @@ char *cc_nextkw(char *buf, char record[FLEN_CARD], int newlines){
         }
     }else nextline = buf + (FLEN_CARD - 1);
     strncpy(record, buf, l);
+    if(l < FLEN_CARD) record[l] = 0;
     return nextline;
 }
 
