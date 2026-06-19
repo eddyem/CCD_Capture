@@ -187,7 +187,7 @@ clients connected.
 When you send a command to server you will receive:
 
 - one of answers - "OK" (all OK), "BUSY" (can't run setter because camera is busy), "FAIL" (some error
-occured), "BADKEY" (wrong key name) or "BADVAL" (wrong key's value) - for procedures and setters
+occurred), "BADKEY" (wrong key name) or "BADVAL" (wrong key's value) - for procedures and setters
 (instead of "OK" you will give "parameter=value" for setter if all OK);
 - "parameter=value" for getters.
 
