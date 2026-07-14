@@ -106,14 +106,16 @@ do{ int status = 0, kt = 0;                      \
     FORMKW("ORIGIN = 'SAO RAS' / Organization responsible for the data");
     FORMKW("OBSERVAT = 'Special Astrophysical Observatory, Russia' / Observatory name");
     FORMKW("INSTRUME = 'direct imaging'  / Instrument");
-    snprintf(templ, FLEN_CARD, "VIEWFLD = '(%d, %d)(%d, %d)' / Camera maximal field of view", camera->field.xoff, camera->field.yoff,
-             camera->field.xoff + camera->field.w, camera->field.yoff + camera->field.h);
-    FORMKW(templ);
-    snprintf(templ, FLEN_CARD, "ARRAYFLD = '(%d, %d)(%d, %d)' / Camera full array size (with overscans)", camera->array.xoff, camera->array.yoff,
-             camera->array.xoff + camera->array.w, camera->array.yoff + camera->array.h);
-    FORMKW(templ);
-    snprintf(templ, FLEN_CARD, "GEOMETRY = '(%d, %d)(%d, %d)' / Camera current frame geometry", camera->geometry.xoff, camera->geometry.yoff,
-             camera->geometry.xoff + camera->geometry.w, camera->geometry.yoff + camera->geometry.h);
+    if(camera){
+        snprintf(templ, FLEN_CARD, "VIEWFLD = '(%d, %d)(%d, %d)' / Camera maximal field of view", camera->field.xoff, camera->field.yoff,
+                 camera->field.xoff + camera->field.w, camera->field.yoff + camera->field.h);
+        FORMKW(templ);
+        snprintf(templ, FLEN_CARD, "ARRAYFLD = '(%d, %d)(%d, %d)' / Camera full array size (with overscans)", camera->array.xoff, camera->array.yoff,
+                 camera->array.xoff + camera->array.w, camera->array.yoff + camera->array.h);
+        FORMKW(templ);
+        snprintf(templ, FLEN_CARD, "GEOMETRY = '(%d, %d)(%d, %d)' / Camera current frame geometry", camera->geometry.xoff, camera->geometry.yoff,
+                 camera->geometry.xoff + camera->geometry.w, camera->geometry.yoff + camera->geometry.h);
+    }
     FORMKW(templ);
     if(GP->X0 > -1) FORMINT("X0", GP->X0, "Subframe left border without binning");
     if(GP->Y0 > -1) FORMINT("Y0", GP->Y0, "Subframe upper border without binning");
@@ -127,17 +129,19 @@ do{ int status = 0, kt = 0;                      \
     FORMINT("STATMAX", img->max, "Max data value");
     FORMFLT("STATAVR", img->avr, "Average data value");
     FORMFLT("STATSTD", img->std, "Std. of data value");
-    if(camera->getTcold && camera->getTcold(&tmpf))
-        FORMFLT("CAMTEMP", tmpf, "Camera temperature at exp. end, degr C");
-    if(camera->getTbody && camera->getTbody(&tmpf))
-        FORMFLT("BODYTEMP", tmpf, "Camera body temperature at exp. end, degr C");
-    if(camera->getThot && camera->getThot(&tmpf))
-        FORMFLT("HOTTEMP", tmpf, "Camera peltier hot side temperature at exp. end, degr C");
-    FORMFLT( "EXPTIME", GP->exptime, "Actual exposition time (sec)");
-    if(camera->getgain && camera->getgain(&tmpf))
-        FORMFLT("CAMGAIN", tmpf, "CMOS gain value");
-    if(camera->getbrightness && camera->getbrightness(&tmpf))
-        FORMFLT("CAMBRIGH", tmpf, "CMOS brightness value");
+    if(camera){
+        if(camera->getTcold && camera->getTcold(&tmpf))
+            FORMFLT("CAMTEMP", tmpf, "Camera temperature at exp. end, degr C");
+        if(camera->getTbody && camera->getTbody(&tmpf))
+            FORMFLT("BODYTEMP", tmpf, "Camera body temperature at exp. end, degr C");
+        if(camera->getThot && camera->getThot(&tmpf))
+            FORMFLT("HOTTEMP", tmpf, "Camera peltier hot side temperature at exp. end, degr C");
+        FORMFLT( "EXPTIME", GP->exptime, "Actual exposition time (sec)");
+        if(camera->getgain && camera->getgain(&tmpf))
+            FORMFLT("CAMGAIN", tmpf, "CMOS gain value");
+        if(camera->getbrightness && camera->getbrightness(&tmpf))
+            FORMFLT("CAMBRIGH", tmpf, "CMOS brightness value");
+    }
 
     snprintf(templ, 2*FLEN_CARD, "TIMESTAM = %.6f / Time of acquisition end (UNIX)", img->timestamp);
     FORMKW(templ);
@@ -181,7 +185,7 @@ do{ int status = 0, kt = 0;                      \
     if(GP->prog_id) FORMSTR("PROG-ID", GP->prog_id, "Observation program identifier");
     if(GP->author) FORMSTR("AUTHOR", GP->author, "Author of the program");
     if(GP->objname) FORMSTR("OBJECT", GP->objname, "Object name");
-    if(camera->getModelName && camera->getModelName(bufc, FLEN_CARD))
+    if(camera && camera->getModelName && camera->getModelName(bufc, FLEN_CARD))
         FORMSTR("DETECTOR", bufc, "Detector model");
     if(GP->instrument) FORMSTR("INSTRUME", GP->instrument, "Instrument");
     return img->headerstrings;
@@ -195,7 +199,7 @@ int saveFITS(cc_IMG *img, char **outp){
     char fnam[PATH_MAX+1];
     if(!GP->outfile && !GP->outfileprefix){
         LOGWARN("Image not saved: neither filename nor filename prefix pointed");
-        WARNX("Image not saved: neither filename nor filename prefix pointed");
+        WARNX(_("Image not saved: neither filename nor filename prefix pointed"));
         return FALSE;
     }
     if(GP->outfile){ // pointed specific output file name like "file.fits", check it
@@ -206,7 +210,7 @@ int saveFITS(cc_IMG *img, char **outp){
         }else{ // exists
             if(!GP->rewrite){
                 LOGERR("Can't save image: file %s exists", GP->outfile);
-                WARNX("File %s exists!", GP->outfile);
+                WARNX(_("File %s exists!"), GP->outfile);
                 return FALSE;
             }
             snprintf(fnam, PATH_MAX, "!%s", GP->outfile);
@@ -273,7 +277,7 @@ fits_write_history(fp, bufhdr->buf, &s);
 cloerr:
     if(fitserror == 0){
         LOGMSG("Save file '%s'", fnam);
-        verbose(1, _("File saved as '%s'"), fnam);
+        verbose(VERBOSE_PRIMARY, _("File saved as '%s'"), fnam);
         DBG("file %s saved", fnam);
         if(outp){
             FREE(*outp);
@@ -346,14 +350,14 @@ void calculate_stat(cc_IMG *image){
 
 cc_Focuser *startFocuser(){
     if(!GP->focuserdev && !GP->commondev){
-        verbose(3, _("Focuser device not pointed"));
+        verbose(VERBOSE_MESG, _("Focuser device not pointed"));
         return NULL;
     }else{
         char *plugin = GP->commondev ? GP->commondev : GP->focuserdev;
         if(!(focuser = open_focuser(plugin))) return NULL;
     }
     if(!focuser->check()){
-        verbose(3, _("No focusers found"));
+        verbose(VERBOSE_MESG, _("No focusers found"));
         focuser = NULL;
         return NULL;
     }
@@ -377,7 +381,7 @@ void focusers(){
             if(!focuser->setDevNo(i)) continue;
             char modname[256];
             focuser->getModelName(modname, 255);
-            printf("Found focuser #%d: %s\n", i, modname);
+            verbose(VERBOSE_PRIMARY, _("Found focuser #%d: %s\n"), i, modname);
         }
     }
     int num = GP->focdevno;
@@ -392,11 +396,11 @@ void focusers(){
     }
     char buf[BUFSIZ];
     if(focuser->getModelName(buf, BUFSIZ)){
-        verbose(2, "Focuser model: %s", buf);
+        verbose(VERBOSE_SECONDARY, "Focuser model: %s", buf);
     }
     float t;
     if(focuser->getTbody(&t)){
-        verbose(1, "FOCTEMP=%.1f", t);
+        verbose(VERBOSE_PRIMARY, "FOCTEMP=%.1f", t);
         DBG("FOCTEMP=%.1f", t);
     }
     float minpos, maxpos, curpos;
@@ -404,14 +408,14 @@ void focusers(){
         WARNX(_("Can't get focuser limit positions"));
         goto retn;
     }
-    verbose(1, "FOCMINPOS=%g", minpos);
-    verbose(1, "FOCMAXPOS=%g", maxpos);
+    verbose(VERBOSE_PRIMARY, "FOCMINPOS=%g", minpos);
+    verbose(VERBOSE_PRIMARY, "FOCMAXPOS=%g", maxpos);
     DBG("FOCMINPOS=%g, FOCMAXPOS=%g", minpos, maxpos);
     if(!focuser->getPos(&curpos)){
         WARNX(_("Can't get current focuser position"));
         goto retn;
     }
-    verbose(1, "FOCPOS=%g", curpos);
+    verbose(VERBOSE_PRIMARY, "FOCPOS=%g", curpos);
     DBG("Curpos = %g", curpos);
     if(isnan(GP->gotopos) && isnan(GP->addsteps)) goto retn; // no focuser commands
     float tagpos = 0.;
@@ -436,14 +440,14 @@ retn:
 
 cc_Wheel *startWheel(){
     if(!GP->wheeldev && !GP->commondev){
-        verbose(3, _("Wheel device not pointed"));
+        verbose(VERBOSE_MESG, _("Wheel device not pointed"));
         return NULL;
     }else{
         char *plugin = GP->commondev ? GP->commondev : GP->wheeldev;
         if(!(wheel = open_wheel(plugin))) return NULL;
     }
     if(!wheel->check()){
-        verbose(3, _("No wheels found"));
+        verbose(VERBOSE_MESG, _("No wheels found"));
         wheel = NULL;
         return NULL;
     }
@@ -467,7 +471,7 @@ void wheels(){
             if(!wheel->setDevNo(i)) continue;
             char modname[256];
             wheel->getModelName(modname, 255);
-            printf("Found wheel #%d: %s\n", i, modname);
+            verbose(VERBOSE_PRIMARY, _("Found wheel #%d: %s\n"), i, modname);
         }
     }
     int num = GP->whldevno;
@@ -482,21 +486,21 @@ void wheels(){
     }
     char buf[BUFSIZ];
     if(wheel->getModelName(buf, BUFSIZ)){
-        verbose(2, "cc_Wheel model: %s", buf);
+        verbose(VERBOSE_SECONDARY, _("Wheel model: %s"), buf);
     }
     float t;
     if(wheel->getTbody(&t)){
-        verbose(1, "WHEELTEMP=%.1f", t);
+        verbose(VERBOSE_PRIMARY, "WHEELTEMP=%.1f", t);
     }
     int pos, maxpos;
     if(wheel->getPos(&pos)){
-        verbose(1, "WHEELPOS=%d", pos);
-    }else WARNX("Can't get current wheel position");
+        verbose(VERBOSE_PRIMARY, "WHEELPOS=%d", pos);
+    }else WARNX(_("Can't get current wheel position"));
     if(!wheel->getMaxPos(&maxpos)){
         WARNX(_("Can't get max wheel position"));
         goto retn;
     }
-    verbose(1, "WHEELMAXPOS=%d", maxpos);
+    verbose(VERBOSE_PRIMARY, "WHEELMAXPOS=%d", maxpos);
     pos = GP->setwheel;
     if(pos == -1) goto retn; // no wheel commands
     if(pos < 0 || pos > maxpos){
@@ -518,16 +522,16 @@ static void closeall(){
 static cc_capture_status capt(){
     cc_capture_status cs;
     float tremain, tmpf;
-    if(!camera->pollcapture){
+    if(!camera || !camera->pollcapture){
         WARNX(_("Camera plugin have no capture polling funtion."));
         return CAPTURE_ABORTED;
     }
     while(camera->pollcapture(&cs, &tremain)){
         if(cs != CAPTURE_PROCESS) break;
         if(tremain > 0.1){
-            verbose(2, _("%.1f seconds till exposition ends"), tremain);
-            if(camera->getTcold && camera->getTcold(&tmpf)) verbose(1, "CCDTEMP=%.1f", tmpf);
-            if(camera->getTbody && camera->getTbody(&tmpf)) verbose(1, "BODYTEMP=%.1f", tmpf);
+            verbose(VERBOSE_SECONDARY, _("%.1f seconds till exposition ends"), tremain);
+            if(camera->getTcold && camera->getTcold(&tmpf)) verbose(VERBOSE_PRIMARY, "CCDTEMP=%.1f", tmpf);
+            if(camera->getTbody && camera->getTbody(&tmpf)) verbose(VERBOSE_PRIMARY, "BODYTEMP=%.1f", tmpf);
         }
         if(tremain > 6.) sleep(5);
         else if(tremain > 0.999999) sleep((int)(tremain+1e-6));
@@ -540,7 +544,7 @@ static cc_capture_status capt(){
 
 cc_Camera *startCCD(){
     if(!GP->cameradev && !GP->commondev){
-        verbose(3, _("Camera device not pointed"));
+        verbose(VERBOSE_MESG, _("Camera device not pointed"));
         return NULL;
     }else{
         char *plugin = GP->commondev ? GP->commondev : GP->cameradev;
@@ -573,7 +577,7 @@ int prepare_ccds(){
             if(camera->setDevNo && !camera->setDevNo(i)) continue;
             // if camera have no setDevNo function, it could have getModelName
             camera->getModelName(buf, BUFSIZ-1);
-            printf("Found camera #%d: %s\n", i, buf);
+            verbose(VERBOSE_PRIMARY, _("Found camera #%d: %s\n"), i, buf);
         }
     }
     int num = GP->camdevno;
@@ -598,12 +602,12 @@ int prepare_ccds(){
                 DBG("got %s", *p);
                 cc_charbufclr(b);
                 cc_hresult r = camera->plugincmd(*p, b);
-                if(r == CC_RESULT_OK || r == CC_RESULT_SILENCE) green("Command '%s'", *p);
+                if(r == CC_RESULT_OK || r == CC_RESULT_SILENCE) green(_("Command '%s'"), *p);
                 else{
                     stop = TRUE;
-                    red("Command '%s'", *p);
+                    red(_("Command '%s'"), *p);
                 }
-                if(r != CC_RESULT_SILENCE) printf(" returns \"%s\"", cc_hresult2str(r));
+                if(r != CC_RESULT_SILENCE) printf(_(" returns \"%s\""), cc_hresult2str(r));
                 if(b->buflen) printf("\n%s", b->buf);
                 else printf("\n");
                 ++p;
@@ -621,43 +625,60 @@ int prepare_ccds(){
             else verbose(0, _("Set fan speed to %d"), GP->fanspeed);
         }
     }
-    int x0,x1, y0,y1;
+    int x0,x1, y0,y1; // will be inited here and used later
     if(camera->getModelName && camera->getModelName(buf, BUFSIZ))
-        verbose(2, _("Camera model: %s"), buf);
-    verbose(2, _("Pixel size: %g x %g"), camera->pixX, camera->pixY);
+        verbose(VERBOSE_SECONDARY, _("Camera model: %s"), buf);
+    verbose(VERBOSE_SECONDARY, _("Pixel size: %g x %g"), camera->pixX, camera->pixY);
     x0 = camera->array.xoff;
     y0 = camera->array.yoff;
     x1 = camera->array.xoff + camera->array.w;
     y1 = camera->array.yoff + camera->array.h;
     snprintf(buf, BUFSIZ, "(%d, %d)(%d, %d)", x0, y0, x1, y1);
-    verbose(2, _("Full array: %s"), buf);
+    verbose(VERBOSE_SECONDARY, _("Full array: %s"), buf);
     snprintf(buf, BUFSIZ, "(%d, %d)(%d, %d)", camera->field.xoff, camera->field.yoff,
                 camera->field.xoff + camera->field.w, camera->field.yoff + camera->field.h);
-    verbose(2, _("Field of view: %s"), buf);
+    verbose(VERBOSE_SECONDARY, _("Field of view: %s"), buf);
     snprintf(buf, BUFSIZ, "(%d, %d)(%d, %d)", camera->geometry.xoff, camera->geometry.yoff,
                 camera->geometry.xoff + camera->geometry.w, camera->geometry.yoff + camera->geometry.h);
-    verbose(2, _("Current format: %s"), buf);
+    verbose(VERBOSE_SECONDARY, _("Current format: %s"), buf);
+    cc_frameformat max, step;
+    if(camera->getgeomlimits && camera->getgeomlimits(&max, &step)){
+        verbose(VERBOSE_SECONDARY, _("Maximal geometry (WxH): %dx%d"), max.w, max.h);
+        verbose(VERBOSE_SECONDARY, _("Minimal offset: %dx%d"), max.xoff, max.yoff);
+        verbose(VERBOSE_SECONDARY, _("Geometry steps: offset - %dx%d, size - %dx%d"), step.xoff, step.yoff, step.w, step.h);
+    }
+    int tmpi, tmpi1;
+    if(camera->getbin && camera->getbin(&tmpi, &tmpi1))
+        verbose(VERBOSE_SECONDARY, _("Current binning: %d x %d"), tmpi, tmpi1);
+    uint8_t u8;
+    if(camera->getbitpix && camera->getbitpix(&u8))
+        verbose(VERBOSE_SECONDARY, _("Current settings: %d bits per pixel"), u8);
+    float tmpf;
+    if(camera->getbrightness && camera->getbrightness(&tmpf))
+        verbose(VERBOSE_SECONDARY, _("Current brightness: %g"), tmpf);
+    if(camera->getgain && camera->getgain(&tmpf))
+        verbose(VERBOSE_SECONDARY, _("Current gain: %g"), &tmpf);
+    if(camera->getmaxgain && camera->getmaxgain(&tmpf))
+        verbose(VERBOSE_SECONDARY, _("Maximal gain: %g"), tmpf);
     if(!isnan(GP->temperature)){
         if(!camera->setT)WARNX(_("Camera plugin have no temperature setter"));
         else{if(!camera->setT((float)GP->temperature)) WARNX(_("Can't set T to %g degC"), GP->temperature);
-            else verbose(3, "SetT=%.1f", GP->temperature);
+            else verbose(VERBOSE_MESG, "SetT=%.1f", GP->temperature);
         }
     }
-    float tmpf;
-    if(camera->getTcold && camera->getTcold(&tmpf)) verbose(1, "CCDTEMP=%.1f", tmpf);
-    if(camera->getTbody && camera->getTbody(&tmpf)) verbose(1, "BODYTEMP=%.1f", tmpf);
+    if(camera->getTcold && camera->getTcold(&tmpf)) verbose(VERBOSE_PRIMARY, "CCDTEMP=%.1f", tmpf);
+    if(camera->getTbody && camera->getTbody(&tmpf)) verbose(VERBOSE_PRIMARY, "BODYTEMP=%.1f", tmpf);
     if(GP->shtr_cmd > -1 && GP->shtr_cmd < SHUTTER_AMOUNT){
         const char *str[] = {"open", "close", "expose @high", "expose @low"};
-        verbose(1, _("Shutter command: %s\n"), str[GP->shtr_cmd]);
+        verbose(VERBOSE_PRIMARY, _("Shutter command: %s\n"), str[GP->shtr_cmd]);
         if(!camera->shuttercmd || !camera->shuttercmd((cc_shutter_op)GP->shtr_cmd))
             WARNX(_("Can't run shutter command %s (unsupported?)"), str[GP->shtr_cmd]);
     }
     if(GP->confio > -1){
-        verbose(1, _("Try to configure I/O port as %d"), GP->confio);
+        verbose(VERBOSE_PRIMARY, _("Try to configure I/O port as %d"), GP->confio);
         if(!camera->confio || !camera->confio(GP->confio))
             WARNX(_("Can't configure (unsupported?)"));
     }
-    int tmpi;
     if(GP->getio){
         if(camera->getio && camera->getio(&tmpi))
             verbose(0, "CCDIOPORT=0x%02X\n", tmpi);
@@ -665,22 +686,22 @@ int prepare_ccds(){
             WARNX(_("Can't get IOport state (unsupported?)"));
     }
     if(GP->setio > -1){
-        verbose(1, _("Try to write %d to I/O port"), GP->setio);
+        verbose(VERBOSE_PRIMARY, _("Try to write %d to I/O port"), GP->setio);
         if(!camera->setio || !camera->setio(GP->setio))
-            ERRX(_("Can't set IOport"));
+            WARNX(_("Can't set IOport"));
     }
     if(GP->exptime < 0.) goto retn;
     if(!isnan(GP->gain)){
         DBG("Change gain to %g", GP->gain);
         if(camera->setgain && camera->setgain(GP->gain)){
             if(camera->getgain) camera->getgain(&GP->gain);
-            verbose(1, _("Set gain to %g"), GP->gain);
-        }else ERRX(_("Can't set gain to %g"), GP->gain);
+            verbose(VERBOSE_PRIMARY, _("Set gain to %g"), GP->gain);
+        }else WARNX(_("Can't set gain to %g"), GP->gain);
     }
     if(!isnan(GP->brightness)){
         if(camera->setbrightness && camera->setbrightness(GP->brightness)){
             if(camera->getbrightness) camera->getbrightness(&GP->brightness);
-            verbose(1, _("Set brightness to %g"), GP->brightness);
+            verbose(VERBOSE_PRIMARY, _("Set brightness to %g"), GP->brightness);
         }else WARNX(_("Can't set brightness to %g"), GP->brightness);
     }
     /*********************** expose control ***********************/
@@ -700,11 +721,11 @@ int prepare_ccds(){
     cc_frameformat fmt = {.w = GP->X1 - GP->X0, .h = GP->Y1 - GP->Y0, .xoff = GP->X0, .yoff = GP->Y0};
     if(!camera->setgeometry || !camera->setgeometry(&fmt))
         ERRX(_("Can't set given geometry"));
-    verbose(3, "Geometry: off=%d/%d, wh=%d/%d", fmt.xoff, fmt.yoff, fmt.w, fmt.h);
+    verbose(VERBOSE_MESG, "Geometry: off=%d/%d, wh=%d/%d", fmt.xoff, fmt.yoff, fmt.w, fmt.h);
     if(GP->nflushes > 0){
         if(!camera->setnflushes || !camera->setnflushes(GP->nflushes))
             WARNX(_("Can't set %d flushes"), GP->nflushes);
-        else verbose(3, "Nflushes=%d", GP->nflushes);
+        else verbose(VERBOSE_MESG, "Nflushes=%d", GP->nflushes);
     }
     if(!camera->setexp) ERRX(_("Camera plugin have no exposition setter"));
     if(!camera->setexp(GP->exptime))
@@ -717,12 +738,12 @@ int prepare_ccds(){
         WARNX(_("Can't set bit depth"));
     if(!camera->setfastspeed || !camera->setfastspeed(GP->fast))
         WARNX(_("Can't set readout speed"));
-    else verbose(1, _("Readout mode: %s"), GP->fast ? "fast" : "normal");
-    if(!GP->outfile) verbose(1, _("Only show statistics"));
+    else verbose(VERBOSE_PRIMARY, _("Readout mode: %s"), GP->fast ? "fast" : "normal");
+    if(!GP->outfile) verbose(VERBOSE_PRIMARY, _("Only show statistics"));
     // GET binning should be AFTER setgeometry!
     if(!camera->getbin || !camera->getbin(&GP->hbin, &GP->vbin))
         WARNX(_("Can't get current binning"));
-    verbose(2, "Binning: %d x %d", GP->hbin, GP->vbin);
+    verbose(VERBOSE_SECONDARY, "Binning: %d x %d", GP->hbin, GP->vbin);
     rtn = TRUE;
 retn:
     if(!rtn) closecam();
@@ -736,7 +757,7 @@ void ccds(){
     FNAME();
     cc_frameformat fmt = camera->geometry;
     int raw_width = fmt.w / GP->hbin,  raw_height = fmt.h / GP->vbin;
-DBG("w=%d, h=%d", raw_width, raw_height);
+    DBG("w=%d, h=%d", raw_width, raw_height);
     // allocate maximum available memory - for 16bit image
     uint16_t *img = MALLOC(uint16_t, raw_width * raw_height);
     DBG("\n\nAllocated image 2x%dx%d=%d", raw_width, raw_height, 2 * raw_width * raw_height);
@@ -746,7 +767,7 @@ DBG("w=%d, h=%d", raw_width, raw_height);
     for(int j = 0; j < GP->nframes; ++j){
         TIMEINIT();
         TIMESTAMP("Start next cycle");
-        verbose(1, _("Capture frame %d"), j);
+        verbose(VERBOSE_PRIMARY, _("Capture frame %d"), j);
         if(!camera->startexposition) ERRX(_("Camera plugin have no function `start exposition`"));
         if(!camera->startexposition()){
             WARNX(_("Can't start exposition"));
@@ -757,7 +778,7 @@ DBG("w=%d, h=%d", raw_width, raw_height);
             WARNX(_("Can't capture image"));
             break;
         }
-        verbose(2, _("Read grabbed image"));
+        verbose(VERBOSE_SECONDARY, _("Read grabbed image"));
         TIMESTAMP("Read grabbed");
         if(!camera->capture) ERRX(_("Camera plugin have no function `capture`"));
         if(!camera->capture(&ima)){
@@ -775,10 +796,10 @@ DBG("w=%d, h=%d", raw_width, raw_height);
         if(GP->pause_len && j != (GP->nframes - 1)){
             double delta, time1 = sl_dtime() + GP->pause_len;
             while((delta = time1 - sl_dtime()) > 0.){
-                verbose(1, _("%d seconds till pause ends\n"), (int)delta);
+                verbose(VERBOSE_PRIMARY, _("%d seconds till pause ends\n"), (int)delta);
                 float tmpf;
-                if(camera->getTcold && camera->getTcold(&tmpf)) verbose(1, "CCDTEMP=%.1f\n", tmpf);
-                if(camera->getTbody && camera->getTbody(&tmpf)) verbose(1, "BODYTEMP=%.1f\n", tmpf);
+                if(camera->getTcold && camera->getTcold(&tmpf)) verbose(VERBOSE_PRIMARY, "CCDTEMP=%.1f\n", tmpf);
+                if(camera->getTbody && camera->getTbody(&tmpf)) verbose(VERBOSE_PRIMARY, "BODYTEMP=%.1f\n", tmpf);
                 if(delta > 6.) sleep(5);
                 else if(delta > 0.9) sleep((int)(delta+0.99));
                 else usleep((int)(delta*1e6 + 1));
@@ -810,7 +831,7 @@ void framerate(){
     sumn = sumn - lastn[lastidx] + dT;
     lastn[lastidx] = dT;
     //for(int i = 0; i < NFRM; ++i) printf("last[%d]=%g\n", i, lastn[i]);
-    green("Framerate=%.2f (%g seconds for exp); mean framerate=%.2f\n", 1./dT, dT, NFRM/sumn);
+    verbose(VERBOSE_SECONDARY, _("Framerate=%.2f (%g seconds for exp); mean framerate=%.2f"), 1./dT, dT, NFRM/sumn);
     tlast = t;
 }
 
@@ -888,7 +909,7 @@ int ccdcaptured(cc_IMG **imgptr){
         TIMESTAMP("Start new grab");
         TIMEINIT();
         if(pthread_create(&grabthread, NULL, &grabnext, (void*)ima)){
-            WARN("Can't create grabbing thread");
+            WARN(_("Can't create grabbing thread"));
             grabthread = 0;
         }
     }else{ // grab in process
@@ -919,11 +940,11 @@ int start_socket(int isserver){
     int isnet = 0;
     if(GP->path) path = GP->path;
     else if(GP->port){ path = GP->port; isnet = 1; }
-    else ERRX("Point network port or UNIX-socket path");
+    else ERRX(_("Point network port or UNIX-socket path"));
     int sock = cc_open_socket(isserver, path, isnet), imsock = -1;
     if(sock < 0){
         LOGERR("Can't open socket");
-        ERRX("start_socket(): can't open socket");
+        ERRX(_("start_socket(): can't open socket"));
     }
     if(isserver){
         imsock = cc_open_socket(TRUE, GP->imageport, 2); // image socket should be networked
@@ -932,7 +953,7 @@ int start_socket(int isserver){
     }else{
 #ifdef IMAGEVIEW
         if(GP->showimage){
-            if(!GP->viewer && GP->exptime < 0.00001) ERRX("Need exposition time!");
+            if(!GP->viewer && GP->exptime < 0.00001) ERRX(_("Need exposition time!"));
             init_grab_sock(sock);
             viewer(sockcaptured); // start viewer with socket client parser
             DBG("done");

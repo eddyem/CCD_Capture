@@ -49,12 +49,12 @@ void signals(int signo){
             signal(signo, signals);
             return;
         }
-        WARNX("Master killed with sig=%d", signo);
+        WARNX(_("Master killed with sig=%d"), signo);
         LOGERR("Master killed with sig=%d", signo);
         exit(signo);
     }
     // slave: cancel exposition
-    if(signo) WARNX("Get signal %d - exit", signo);
+    if(signo) WARNX(_("Get signal %d - exit"), signo);
     if(!GP->client){
         DBG("Cancel capturing and close all");
         stop_server();
@@ -88,47 +88,48 @@ int main(int argc, char **argv){
         GP->client = 1;
         GP->showimage = 1;
     }
-    if(GP->outfile && GP->outfileprefix) ERRX("Can't use outfile name and prefix together");
+    if(GP->outfile && GP->outfileprefix) ERRX(_("Can't use outfile name and prefix together"));
     if(GP->outfile && !GP->rewrite){
         struct stat filestat;
-        if(0 == stat(GP->outfile, &filestat)) ERRX("File %s exists!", GP->outfile);
+        if(0 == stat(GP->outfile, &filestat)) ERRX(_("File %s exists!"), GP->outfile);
     }
     if(GP->anstmout > 0.){
-        if(!cc_setAnsTmout(GP->anstmout)) ERRX("Can't set answer timeout to %g", GP->anstmout);
+        if(!cc_setAnsTmout(GP->anstmout)) ERRX(_("Can't set answer timeout to %g"), GP->anstmout);
     }
     if(GP->port){
         if(GP->path){
-            WARNX("Options `port` and `path` can't be used together! Point `port` for TCP socket or `path` for UNIX.");
+            WARNX(_("Options `port` and `path` can't be used together! Point `port` for TCP socket or `path` for UNIX."));
             return 1;
         }
         int port = atoi(GP->port);
         if(port < CC_PORTN_MIN || port > CC_PORTN_MAX){
-            WARNX("Wrong port value: %d", port);
+            WARNX(_("Wrong port value: %d"), port);
             return 1;
         }
         if(!GP->client) isserver = TRUE;
     }
     if(GP->path && !GP->client) isserver = TRUE;
-    if(!GP->path && !GP->port){
+    /*if(!GP->path && !GP->port){ // standalone
         WARNX("Point one of options: `port` or `path` for command socket");
-    }
+    }*/
     if((isserver || GP->client) && !GP->imageport){
         GP->imageport = MALLOC(char, 32);
         if(!GP->port) sprintf(GP->imageport, "12345");
         else snprintf(GP->imageport, 31, "%d", 1+atoi(GP->port));
-        printf("Set image port to %s\n", GP->imageport);
+        verbose(VERBOSE_PRIMARY, _("Set image port to %s\n"), GP->imageport);
     }
     if(GP->client && (GP->commondev || GP->focuserdev || GP->cameradev || GP->wheeldev))
-       ERRX("Can't be client and standalone in same time!");
+        ERRX(_("Can't be client and standalone in same time!"));
     if(GP->logfile){
-        int lvl = LOGLEVEL_WARN + GP->verbose;
+        int lvl = LOGLEVEL_ERR + GP->verbose;
         DBG("level = %d", lvl);
         if(lvl > LOGLEVEL_ANY) lvl = LOGLEVEL_ANY;
-        verbose(1, "Log file %s @ level %d\n", GP->logfile, lvl);
+        verbose(VERBOSE_PRIMARY, _("Log file %s @ level %d\n"), GP->logfile, lvl);
         OPENLOG(GP->logfile, lvl, 1);
-        if(!sl_globlog) WARNX("Can't create log file");
+        if(!sl_globlog) WARNX(_("Can't create log file"));
     }
-    if(GP->info && GP->verbose < 2) GP->verbose = 2; // increase verbose messages level for `info`
+    if(GP->info && GP->verbose < VERBOSE_SECONDARY) // increase verbose messages level for `info`
+        GP->verbose = VERBOSE_SECONDARY;
     signal(SIGINT, signals);
     signal(SIGQUIT, signals);
     signal(SIGABRT, signals);

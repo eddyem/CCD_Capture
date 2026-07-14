@@ -19,6 +19,15 @@
 #pragma once
 #include <usefull_macros.h>
 
+// verbose levels
+enum{
+    VERBOSE_NONE = 0,   // show nothing
+    VERBOSE_PRIMARY,    // only main messages
+    VERBOSE_SECONDARY,  // also secondary messages
+    VERBOSE_MESG,       // debug messages
+    VERBOSE_AMOUNT      // just amount of levels
+};
+
 /*
  * here are some typedef's for global data
  */

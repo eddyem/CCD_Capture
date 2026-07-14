@@ -69,6 +69,7 @@ int cc_lock_shm(int isserver){
         if(locked){
             double t0 = sl_dtime();
             while(sem_trywait(sem) && sl_dtime() - t0 < 0.1) sem_post(sem); // force locking
+            if(sl_dtime() - t0 >= 0.1) return FALSE; // can't lock - timeout
         }
     }else{
         if(sem_timedwait(sem, &ts)){
@@ -90,7 +91,7 @@ void cc_unlock_shm(){
         case EOVERFLOW: // already unlocked
             break;
         default: // not a valid? or other?
-            WARN("Can't unlock image semaphore");
+            WARN(_("Can't unlock image semaphore"));
             LOGERR("Can't unlock image semaphore");
             return;
         }
@@ -147,20 +148,23 @@ int cc_open_socket(int isserver, char *path, int isnet){
     }else{
         DBG("UNIX socket");
         char apath[128];
+        int len = sizeof(sa_family_t);
         if(*path == 0){
             DBG("convert name");
             apath[0] = 0;
             strncpy(apath+1, path+1, 126);
+            len += strlen(path+1);
         }else if(strncmp("\\0", path, 2) == 0){
             DBG("convert name");
             apath[0] = 0;
             strncpy(apath+1, path+2, 126);
+            len += strlen(path+2);
         }else strcpy(apath, path);
         //unlink(apath);
         unaddr.sun_family = AF_UNIX;
         hints.ai_addr = (struct sockaddr*) &unaddr;
         hints.ai_addrlen = sizeof(unaddr);
-        memcpy(unaddr.sun_path, apath, 106); // if sun_path[0] == 0 we don't create a file
+        memcpy(unaddr.sun_path, apath, len); // if sun_path[0] == 0 we don't create a file
         hints.ai_family = AF_UNIX;
         hints.ai_socktype = SOCK_SEQPACKET;
         res = &hints;
@@ -238,7 +242,8 @@ int cc_sendmessage(int fd, const char *msg, int l){
         buflen = 1024 * (1 + l/1024);
         char *newbuf = realloc(tmpbuf, buflen);
         if(!newbuf){
-            LOGERR("realloc())");
+            WARN("realloc()");
+            LOGERR("realloc()");
             return FALSE;
         }
         tmpbuf = newbuf;
@@ -335,7 +340,7 @@ cc_IMG *cc_getshm(key_t key, size_t imsize){
     int flags = (imsize) ? IPC_CREAT | 0666 : 0;
     shmid = shmget(key, 0, flags);
     if(shmid < 0 && imsize == 0){ // no SHM segment for client
-        WARN("Can't get shared memory segment %d", key);
+        WARN(_("Can't get shared memory segment %d"), key);
         return NULL;
     }
     if(imsize){ // check if segment exists and its size equal to needs
@@ -346,25 +351,25 @@ cc_IMG *cc_getshm(key_t key, size_t imsize){
         }
         shmid = shmget(key, shmsize, flags);
         if(shmid < 0){
-            WARN("Can't create shared memory segment %d", key);
+            WARN(_("Can't create shared memory segment %d"), key);
             return NULL;
         }
     }else{
 #ifdef EBUG
         struct shmid_ds buf;
-        if(shmctl(shmid, IPC_STAT, &buf)) WARNX("Can't get SHM data");
+        if(shmctl(shmid, IPC_STAT, &buf)) WARNX(_("Can't get SHM data"));
         else DBG("SHM size = %zd", buf.shm_segsz);
 #endif
     }
     flags = (imsize) ? 0 : SHM_RDONLY; // client opens memory in readonly mode
     cc_IMG *ptr = shmat(shmid, NULL, 0);
     if(ptr == (void*)-1){
-        if(imsize) WARN("Can't attach SHM segment %d", key);
+        if(imsize) WARN(_("Can't attach SHM segment %d"), key);
         return NULL;
     }
     if(!imsize){
         if(ptr->MAGICK != CC_SHM_MAGIC){
-            WARNX("Shared memory %d isn't belongs to image server", key);
+            WARNX(_("Shared memory %d isn't belongs to image server"), key);
             shmdt(ptr);
             return NULL;
         }
@@ -446,7 +451,7 @@ int cc_getNbytes(cc_IMG *image){
  */
 cc_strbuff *cc_strbufnew(size_t bufsize, size_t stringsize){
     if(bufsize < 8 || stringsize < 8){
-        WARNX("Need to allocate at least 8 bytes in buffers");
+        WARNX(_("Need to allocate at least 8 bytes in buffers"));
         return NULL;
     }
     DBG("Allocate new string buffer with size %zd and string size %zd", bufsize, stringsize);
@@ -629,7 +634,7 @@ static cc_hresult ask4cmd(int fd, cc_strbuff *buf, const char *cmdwargs){
             if(r == 0) continue;
             else if(r < 0){
                 LOGERR("Socket disconnected");
-                WARNX("Socket disconnected");
+                WARNX(_("Socket disconnected"));
                 ret = CC_RESULT_DISCONNECTED;
                 goto rtn;
             }
@@ -753,7 +758,7 @@ size_t cc_kwfromfile(cc_IMG *img, char *filename){
     if(!img) return 0;
     sl_mmapbuf_t *buf = sl_mmap(filename);
     if(!buf || buf->len < 1){
-        WARNX("Can't add FITS records from file %s", filename);
+        WARNX(_("Can't add FITS records from file %s"), filename);
         LOGWARN("Can't add FITS records from file %s", filename);
         return 0;
     }

@@ -19,6 +19,7 @@
 #include <float.h>
 #include <pthread.h>
 #include <string.h>
+#define TOUPCAM_HRESULT_ERRORCODE_NEEDED
 #include <toupcam.h>
 #include <usefull_macros.h>
 
@@ -62,6 +63,28 @@ static double exptime = 0., starttime = 0.;
 // return constant string with error code description
 static const char *errcode(int ecode){
     switch(ecode){
+#ifndef STR
+#define STR(par)  # par
+#endif
+#define ECASE(code)  case code: return STR(code)
+        ECASE(S_OK);
+        ECASE(S_FALSE);
+        ECASE(E_UNEXPECTED);
+        ECASE(E_NOTIMPL);
+        ECASE(E_NOINTERFACE);
+        ECASE(E_ACCESSDENIED);
+        ECASE(E_OUTOFMEMORY);
+        ECASE(E_INVALIDARG);
+        ECASE(E_POINTER);
+        ECASE(E_FAIL);
+        ECASE(E_WRONG_THREAD);
+        ECASE(E_GEN_FAILURE);
+        ECASE(E_BUSY);
+        ECASE(E_PENDING);
+        ECASE(E_TIMEOUT);
+        ECASE(E_UNREACH);
+#undef ECASE
+#if 0
         case 0: return "S_OK";
         case 1: return "S_FALSE";
         case 0x8000ffff: return "E_UNEXPECTED";
@@ -78,6 +101,7 @@ static const char *errcode(int ecode){
         case 0x8000000a: return "E_PENDING";
         case 0x8001011f: return "E_TIMEOUT";
         case 0x80072743: return "E_UNREACH";
+#endif
         default: return "Unknown error";
     }
 }
@@ -88,7 +112,7 @@ static const char *errcode(int ecode){
 static void camcancel(){
     if(!toupcam.hcam) return;
     int e = Toupcam_Trigger(toupcam.hcam, 0); // stop triggering
-    if(e < 0) WARNX("Can't trigger 0: %s", errcode(e));
+    if(e < 0 && e != E_UNEXPECTED) WARNX(_("Can't stop image triggering: %s"), errcode(e));
     e = Toupcam_Stop(toupcam.hcam);
     if(e < 0) WARNX("Can't stop: %s", errcode(e));
     toupcam.state = IM_SLEEP;
@@ -371,7 +395,7 @@ static int camgetbrig(float *b){
     if(Toupcam_get_Brightness(toupcam.hcam, &br) < 0) return FALSE;
     DBG("brightness=%d", br);
     if(b) *b = (float) br;
-    return FALSE;
+    return TRUE;
 }
 
 /**
@@ -472,7 +496,7 @@ static int camgettc(float *t){
  * @return FALSE if failed or no such property
  */
 static int camgetth(float _U_ *t){
-    TCHECK();
+    //TCHECK();
     return FALSE;
 }
 
@@ -482,7 +506,7 @@ static int camgetth(float _U_ *t){
  * @return FALSE if failed or no such property
  */
 static int gettb(float _U_ *t){
-    TCHECK();
+    //TCHECK();
     return FALSE;
 }
 
@@ -548,6 +572,8 @@ static int camshutter(cc_shutter_op s){
  */
 static int camsetgeom(cc_frameformat *f){
     TCHECK();
+    if(!f) return FALSE;
+   // WARNX("Your ROI is: off - %dx%d, frame - %dx%d", f->xoff, f->yoff, f->w, f->h);
     if(Toupcam_put_Roi(toupcam.hcam, (unsigned) f->xoff, (unsigned) f->yoff, (unsigned) f->w, (unsigned) f->h) < 0) return FALSE;
     camera.geometry = *f;
     return TRUE;
@@ -561,10 +587,10 @@ static int camsetgeom(cc_frameformat *f){
  */
 static int camgetnam(char *n, int l){
     TCHECK();
-    if(!toupcam.dev) return FALSE;
+    if(!toupcam.dev || !n || l < 1) return FALSE;
     DBG("name: %s, strncpy to %d buf", toupcam.dev->displayname, l);
     strncpy(n, toupcam.dev->displayname, l);
-    return FALSE;
+    return TRUE;
 }
 
 /**
@@ -576,8 +602,8 @@ static int camgmg(float *mg){
     TCHECK();
     unsigned short gmin, gmax, gdef;
     if(Toupcam_get_ExpoAGainRange(toupcam.hcam, &gmin, &gmax, &gdef) < 0) return FALSE;
-    if(mg) *mg = gmax;
-    return FALSE;
+    if(mg) *mg = (float)gmax / 100.f;
+    return TRUE;
 }
 
 /**
@@ -590,7 +616,7 @@ static int camggl(cc_frameformat *max, cc_frameformat _U_ *step){
     TCHECK();
     if(max) *max = camera.array;
     if(step) *step = (cc_frameformat){.w = 1, .h = 1, .xoff = 1, .yoff = 1};
-    return FALSE;
+    return TRUE;
 }
 
 /**

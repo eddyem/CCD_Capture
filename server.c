@@ -123,7 +123,7 @@ static int lock(){
 static void unlock(){
     if(pthread_mutex_unlock(&locmutex)){
         LOGERR("Can't unlock socket mutex");
-        ERR("Can't unlock socket mutex");
+        ERR(_("Can't unlock socket mutex"));
     }
     //DBG("UNLOCK()");
 }
@@ -160,7 +160,7 @@ static void fixima(){
     // allocate memory for largest possible image
     if(!ima){
         ima = cc_getshm(GP->shmkey, camera->array.h * camera->array.w * 2);
-        if(!ima) ERR("Can't allocate memory for image");
+        if(!ima) ERR(_("Can't allocate memory for image"));
         // init shared semaphore
         cc_init_sem(TRUE);
     }
@@ -191,13 +191,13 @@ static inline void cameraidlestate(){ // idle - wait for capture commands
         camstate = CAMERA_CAPTURE;
         fixima();
         if(!camera->startexposition){
-            LOGERR(_("Camera plugin have no function `start exposition`"));
+            LOGERR("Camera plugin have no function `start exposition`");
             WARNX(_("Camera plugin have no function `start exposition`"));
             camstate = CAMERA_ERROR;
             return;
         }
         if(!camera->startexposition()){
-            LOGERR(_("Can't start exposition"));
+            LOGERR("Can't start exposition");
             WARNX(_("Can't start exposition"));
             camstate = CAMERA_ERROR;
             return;
@@ -216,7 +216,7 @@ static inline void cameracapturestate(){ // capturing - wait for exposition ends
                 TIMESTAMP("start capture");
                 if(!camera->capture){
                     WARNX(_("Camera plugin have no function `capture`"));
-                    LOGERR(_("Camera plugin have no function `capture`"));
+                    LOGERR("Camera plugin have no function `capture`");
                     camstate = CAMERA_ERROR;
                     return;
                 }
@@ -1025,16 +1025,30 @@ static void *sendimage(void *C){
     int client = *(int*)C;
     if(ima->h < 1 || ima->w < 1) return NULL;
     DBG("client fd: %d", client);
+    cc_lock_shm(TRUE);
+    cc_IMG *locimage = calloc(1, sizeof(cc_IMG));
+    void *data = calloc(1, ima->bytelen);
+    if(!locimage || !data){
+        cc_unlock_shm();
+        if(data) free(data);
+        if(locimage) free(locimage);
+        return NULL;
+    }
+    memcpy(locimage, ima, sizeof(cc_IMG));
+    memcpy(data, ima->data, ima->bytelen);
+    cc_unlock_shm();
     do{
         // send image body
-        if(!cc_senddata(client, ima, sizeof(cc_IMG))) break;
+        if(!cc_senddata(client, locimage, sizeof(cc_IMG))) break;
         // send image itself (client can close socket if don't need image data)
-        if(!cc_senddata(client, ima->data, ima->bytelen)) break;
+        if(!cc_senddata(client, data, locimage->bytelen)) break;
         // send FITS header (client can close socket if don't need it)
-        for(size_t i = 0; i < ima->headerstrings; ++i){ // send header
-            if(!cc_senddata(client, &ima->fitsheader[i], FLEN_CARD)) break;
+        for(size_t i = 0; i < locimage->headerstrings; ++i){ // send header
+            if(!cc_senddata(client, &locimage->fitsheader[i], FLEN_CARD)) break;
         }
     }while(0);
+    free(locimage);
+    free(data);
     close(client);
     TIMESTAMP("Image sent");
     DBG("%d closed", client);
@@ -1043,8 +1057,8 @@ static void *sendimage(void *C){
 
 void server(int sock, int imsock){
     DBG("sockfd=%d, imsockfd=%d", sock, imsock);
-    if(sock < 0) ERRX("server(): need at least command socket fd");
-    if(imsock < 0) WARNX("Server run without image transport socket");
+    if(sock < 0) ERRX(_("server(): need at least command socket fd"));
+    if(imsock < 0) WARNX(_("Server run without image transport socket"));
     else if(listen(imsock, CC_MAXCLIENTS) == -1){
         WARN("listen()");
         LOGERR("server(): error in listen() for image socket");
@@ -1065,7 +1079,7 @@ void server(int sock, int imsock){
     camdevini(0);
     if(ctr == 3){
         LOGERR("server(): no devices found");
-        WARNX("No devices found");
+        WARNX(_("No devices found"));
     }
     // start camera thread
     pthread_t camthread;
@@ -1110,7 +1124,7 @@ void server(int sock, int imsock){
             // sending image could be a very long operation -> run it in separate thread
             if(client > -1){
                 if(ima->imnumber == 0){
-                    WARNX("Client wants an image, but there's no data");
+                    WARNX(_("Client wants an image, but there's no data"));
                     close(client);
                 }else{
                     pthread_t sendthread;
@@ -1139,7 +1153,7 @@ void server(int sock, int imsock){
                 LOGMSG("SERVER got connection, fd=%d", client);
                 if(nfd == CC_MAXCLIENTS + 1){
                     LOGWARN("Max amount of connections, disconnect fd=%d", client);
-                    WARNX("Limit of connections reached");
+                    WARNX(_("Limit of connections reached"));
                     close(client);
                 }else{
                     memset(&poll_set[nfd], 0, sizeof(struct pollfd));
@@ -1149,20 +1163,6 @@ void server(int sock, int imsock){
                 }
             }
         }
-#if 0
-        // process some data & send messages to ALL
-        if(camstate == CAMERA_FRAMERDY || camstate == CAMERA_ERROR){
-            DBG("new image: timestamp=%.1f, num=%zd", ima->timestamp, ima->imnumber);
-            char buff[PATH_MAX+32];
-            snprintf(buff, PATH_MAX, CC_CMD_EXPSTATE "=%d", camstate);
-            DBG("Send %s to %d clients", buff, nfd - 2);
-            for(int i = 2; i < nfd; ++i){
-                TIMESTAMP("Send message that all ready");
-                cc_sendstrmessage(poll_set[i].fd, buff);
-            }
-            camstate = CAMERA_IDLE;
-        }
-#endif
         // scan connections
         for(int fdidx = 2; fdidx < nfd; ++fdidx){
             if((poll_set[fdidx].revents & POLLIN) == 0) continue;
@@ -1222,7 +1222,7 @@ char *makeabspath(const char *path, int shouldbe){
         if(shouldbe) return NULL;
         f = fopen(path, "a");
         if(!f){
-            WARN("Can't create %s", path);
+            WARN(_("Can't create %s"), path);
             return NULL;
         }
         unl = 1;
@@ -1258,7 +1258,7 @@ static int parsestring(int fd, cc_handleritem *handlers, char *str){
             do{ l = lock(); } while(!l && sl_dtime() - t0 < CC_BUSY_TIMEOUT);
             DBG("time: %g", sl_dtime() - t0);
             if(!l){
-                WARN("Can't lock mutex"); //signals(1);
+                WARN(_("Can't lock mutex")); //signals(1);
                 return CC_RESULT_BUSY; // long blocking work
             }
             r = h->chkfunction(val);

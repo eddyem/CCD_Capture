@@ -422,7 +422,7 @@ static void change_colorfun(colorfn_type f){
             colorfun = linfun;
             cfn = "linear";
     }
-    verbose(1, _("Histogram conversion: %s"), cfn);
+    verbose(VERBOSE_PRIMARY, _("Histogram conversion: %s"), cfn);
 }
 
 // cycle switch between palettes
@@ -612,7 +612,7 @@ static void change_displayed_image(cc_IMG *img){
     static size_t lastN = 0;
     ssize_t delta = img->imnumber - lastN;
     TIMESTAMP("Got image #%zd", img->imnumber);
-    if(delta > 0 && delta != 1) WARNX("Missed %zd images", delta-1);
+    if(delta > 0 && delta != 1) WARNX(_("Missed %zd images"), delta-1);
     lastN = img->imnumber;
     //pthread_mutex_lock(&win->mutex);
     rawimage *im = win->image;
@@ -694,12 +694,12 @@ void closeGL(){ // killed by external signal or ctrl+c
  */
 int viewer(imagefunc newimage){
     if(!newimage){
-        WARNX("No image changing function defined");
+        WARNX(_("No image changing function defined"));
         return 1;
     }
     imageview_init();
     DBG("Create new win");
-    createGLwin("Sample window", 1024, 1024, NULL);
+    createGLwin("ccd_capture", 1024, 1024, NULL);
     if(!win){
         WARNX(_("Can't open OpenGL window, image preview will be inaccessible"));
         return 1;
@@ -731,7 +731,12 @@ int viewer(imagefunc newimage){
             continue;
         }
         if(win->winevt & WINEVT_SAVEIMAGE){ // save image
-            verbose(2, "Make screenshot\n");
+            verbose(VERBOSE_PRIMARY, _("Make screenshot"));
+            if(GP->outfile) GP->rewrite = TRUE;
+            else if(!GP->outfileprefix){
+                GP->outfileprefix = strdup("ccd_capture-screenshot");
+                verbose(VERBOSE_PRIMARY, _("Set output prefix to %s"), GP->outfileprefix);
+            }
             saveFITS(img, NULL);
             win->winevt &= ~WINEVT_SAVEIMAGE;
         }
@@ -743,7 +748,7 @@ int viewer(imagefunc newimage){
         if(win->winevt & WINEVT_EQUALIZE){
             win->winevt &= ~WINEVT_EQUALIZE;
             imequalize = !imequalize;
-            verbose(1, _("Equalization of histogram: %s"), imequalize ? N_("on") : N_("off"));
+            verbose(VERBOSE_PRIMARY, _("Equalization of histogram: %s"), imequalize ? N_("on") : N_("off"));
             change_displayed_image(img);
         }
     }
