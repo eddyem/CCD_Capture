@@ -54,7 +54,8 @@ typedef struct{
     int ID;             // identificator of OpenGL window
     char *title;        // title of window
     GLuint Tex;         // texture for image inside window
-    rawimage *image;    // raw image data
+    rawimage *image;    // colour image data
+    uint8_t *rawdata;   // raw data after processing
     int w; int h;       // window size
     float x; float y;   // image offset coordinates
     float x0; float y0; // center of window for coords conversion
@@ -82,6 +83,6 @@ void conv_mouse_to_image_coords(int x, int y, float *X, float *Y, windowData *wi
 void conv_image_to_mouse_coords(float X, float Y, int *x, int *y, windowData *window);
 windowData* getWin();
 
-typedef int (*imagefunc)(cc_IMG**);
+typedef int (*imagefunc)(cc_IMG*);
 
 int viewer(imagefunc);

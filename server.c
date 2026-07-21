@@ -43,6 +43,9 @@ static _Atomic cc_camera_state camstate = CAMERA_IDLE;
 static atomic_int camflags = 0, camfanspd = 0, confio = 0, nflushes, infty = 0;
 static cc_frameformat frmformatmax = {0}, curformat = {0}; // maximal format
 
+// image in shared memory
+static cc_IMG *ima = NULL;
+
 static float focmaxpos = 0., focminpos = 0.; // focuser extremal positions
 static int wmaxpos = 0.; // wheel max pos
 static float tremain = 0.; // time when capture done
@@ -114,10 +117,10 @@ static pthread_mutex_t locmutex = PTHREAD_MUTEX_INITIALIZER; // mutex for wheel/
 // return TRUE if `locmutex` can be locked
 static int lock(){
     if(pthread_mutex_trylock(&locmutex)){
-        //DBG("\n\nAlready locked");
+        DBG("\n\nAlready locked &locmutex");
         return FALSE;
     }
-    //DBG("LOCK()");
+    //DBG("\n\nLOCK(&locmutex)");
     return TRUE;
 }
 static void unlock(){
@@ -125,10 +128,8 @@ static void unlock(){
         LOGERR("Can't unlock socket mutex");
         ERR(_("Can't unlock socket mutex"));
     }
-    //DBG("UNLOCK()");
+    //DBG("\n\nUNLOCK(&locmutex)");
 }
-
-static cc_IMG *ima = NULL;
 
 // cleanup semaphore, stop server processes
 void stop_server(){
@@ -139,6 +140,7 @@ void stop_server(){
         if(isrunning == -1) break;
         usleep(1000);
     }
+    DBG("OK, remove semaphore...");
     // destroy semaphore
     cc_remove_sem();
 }
@@ -150,8 +152,9 @@ static void fixima(){
     int locked = FALSE;
     TIMESTAMP("Lock socket");
     // lock socket operations
-    while(!(locked = lock()) && sl_dtime() - t0 < 0.5) usleep(1000);
+    while(!(locked = lock()) && sl_dtime() - t0 < 0.5) usleep(100000);
     if(!locked){
+        LOGDBG("fixima(): force unlock");
         DBG("Still locked from outside -> unlock/lock");
         while(!lock()) unlock(); // force unlocking if can't do this gracefully
     }else DBG("LOCK takes %gs", sl_dtime()-t0);
@@ -159,13 +162,16 @@ static void fixima(){
     TIMESTAMP("Check SHM image");
     // allocate memory for largest possible image
     if(!ima){
-        ima = cc_getshm(GP->shmkey, camera->array.h * camera->array.w * 2);
+        size_t len = camera->array.h * camera->array.w * 2;
+        ima = cc_getshm(GP->shmkey, len);
         if(!ima) ERR(_("Can't allocate memory for image"));
+        ima->datasize = ima->bytelen;
         // init shared semaphore
         cc_init_sem(TRUE);
     }
     TIMESTAMP("Lock SHM image");
     cc_lock_shm(TRUE);
+    LOGDBG("fixima(): SHM locked");
     shmkey = GP->shmkey;
     //if(raw_width == ima->w && raw_height == ima->h) return; // all OK
     DBG("curformat: %dx%d", curformat.w, curformat.h);
@@ -179,12 +185,14 @@ static void fixima(){
     ima->bytelen = raw_height * raw_width * cc_getNbytes(ima);
     DBG("new image: %dx%d", raw_width, raw_height);
     cc_unlock_shm();
+    LOGDBG("fixima(): SHM UNlocked");
     unlock();
     TIMESTAMP("All OK");
 }
 
 // functions for processCAM finite state machine
 static inline void cameraidlestate(){ // idle - wait for capture commands
+    static double Tcheck = 0.;
     if(camflags & FLAG_STARTCAPTURE){ // start capturing
         TIMESTAMP("Start exposition");
         camflags &= ~(FLAG_STARTCAPTURE | FLAG_CANCEL);
@@ -194,14 +202,27 @@ static inline void cameraidlestate(){ // idle - wait for capture commands
             LOGERR("Camera plugin have no function `start exposition`");
             WARNX(_("Camera plugin have no function `start exposition`"));
             camstate = CAMERA_ERROR;
-            return;
         }
         if(!camera->startexposition()){
             LOGERR("Can't start exposition");
             WARNX(_("Can't start exposition"));
             camstate = CAMERA_ERROR;
-            return;
         }
+    }
+    if(camstate == CAMERA_ERROR || (camstate == CAMERA_IDLE && sl_dtime() - Tcheck > 5.)){
+        Tcheck = sl_dtime();
+        if(!camera->check()){
+            LOGERR("Camera disconnected");
+            ERRX(_("Camera disconnected"));
+        }
+        if(camera->setDevNo && !camera->setDevNo(GP->camdevno)){
+            LOGERR("Can't set active camera # %d, try 0", GP->camdevno);
+            if(!camera->setDevNo(0)){
+                LOGERR("Can't set active camera # 0, restart");
+                ERRX(_("Something's wrong with camera"));
+            }
+        }
+        camstate = CAMERA_IDLE;
     }
 }
 static inline void cameracapturestate(){ // capturing - wait for exposition ends
@@ -221,6 +242,7 @@ static inline void cameracapturestate(){ // capturing - wait for exposition ends
                     return;
                 }
                 cc_lock_shm(TRUE);
+                LOGDBG("cameracapturestate(): SHM locked");
                 if(!camera->capture(ima)){
                     LOGERR("Can't capture image");
                     camstate = CAMERA_ERROR;
@@ -233,6 +255,7 @@ static inline void cameracapturestate(){ // capturing - wait for exposition ends
                     ++ima->imnumber; // increment counter
                 }
                 cc_unlock_shm();
+                LOGDBG("cameracapturestate(): SHM UNlocked");
                 TIMESTAMP("Captured and unlocked");
             }
             camstate = CAMERA_FRAMERDY;
@@ -434,7 +457,7 @@ static cc_hresult binhandler(_U_ int fd, const char *key, const char *val){
     if(r){
         if(0 == strcmp(key, CC_CMD_HBIN)) snprintf(buf, 63, "%s=%d", key, GP->hbin);
         else snprintf(buf, 63, "%s=%d", key, GP->vbin);
-        if(val) fixima();
+        //if(val) fixima();
         if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
         return CC_RESULT_SILENCE;
     }
@@ -590,7 +613,7 @@ static cc_hresult formathandler(int fd, const char *key, const char *val){
         if(!r) return CC_RESULT_FAIL;
         curformat = fmt;
         DBG("curformat: w=%d, h=%d", curformat.w, curformat.h);
-        fixima();
+        //fixima();
     }
     if(0 == strcmp(key, CC_CMD_FRAMEMAX)) snprintf(buf, 63, CC_CMD_FRAMEMAX "=%d,%d,%d,%d",
         frmformatmax.xoff, frmformatmax.yoff, frmformatmax.xoff+frmformatmax.w, frmformatmax.yoff+frmformatmax.h);
@@ -624,11 +647,11 @@ static cc_hresult expstatehandler(int fd, _U_ const char *key, const char *val){
         else if(n == CAMERA_CAPTURE){ // start exposition
             if(GP->exptime < 1e-9){ // need exposition time to be set
                 return CC_RESULT_FAIL;
-            }
+            }/*
             if(camstate == CAMERA_CAPTURE){
                 DBG("Capture in process when user ask '%s=%s'", key, val);
                 return CC_RESULT_BUSY; // in progress
-            }
+            }*/
             TIMESTAMP("Get FLAG_STARTCAPTURE");
             TIMEINIT();
             camflags |= FLAG_STARTCAPTURE;
@@ -658,7 +681,7 @@ static cc_hresult _8bithandler(int fd, _U_ const char *key, const char *val){
         int s = atoi(val);
         if(s != 0 && s != 1) return CC_RESULT_BADVAL;
         if(!camera->setbitdepth(!s)) return CC_RESULT_FAIL;
-        fixima();
+        //fixima();
         GP->_8bit = s;
     }
     snprintf(buf, 63, CC_CMD_8BIT "=%d", GP->_8bit);
@@ -669,8 +692,10 @@ static cc_hresult imnohandler(int fd, const char *key, const char _U_ *val){
     if(!ima) return CC_RESULT_FAIL;
     char buf[64];
     cc_lock_shm(TRUE);
+    LOGDBG("imnohandler(): SHM locked");
     int No = ima->imnumber;
     cc_unlock_shm();
+    LOGDBG("imnohandler(): SHM UNlocked");
     snprintf(buf, 63, "%s=%d", key, No);
     if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
     return CC_RESULT_SILENCE;
@@ -1025,31 +1050,38 @@ static void *sendimage(void *C){
     int client = *(int*)C;
     if(ima->h < 1 || ima->w < 1) return NULL;
     DBG("client fd: %d", client);
-    cc_lock_shm(TRUE);
-    cc_IMG *locimage = calloc(1, sizeof(cc_IMG));
-    void *data = calloc(1, ima->bytelen);
-    if(!locimage || !data){
-        cc_unlock_shm();
-        if(data) free(data);
-        if(locimage) free(locimage);
+    double t0 = sl_dtime();
+    int locked = FALSE;
+    while(!(locked = cc_lock_shm(FALSE)) && sl_dtime() - t0 < MUTEX_LOCK_TMOUT);
+    if(!locked){
+        LOGERR("sendimage(): can't lock SHM");
+        close(client);
         return NULL;
     }
-    memcpy(locimage, ima, sizeof(cc_IMG));
-    memcpy(data, ima->data, ima->bytelen);
+    LOGDBG("sendimage(): SHM locked");
+    cc_IMG *locimage = cc_newimage(ima->bitpix, ima->w, ima->h);
+    if(!locimage || !cc_copyimage(locimage, ima, FALSE)){
+        cc_unlock_shm();
+        LOGDBG("sendimage(): SHM UNlocked");
+        LOGERR("Can't copy new frame to local image");
+        return NULL;
+    }
     cc_unlock_shm();
+    LOGDBG("sendimage(): SHM UNlocked");
     do{
         // send image body
         if(!cc_senddata(client, locimage, sizeof(cc_IMG))) break;
         // send image itself (client can close socket if don't need image data)
-        if(!cc_senddata(client, data, locimage->bytelen)) break;
+        if(!cc_senddata(client, locimage->data, locimage->bytelen)) break;
         // send FITS header (client can close socket if don't need it)
         for(size_t i = 0; i < locimage->headerstrings; ++i){ // send header
             if(!cc_senddata(client, &locimage->fitsheader[i], FLEN_CARD)) break;
         }
     }while(0);
-    free(locimage);
-    free(data);
-    close(client);
+    shutdown(client, SHUT_WR); // tell client we are closing socket
+    recv(client, locimage->data, locimage->bytelen, MSG_NOSIGNAL); // block until client close his side
+    cc_freeimage(&locimage);
+    close(client); // OK, we can close socket
     TIMESTAMP("Image sent");
     DBG("%d closed", client);
     return NULL;
@@ -1069,6 +1101,7 @@ void server(int sock, int imsock){
         LOGERR("server(): error in listen() for command socket");
         return;
     }
+    TIMEINIT();
     // init everything
     int ctr = 3;
     if(startFocuser()) --ctr;
@@ -1079,7 +1112,7 @@ void server(int sock, int imsock){
     camdevini(0);
     if(ctr == 3){
         LOGERR("server(): no devices found");
-        WARNX(_("No devices found"));
+        ERRX(_("No devices found"));
     }
     // start camera thread
     pthread_t camthread;
@@ -1123,7 +1156,7 @@ void server(int sock, int imsock){
             DBG("client=%d", client);
             // sending image could be a very long operation -> run it in separate thread
             if(client > -1){
-                if(ima->imnumber == 0){
+                if(!ima || ima->imnumber == 0){
                     WARNX(_("Client wants an image, but there's no data"));
                     close(client);
                 }else{
@@ -1267,7 +1300,9 @@ static int parsestring(int fd, cc_handleritem *handlers, char *str){
             if(h->handler) r = h->handler(fd, str, val);
             else r = CC_RESULT_FAIL;
         }
-        if(l) unlock();
+        if(l){
+            unlock();
+        }
         if(r == CC_RESULT_DISCONNECTED){
             DBG("handler return CC_RESULT_DISCONNECTED");
             return FALSE;

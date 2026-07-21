@@ -196,6 +196,7 @@ do{ int status = 0, kt = 0;                      \
 // return FALSE if failed
 int saveFITS(cc_IMG *img, char **outp){
     int ret = FALSE;
+    if(!img || !img->data || !outp) return FALSE;
     char fnam[PATH_MAX+1];
     if(!GP->outfile && !GP->outfileprefix){
         LOGWARN("Image not saved: neither filename nor filename prefix pointed");
@@ -221,6 +222,7 @@ int saveFITS(cc_IMG *img, char **outp){
             LOGERR("Can't save image with prefix %s", GP->outfileprefix);
         }
     }
+    pthread_mutex_lock(&img->mutex);
     int width = img->w, height = img->h;
     long naxes[2] = {width, height};
     struct tm *tm_time;
@@ -275,6 +277,7 @@ fits_write_history(fp, bufhdr->buf, &s);
     if(fitserror) goto cloerr;
     TRYFITS(fits_close_file, fp);
 cloerr:
+    pthread_mutex_unlock(&img->mutex);
     if(fitserror == 0){
         LOGMSG("Save file '%s'", fnam);
         verbose(VERBOSE_PRIMARY, _("File saved as '%s'"), fnam);
@@ -839,17 +842,16 @@ static volatile int exitgrab = FALSE;
 static volatile size_t lastgrabno = 0;
 static void *grabnext(void *arg){
     FNAME();
-    cc_IMG *ima = (cc_IMG*) arg;
+    if(!arg) return NULL;
+    cc_IMG *ima = (cc_IMG*)arg;
     do{
         if(exitgrab) return NULL;
         TIMESTAMP("Start next exp");
         TIMEINIT();
-        if(!ima || !camera) return NULL;
+        if(!camera) return NULL;
         if(!camera->startexposition) ERRX(_("Camera plugin have no function `start exposition`"));
         if(!camera->startexposition()){
-            WARNX(_("Can't start exposition"));
-            usleep(10000);
-            continue;
+            ERRX(_("Can't start exposition"));
         }
         cc_capture_status cs = CAPTURE_ABORTED;
         TIMESTAMP("Poll");
@@ -866,6 +868,7 @@ static void *grabnext(void *arg){
         //calculate_stat(ima);
         TIMESTAMP("OK");
     }while(1);
+    return NULL;
 }
 
 
@@ -875,7 +878,7 @@ static void *grabnext(void *arg){
  * @param img - pointer to cc_IMG* (if cc_IMG* is NULL, will be allocated here)
  * @return TRUE if new image available
  */
-int ccdcaptured(cc_IMG **imgptr){
+int ccdcaptured(cc_IMG *imgptr){
     if(!imgptr) return FALSE;
     //TIMESTAMP("ccdcaptured() start");
     static pthread_t grabthread = 0;
@@ -891,32 +894,21 @@ int ccdcaptured(cc_IMG **imgptr){
         DBG("OK");
         return FALSE;
     }
-    cc_frameformat fmt = camera->geometry;
-    int raw_width = fmt.w / GP->hbin,  raw_height = fmt.h / GP->vbin;
-    cc_IMG *ima = NULL;
-    if(*imgptr && ((*imgptr)->w != raw_width || (*imgptr)->h != raw_height)) FREE(*imgptr);
-    if(!*imgptr){
-        uint16_t *img = MALLOC(uint16_t, raw_width * raw_height);
-        DBG("\n\nAllocated image 2x%dx%d=%d", raw_width, raw_height, 2 * raw_width * raw_height);
-        ima = MALLOC(cc_IMG, 1);
-        ima->data = img;
-        ima->w = raw_width;
-        ima->h = raw_height;
-        *imgptr = ima;
-    }else ima = *imgptr;
+    //cc_frameformat fmt = camera->geometry;
+    //int raw_width = fmt.w / GP->hbin,  raw_height = fmt.h / GP->vbin;
 
     if(!grabthread){ // start new grab
         TIMESTAMP("Start new grab");
         TIMEINIT();
-        if(pthread_create(&grabthread, NULL, &grabnext, (void*)ima)){
+        if(pthread_create(&grabthread, NULL, &grabnext, (void*)imgptr)){
             WARN(_("Can't create grabbing thread"));
             grabthread = 0;
         }
     }else{ // grab in process
-        if(ima->imnumber != lastgrabno){ // done
+        if(imgptr->imnumber != lastgrabno){ // done
             /*ssize_t delta = ima->imnumber - lastgrabno;
             if(delta > 0 && delta != 1) WARNX("ccdcaptured(): missed %zd images", delta-1);*/
-            lastgrabno = ima->imnumber;
+            lastgrabno = imgptr->imnumber;
             TIMESTAMP("Got exp #%zd", lastgrabno);
             framerate();
             return TRUE;
@@ -963,9 +955,6 @@ int start_socket(int isserver){
     }
     DBG("Close socket");
     close(sock);
-    if(isserver){
-        close(imsock);
-        signals(0);
-    }
+    if(isserver) close(imsock);
     return 0;
 }

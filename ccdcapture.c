@@ -49,36 +49,56 @@ static sem_t *sem = SEM_FAILED;
 // client-side SHM lock
 int cc_lock_shm(int isserver){
     if(sem == SEM_FAILED){
+        LOGERR("cc_lock_shm(): can't lock NULL");
         DBG("Can't lock NULL");
         return FALSE;
     }
-    struct timespec ts = {.tv_sec = 0, .tv_nsec = 10000000};
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts); // sem_timedwait waits for absolute time!
+    ts.tv_nsec += 100000000; // 100 ms
+    if(ts.tv_nsec > 999999999){
+        ts.tv_nsec -= 1000000000;
+        ++ts.tv_sec;
+    }
+#ifdef EBUG
+    double tstart = sl_dtime();
+#endif
     DBG("Try to lock");
-    if(isserver){
-        int locked = TRUE;
-        while(sem_timedwait(sem, &ts) && locked){
-            switch(errno){
-            case EINTR:
-                DBG("Interrupt -> try to lock again");
-                break;
-            default: // timeout or other error -> force locking
-                DBG("Error locking -> force unlock");
-                locked = FALSE;
+    int locked = TRUE;
+    while(locked){
+        if(0 == sem_timedwait(sem, &ts)){
+            locked = FALSE;
+            break;
+        }
+        DBG("Errno=%d (%s)", errno, strerror(errno));
+        if(errno == EINTR){
+            DBG("Interrupt -> try to lock again");
+        }else{
+            if(errno == ENOENT || errno == EINVAL){
+                DBG("No semaphore -> can't lock");
+                LOGERR("cc_lock_shm(): no semaphore -> can't lock");
+                return FALSE;
             }
-        }
-        if(locked){
-            double t0 = sl_dtime();
-            while(sem_trywait(sem) && sl_dtime() - t0 < 0.1) sem_post(sem); // force locking
-            if(sl_dtime() - t0 >= 0.1) return FALSE; // can't lock - timeout
-        }
-    }else{
-        if(sem_timedwait(sem, &ts)){
-            DBG("Image semaphore is locked too long by other side");
-            return FALSE; // can't lock
+            DBG("Error locking -> %s", (isserver) ? "force unlock" : "exit");
+            break;
         }
     }
-    DBG("Semaphore locked");
-    return TRUE;
+    DBG("locked=%d; time=%g", locked, sl_dtime() - tstart);
+    if(!locked){
+        DBG("Semaphore locked");
+        return TRUE;
+    }
+    if(isserver){
+        double t0 = sl_dtime();
+        LOGERR("cc_lock_shm(): still locked -> force unlock");
+        while(sem_trywait(sem) && sl_dtime() - t0 < 0.1) sem_post(sem); // force locking
+        if(sl_dtime() - t0 >= 0.1){
+            LOGERR("cc_lock_shm(): failed to unlock");
+        }
+    }else{
+        DBG("Image semaphore is locked too long by other side");
+    }
+    return FALSE; // can't lock
 }
 
 void cc_unlock_shm(){
@@ -89,10 +109,11 @@ void cc_unlock_shm(){
     if(sem_post(sem)){
         switch(errno){
         case EOVERFLOW: // already unlocked
+            DBG("Already unlocked");
             break;
         default: // not a valid? or other?
-            WARN(_("Can't unlock image semaphore"));
             LOGERR("Can't unlock image semaphore");
+            ERR(_("Can't unlock image semaphore (is server alive?)"));
             return;
         }
     }
@@ -109,16 +130,21 @@ void cc_init_sem(int isserver){
         sem = sem_open(SEM_NAME, 0);
     }
     if(sem == SEM_FAILED){
-        LOGERR("sem_open failed: %s", strerror(errno));
+        WARNX("sem_open() failed: %s", strerror(errno));
+        LOGERR("sem_open() failed: %s", strerror(errno));
     }
 }
 
 void cc_remove_sem(){
-    if(sem == SEM_FAILED) return;
-    sem_close(sem);
+    if(sem != SEM_FAILED){
+        sem_post(sem); // try to unlock if it was locked
+        sem_close(sem);
+    }
     DBG("semaphore closed\n");
-    if(-1 == sem_unlink(SEM_NAME))
+    if(-1 == sem_unlink(SEM_NAME)){
         LOGERR("Can't delete semaphore");
+        WARNX(_("Can't delete semaphore"));
+    }
 }
 
 /**
@@ -175,6 +201,10 @@ int cc_open_socket(int isserver, char *path, int isnet){
             WARN("socket()");
             continue;
         }
+        int bufsz = 33554432; // 32MB for buffer size
+        setsockopt(sock, SOL_SOCKET, SO_RCVBUF, &bufsz, sizeof(int));
+        bufsz = 33554432;
+        setsockopt(sock, SOL_SOCKET, SO_SNDBUF, &bufsz, sizeof(int));
         if(isserver){
             int reuseaddr = 1;
             if(setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &reuseaddr, sizeof(int)) == -1){
@@ -219,6 +249,10 @@ int cc_senddata(int fd, void *data, size_t l){
     while(total < l){
         ssize_t sent = send(fd, (char*)data + total, l - total, MSG_NOSIGNAL);
         if(sent <= 0){
+            if(errno == EAGAIN){
+                usleep(1000);
+                continue;
+            }
             WARN("send()");
             LOGWARN("send()");
             break; // error
@@ -339,12 +373,8 @@ cc_IMG *cc_getshm(key_t key, size_t imsize){
     int shmid = -1;
     int flags = (imsize) ? IPC_CREAT | 0666 : 0;
     shmid = shmget(key, 0, flags);
-    if(shmid < 0 && imsize == 0){ // no SHM segment for client
-        WARN(_("Can't get shared memory segment %d"), key);
-        return NULL;
-    }
+    struct shmid_ds buf;
     if(imsize){ // check if segment exists and its size equal to needs
-        struct shmid_ds buf;
         if(shmctl(shmid, IPC_STAT, &buf) > -1 && shmsize != buf.shm_segsz){ // remove already existing segment
             DBG("Need to remove already existing segment");
             shmctl(shmid, IPC_RMID, NULL);
@@ -355,11 +385,18 @@ cc_IMG *cc_getshm(key_t key, size_t imsize){
             return NULL;
         }
     }else{
-#ifdef EBUG
-        struct shmid_ds buf;
-        if(shmctl(shmid, IPC_STAT, &buf)) WARNX(_("Can't get SHM data"));
-        else DBG("SHM size = %zd", buf.shm_segsz);
-#endif
+        if(shmid < 0){ // no SHM segment for client
+            WARN(_("Can't get shared memory segment %d"), key);
+            return NULL;
+        }
+        if(shmctl(shmid, IPC_STAT, &buf)){
+            WARNX(_("Can't get SHM data"));
+            return NULL;
+        }else DBG("SHM size = %zd", buf.shm_segsz);
+        if(buf.shm_perm.mode & SHM_DEST){
+            WARNX(_("SHM buffer marked for deletion"));
+            return NULL;
+        }
     }
     flags = (imsize) ? 0 : SHM_RDONLY; // client opens memory in readonly mode
     cc_IMG *ptr = shmat(shmid, NULL, 0);
@@ -368,7 +405,7 @@ cc_IMG *cc_getshm(key_t key, size_t imsize){
         return NULL;
     }
     if(!imsize){
-        if(ptr->MAGICK != CC_SHM_MAGIC){
+        if(ptr->MAGICK != CC_SHM_MAGIC || buf.shm_segsz < ptr->bytelen + sizeof(cc_IMG)){
             WARNX(_("Shared memory %d isn't belongs to image server"), key);
             shmdt(ptr);
             return NULL;
@@ -952,4 +989,107 @@ cc_hresult cc_plugin_customcmd(const char *str, cc_parhandler_t *handlers, cc_ch
     }
 #undef ADDL
     return result;
+}
+
+/**
+ * @brief cc_newimage - create new empty image
+ * @param bitpix - 8 or 16
+ * @param w - width
+ * @param h - height
+ * @return pointer to allocated image or NULL if failed
+ */
+cc_IMG *cc_newimage(uint8_t bitpix, int w, int h){
+    FNAME();
+    if(w < 1 || h < 1){
+        DBG("Error: w=%d, h=%d", w, h);
+        return NULL;
+    }
+    cc_IMG *newima = calloc(1, sizeof(cc_IMG));
+    if(!newima){
+        WARN("calloc()");
+        return FALSE;
+    }
+    int N = bitpix / 8;
+    if(N < 1 || N > 2){
+        DBG("Error: %d bytes per pixel", N);
+        free(newima);
+        return NULL;
+    }
+    size_t ds = N * w * h;
+    newima->data = calloc(1, ds);
+    if(!newima->data){
+        WARN("calloc()");
+        free(newima);
+        return NULL;
+    }
+    newima->datasize = newima->bytelen = ds;
+    newima->w = w;
+    newima->h = h;
+    newima->MAGICK = CC_SHM_MAGIC;
+    pthread_mutex_init(&newima->mutex, NULL);
+    DBG("Created new image %dx%d", w, h);
+    return newima;
+}
+
+void cc_freeimage(cc_IMG **i){
+    if(!i || !*i) return;
+    cc_IMG *ptr = *i;
+    free(ptr->data);
+    free(ptr);
+    *i = NULL;
+}
+
+/**
+ * @brief cc_copyimage - copy `src` to `dest`
+ * @param dest - destination (dest->data would be reallocated if not enough)
+ * @param src - source image
+ * @param isshm - ==TRUE if `src` is in shared memory
+ * @return FALSE if failed
+ */
+int cc_copyimage(cc_IMG *dest, cc_IMG *src, int isshm){
+    FNAME();
+    if(!src || !dest || !src->data) return FALSE;
+    if(src->MAGICK != CC_SHM_MAGIC){
+        WARNX(_("Wrong image: bad magick (0x%X instead of 0x%X)"), src->MAGICK, CC_SHM_MAGIC);
+        return FALSE;
+    }
+    if(src->bytelen < 1){
+        WARNX(_("Wrong image size"));
+        return FALSE;
+    }
+    DBG("Lock");
+    pthread_mutex_lock(&dest->mutex);
+    if(!dest->data || dest->datasize < src->bytelen){
+        size_t newsz = 1024 * (1 + src->bytelen / 1024);
+        DBG("resize from %zd to %zd bytes", dest->datasize, newsz);
+        void *nxt = realloc(dest->data, newsz);
+        if(!nxt){
+            LOGERR("realloc() failed");
+            WARN("realloc()");
+            pthread_mutex_unlock(&dest->mutex);
+            return FALSE;
+        }
+        dest->data = nxt;
+        dest->datasize = newsz;
+        DBG("Success");
+    }
+    DBG("Copy fields");
+#define COPY(field) dest->field = src->field;
+    COPY(timestamp);
+    COPY(bitpix);
+    COPY(w);
+    COPY(h);
+    COPY(bytelen);
+    COPY(imnumber);
+#undef COPY
+    DBG("Copy %zd bytes of data", src->bytelen);
+    void *srcdata = src->data;
+    if(isshm){
+        srcdata = (void*)((uint8_t*)src + sizeof(cc_IMG));
+        DBG("Copy from SHM by offset; srcptr: %p; datastart: %p, offset: %zd", src, srcdata, sizeof(cc_IMG));
+    }
+    memcpy(dest->data, srcdata, src->bytelen);
+    DBG("All OK");
+    pthread_mutex_unlock(&dest->mutex);
+    return TRUE;
 }

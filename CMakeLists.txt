@@ -49,7 +49,7 @@ set(CMAKE_COLOR_MAKEFILE ON)
 
 # cmake -DDEBUG=yes -> debugging
 if(DEBUG)
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Og -g3 -ggdb -Werror")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O0 -ggdb -Werror")
     add_definitions(-DEBUG)
     set(CMAKE_BUILD_TYPE DEBUG)
     set(CMAKE_VERBOSE_MAKEFILE "ON")

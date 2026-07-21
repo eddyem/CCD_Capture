@@ -34,20 +34,22 @@
 #define SEM_NAME "ccdcapture"
 
 // base image parameters - sent by socket and stored in shared memory
-typedef struct __attribute__((packed)){
+typedef struct{ //  __attribute__((packed))
     uint32_t MAGICK;            // magick (DEADBEEF) - to mark our shm
+    pthread_mutex_t mutex;      // mutex for working with image data
     double timestamp;           // timestamp of image taken
-    uint8_t bitpix;             // bits per pixel (8 or 16)
     int w, h;                   // image size
     int gotstat;                // stat counted
+    size_t bytelen;             // size of image in bytes
+    size_t datasize;            // size of `data` buffer
+    size_t imnumber;            // counter of images captured from server's start
+    uint8_t bitpix;             // bits per pixel (8 or 16)
     uint16_t max, min;          // min/max values
     float avr, std;             // statistics
-    size_t bytelen;             // size of image in bytes
-    size_t imnumber;            // counter of images captured from server's start
-    void *data;                 // pointer to data (next byte after this struct) - only for server
-    /* `data` is uint8_t or uint16_t depending on `bitpix` */
-    char fitsheader[FITS_HEADER_STRINGS_MAX][FLEN_CARD]; // FITS-header for given image
     size_t headerstrings;       // amount of records in header
+    /* `data` is uint8_t or uint16_t depending on `bitpix` */
+    void *data;                 // pointer to data (next byte after this struct) - only for server
+    char fitsheader[FITS_HEADER_STRINGS_MAX][FLEN_CARD]; // FITS-header for given image
 } cc_IMG;
 
 typedef struct{
@@ -322,6 +324,10 @@ void cc_charbufput(cc_charbuff *b, const char *s, size_t l);
 void cc_charbufaddline(cc_charbuff *b, const char *s);
 cc_strbuff *cc_strbufnew(size_t size, size_t stringsize);
 void cc_strbufdel(cc_strbuff **buf);
+
+cc_IMG *cc_newimage(uint8_t bitpix, int w, int h);
+int cc_copyimage(cc_IMG *dest, cc_IMG *src, int isshm);
+void cc_freeimage(cc_IMG **i);
 
 const char *cc_hresult2str(cc_hresult r);
 cc_hresult cc_str2hresult(const char *str);

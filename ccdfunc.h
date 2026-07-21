@@ -40,7 +40,7 @@ void closewheel();
 void closecam();
 #ifdef IMAGEVIEW
 void framerate();
-int ccdcaptured(cc_IMG **img);
+int ccdcaptured(cc_IMG *img);
 #endif
 
 int start_socket(int isserver);

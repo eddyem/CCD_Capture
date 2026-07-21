@@ -31,10 +31,10 @@ extern cc_Wheel wheel;
 
 // flags for image processing
 typedef enum{
+    IM_ERROR,
     IM_SLEEP,
     IM_STARTED,
     IM_READY,
-    IM_ERROR
 } imstate_t;
 
 // devices
@@ -63,10 +63,7 @@ static double exptime = 0., starttime = 0.;
 // return constant string with error code description
 static const char *errcode(int ecode){
     switch(ecode){
-#ifndef STR
-#define STR(par)  # par
-#endif
-#define ECASE(code)  case code: return STR(code)
+#define ECASE(code)  case code: return # code
         ECASE(S_OK);
         ECASE(S_FALSE);
         ECASE(E_UNEXPECTED);
@@ -131,6 +128,7 @@ static void camclose(){
         free(toupcam.data);
         toupcam.data = NULL;
     }
+    toupcam.state = IM_ERROR;
 }
 
 /**
@@ -241,7 +239,20 @@ static int campoll(cc_capture_status *st, float *remain){
 static void EventCallback(unsigned nEvent, void _U_ *pCallbackCtx){
     DBG("CALLBACK with evt %d", nEvent);
     if(!toupcam.hcam || !toupcam.data){ DBG("NO data!"); return; }
-    if(nEvent != TOUPCAM_EVENT_IMAGE){ DBG("Not image event"); return; }
+    switch(nEvent){
+        case TOUPCAM_EVENT_DISCONNECTED:
+            WARNX(_("Camera disconnected"));
+            camclose();
+            return;
+        case TOUPCAM_EVENT_ERROR:
+            WARNX(_("Error occured"));
+            camcancel();
+        case TOUPCAM_EVENT_IMAGE:
+            break;
+        default:
+        DBG("Not an image event");
+            return;
+    }
     ToupcamFrameInfoV4 info = {0};
     //DBG("LOCK");
     pthread_mutex_lock(&toupcam.mutex);

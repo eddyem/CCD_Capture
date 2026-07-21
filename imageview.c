@@ -288,13 +288,15 @@ static void createGLwin(char *title, int w, int h, rawimage *rawdata){
     if(!initialized) imageview_init();
     if(win) killwindow();
     win = MALLOC(windowData, 1);
+    int wh = w * h;
+    win->rawdata = MALLOC(uint8_t, wh);
     rawimage *raw;
     if(rawdata){
         raw = rawdata;
     }else{
         raw = MALLOC(rawimage, 1);
         if(raw){
-            raw->rawdata = MALLOC(GLubyte, w*h*3);
+            raw->rawdata = MALLOC(GLubyte, wh*3);
             raw->w = w;
             raw->h = h;
             raw->changed = 1;
@@ -445,15 +447,12 @@ result: 0.0014689s
 
 /**
  * @brief equalize - hystogram equalization
- * @param ori (io) - input/output data
- * @param w,h      - image width and height
- * @return data allocated here
+ * @param img (i)  - input image
  */
-static uint8_t *equalize(cc_IMG *img, int w, int h){
-    uint8_t *retn = MALLOC(uint8_t, w*h);
+static void equalize(cc_IMG *img){
     double orig_hysto[0x10000] = {0.}; // original hystogram
     uint8_t eq_levls[0x10000] = {0};   // levels to convert: newpix = eq_levls[oldpix]
-    int s = w*h;
+    int s = img->h * img->w;
 //double t0 = dtime();
     /* -- takes too long because of sync
 #pragma omp parallel
@@ -492,6 +491,7 @@ static uint8_t *equalize(cc_IMG *img, int w, int h){
     }
 //WARNX("equal: %gs", dtime()-t0);
     //OMP_FOR() -- takes the same time!
+    uint8_t *retn = win->rawdata;
     if(bytes == 1){
         uint8_t *data = (uint8_t*) img->data;
         for(int i = 0; i < s; ++i){
@@ -504,7 +504,6 @@ static uint8_t *equalize(cc_IMG *img, int w, int h){
         }
     }
 //WARNX("result: %gs", dtime()-t0);
-    return retn;
 }
 /*
  no omp @ histo:
@@ -518,10 +517,9 @@ cuts: 0.00188208s
 */
 
 // count image cuts as [median-sigma median+5sigma]
-static uint8_t *mkcuts(cc_IMG *img, int w, int h){
-    uint8_t *retn = MALLOC(uint8_t, w*h);
+static void mkcuts(cc_IMG *img){
     int orig_hysto[0x10000] = {0.}; // original hystogram
-    int s = w*h;
+    int s = img->h * img->w;
     double sum = 0., sum2 = 0.;
     int bytes = cc_getNbytes(img);
     TIMESTAMP("Make histogram");
@@ -584,9 +582,11 @@ static uint8_t *mkcuts(cc_IMG *img, int w, int h){
 //WARNX("stat: %gs", dtime()-t0);
 // DEBUG: 2ms without OMP; 0.7ms with
     TIMESTAMP("apply cuts");
+    uint8_t *retn = win->rawdata;
     if(bytes == 1){
+        DBG("8 bit data");
         uint8_t *data = (uint8_t*) img->data;
-        OMP_FOR()
+        //OMP_FOR()
         for(int i = 0; i < s; ++i){
             uint16_t old = data[i];
             if(old > high){ retn[i] = 255; continue; }
@@ -594,8 +594,9 @@ static uint8_t *mkcuts(cc_IMG *img, int w, int h){
             retn[i] = (uint8_t)(A*(old - low));
         }
     }else{
+        DBG("16 bit data");
         uint16_t *data = (uint16_t*) img->data;
-        OMP_FOR()
+        //OMP_FOR()
         for(int i = 0; i < s; ++i){
             uint16_t old = data[i];
             if(old > high){ retn[i] = 255; continue; }
@@ -603,8 +604,8 @@ static uint8_t *mkcuts(cc_IMG *img, int w, int h){
             retn[i] = (uint8_t)(A*(old - low));
         }
     }
+    DBG("Done");
 //WARNX("cuts: %gs", dtime()-t0);
-    return retn;
 }
 
 static void change_displayed_image(cc_IMG *img){
@@ -614,29 +615,43 @@ static void change_displayed_image(cc_IMG *img){
     TIMESTAMP("Got image #%zd", img->imnumber);
     if(delta > 0 && delta != 1) WARNX(_("Missed %zd images"), delta-1);
     lastN = img->imnumber;
-    //pthread_mutex_lock(&win->mutex);
-    rawimage *im = win->image;
-    DBG("imh=%d, imw=%d, ch=%u, cw=%u", im->h, im->w, img->h, img->w);
+    pthread_mutex_lock(&win->mutex);
     int w = img->w, h = img->h, s = w*h;
-    if(!im || (im->h != h) || (im->w != w)){ // realloc image to new size
-        pthread_mutex_lock(&win->mutex);
+    if(!win->image || ! win->rawdata || (win->image->h != h) || (win->image->w != w)){ // realloc image & raw image to new size
+        //pthread_mutex_lock(&win->mutex);
         DBG("\n\nRealloc rawdata");
-        if(!im) im = MALLOC(rawimage, 1);
-        if(im->h*im->w < s) im->rawdata = realloc(im->rawdata, s*3);
-        im->h = h; im->w = w;
-        win->image = im;
+        uint8_t *raw = win->image->rawdata;
+        win->image->rawdata = realloc(win->image->rawdata, s*3);
+        if(!win->image->rawdata){
+            WARN("realloc()");
+            LOGERR("Realloc() error");
+            win->image->rawdata = raw;
+            return;
+        }
+        win->image->h = h; win->image->w = w;
+        raw = win->rawdata;
+        win->rawdata = realloc(win->rawdata, s);
+        if(!win->rawdata){
+            WARN("realloc()");
+            LOGERR("Realloc() error");
+            win->rawdata = raw;
+            return;
+        }
         DBG("win->image changed");
-        pthread_mutex_unlock(&win->mutex);
+        //pthread_mutex_unlock(&win->mutex);
     }
+    rawimage *im = win->image;
+    uint8_t *raw = win->rawdata;
+    DBG("imh=%d, imw=%d, ch=%u, cw=%u", im->h, im->w, img->h, img->w);
     TIMESTAMP("level correction");
-    uint8_t *newima;
     if(imequalize){
         DBG("equalize");
-        newima = equalize(img, w, h);
+        equalize(img);
     }else{
         DBG("cuts");
-        newima = mkcuts(img, w, h);
+        mkcuts(img);
     }
+    //pthread_mutex_lock(&win->mutex);
     GLubyte *dst = im->rawdata;
     TIMESTAMP("colorfun");
 //double t0 = dtime();
@@ -645,17 +660,16 @@ static void change_displayed_image(cc_IMG *img){
         OMP_FOR()
         for(int i = 0; i < s; ++i){
             GLubyte *t = &dst[i*3];
-            t[0] = t[1] = t[2] = colorfun(newima[i]);
+            t[0] = t[1] = t[2] = colorfun(raw[i]);
         }
     }else{
         // without OMP: 3.6ms; with OMP: 1.7ms
         OMP_FOR()
         for(int i = 0; i < s; ++i){
-            gray2rgb(colorfun(newima[i] / 256.), &dst[i*3]);
+            gray2rgb(colorfun(raw[i] / 256.), &dst[i*3]);
         }
     }
 //WARNX("Conversion time: %g", dtime()-t0);
-    FREE(newima);
     /*
     // mirror image around Y
     int w3 = w*3, h1 = h-1, wsz = w3*sizeof(GLubyte);
@@ -672,7 +686,7 @@ static void change_displayed_image(cc_IMG *img){
 }*/
     DBG("Unlock");
     win->image->changed = 1;
-    //pthread_mutex_unlock(&win->mutex);
+    pthread_mutex_unlock(&win->mutex);
 }
 
 void closeGL(){ // killed by external signal or ctrl+c
@@ -704,7 +718,11 @@ int viewer(imagefunc newimage){
         WARNX(_("Can't open OpenGL window, image preview will be inaccessible"));
         return 1;
     }
-    cc_IMG *img = NULL;
+    static cc_IMG *locimage = NULL;
+    if(!locimage){
+        locimage = cc_newimage(16, 1024, 1024);
+        if(!locimage) return 1;
+    }
     //double t0 = dtime();
     while(1){
         if(!win || win->killthread){ // got kill from ctrl+q
@@ -717,10 +735,10 @@ int viewer(imagefunc newimage){
         }
         if((win->winevt & WINEVT_GETIMAGE) || !(win->winevt & WINEVT_PAUSE)){
             //DBG("CHK new image, t=%g", dtime()-t0);
-            if(newimage(&img)){
+            if(newimage(locimage)){
                 TIMESTAMP("got image -> change");
                 win->winevt &= ~WINEVT_GETIMAGE;
-                change_displayed_image(img); // change image if refreshed
+                change_displayed_image(locimage); // change image if refreshed
                 TIMESTAMP("changed");
             }
             //DBG("Next cycle, t=%g", dtime()-t0);
@@ -737,19 +755,19 @@ int viewer(imagefunc newimage){
                 GP->outfileprefix = strdup("ccd_capture-screenshot");
                 verbose(VERBOSE_PRIMARY, _("Set output prefix to %s"), GP->outfileprefix);
             }
-            saveFITS(img, NULL);
+            saveFITS(locimage, NULL);
             win->winevt &= ~WINEVT_SAVEIMAGE;
         }
         if(win->winevt & WINEVT_ROLLCOLORFUN){
             roll_colorfun();
             win->winevt &= ~WINEVT_ROLLCOLORFUN;
-            change_displayed_image(img);
+            change_displayed_image(locimage);
         }
         if(win->winevt & WINEVT_EQUALIZE){
             win->winevt &= ~WINEVT_EQUALIZE;
             imequalize = !imequalize;
             verbose(VERBOSE_PRIMARY, _("Equalization of histogram: %s"), imequalize ? N_("on") : N_("off"));
-            change_displayed_image(img);
+            change_displayed_image(locimage);
         }
     }
 }

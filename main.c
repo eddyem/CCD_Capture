@@ -58,16 +58,13 @@ void signals(int signo){
     if(!GP->client){
         DBG("Cancel capturing and close all");
         stop_server();
-        camstop();
-        closewheel();
-        focclose();
-    }
+    }else exit(signo);
 #ifdef IMAGEVIEW
     DBG("KILL GL");
     closeGL();
 #endif
-    DBG("exit(%d)", signo);
-    exit(signo);
+    //DBG("exit(%d)", signo);
+    //exit(signo);
 }
 
 int main(int argc, char **argv){
@@ -148,7 +145,7 @@ int main(int argc, char **argv){
             return start_socket(isserver);
         }
 #ifdef IMAGEVIEW
-        if(GP->showimage){ // activate image vindow in capture or simple viewer mode
+        if(GP->showimage){ // activate image window in capture or simple viewer mode
             imagefunc imfn = NULL;
             if(GP->cameradev || GP->commondev){if(camerainit) imfn = ccdcaptured;} // capture mode
             else imfn = NULL; // TODO - simple file viewer

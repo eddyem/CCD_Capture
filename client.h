@@ -24,5 +24,5 @@
 void client(int fd);
 #ifdef IMAGEVIEW
 void init_grab_sock(int sock);
-int sockcaptured(cc_IMG **img);
+int sockcaptured(cc_IMG *img);
 #endif
