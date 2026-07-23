@@ -40,6 +40,9 @@
 static int isserver = FALSE;
 static pid_t childpid = 0;
 
+// get struct size
+//char (*__dummy)[sizeof(cc_IMG)] = 1;
+
 void signals(int signo){
     //if(signo) signal(signo, SIG_IGN);
     DBG("signo=%d", signo);

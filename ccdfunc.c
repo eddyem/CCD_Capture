@@ -37,6 +37,9 @@ cc_Camera *camera = NULL;
 cc_Focuser *focuser = NULL;
 cc_Wheel *wheel = NULL;
 
+static float focmaxpos = 0.f, focminpos = 0.f; // focuser extremal positions
+static int wmaxpos = 0; // wheel max pos
+
 static int fitserror = 0;
 
 #define TRYFITS(f, ...)                     \
@@ -63,8 +66,8 @@ static size_t curtime(char *s_time){ // current date/time
 
 // check if I can create file prefix_XXXX.fits
 static int check_filenameprefix(char *buff, int buflen){
-    for(int num = 1; num < 10000; num++){
-        if(snprintf(buff, buflen-1, "%s_%04d.fits", GP->outfileprefix, num) < 1)
+    for(int num = 1; num < 1000000; num++){
+        if(snprintf(buff, buflen-1, "%s_%06d.fits", GP->outfileprefix, num) < 1)
             return FALSE;
         struct stat filestat;
         if(stat(buff, &filestat)) // no such file or can't stat()
@@ -73,6 +76,7 @@ static int check_filenameprefix(char *buff, int buflen){
     return FALSE;
 }
 
+#if 0
 /**
  * @brief fillFITSheader (server-side only!) - update img->fitsheader by image data and additional headers
  * @param img (io) - image to update
@@ -86,7 +90,7 @@ size_t fillFITSheader(cc_IMG *img){
 do{ int status = 0, kt = 0;                      \
     fits_parse_template(in, card, &kt, &status);  \
     if(status) fits_report_error(stderr, status);\
-    else if(img->headerstrings < FITS_HEADER_STRINGS_MAX) snprintf(img->fitsheader[img->headerstrings++], FLEN_CARD, "%s", card); \
+    else addrecord(fp, card); \
 }while(0)
 #define FORMINT(key, val, comment) do{ \
     snprintf(templ, FLEN_CARD, "%s = %d / %s", key, val, comment); \
@@ -190,13 +194,17 @@ do{ int status = 0, kt = 0;                      \
     if(GP->instrument) FORMSTR("INSTRUME", GP->instrument, "Instrument");
     return img->headerstrings;
 }
+#endif
 
 // save FITS file `img` into GP->outfile or GP->outfileprefix_XXXX.fits
 // if outp != NULL, put into it strdup() of last file name
 // return FALSE if failed
 int saveFITS(cc_IMG *img, char **outp){
     int ret = FALSE;
-    if(!img || !img->data || !outp) return FALSE;
+    if(!img || !img->data){
+        WARNX("Bad data");
+        return FALSE;
+    }
     char fnam[PATH_MAX+1];
     if(!GP->outfile && !GP->outfileprefix){
         LOGWARN("Image not saved: neither filename nor filename prefix pointed");
@@ -216,17 +224,19 @@ int saveFITS(cc_IMG *img, char **outp){
             }
             snprintf(fnam, PATH_MAX, "!%s", GP->outfile);
         }
+        DBG("Will save as %s", GP->outfile);
     }else{ // user pointed output file prefix
         if(!check_filenameprefix(fnam, PATH_MAX)){
             WARNX(_("Can't save file with prefix %s"), GP->outfileprefix);
             LOGERR("Can't save image with prefix %s", GP->outfileprefix);
+            return FALSE;
         }
+        DBG("Will save with prefix %s", GP->outfileprefix);
     }
     pthread_mutex_lock(&img->mutex);
     int width = img->w, height = img->h;
     long naxes[2] = {width, height};
     struct tm *tm_time;
-    char bufc[FLEN_CARD];
     double dsavetime = sl_dtime();
     time_t savetime = time(NULL);
     fitsfile *fp;
@@ -238,19 +248,113 @@ int saveFITS(cc_IMG *img, char **outp){
     else TRYFITS(fits_create_img, fp, USHORT_IMG, 2, naxes);
     if(fitserror) goto cloerr;
     // write header
-    char key[FLEN_KEYWORD];
-    for(size_t i = 0; i < img->headerstrings; ++i){
-        char *rec = img->fitsheader[i];
-        char *eq = strchr(rec, '=');
-        int status = 0;
-        if(eq){ // found 'key = value / comment'
-            size_t l = eq - rec;
-            if(l > FLEN_KEYWORD-1) l = FLEN_KEYWORD-1;
-            memcpy(key, rec, l); key[l] = 0;
-            fits_update_card(fp, key, rec, &status);
-        }else fits_write_record(fp, rec, &status);
-        if(status) fits_report_error(stderr, status);
+    char card[FLEN_CARD], templ[2*FLEN_CARD], bufc[FLEN_CARD];
+    calculate_stat(img);
+#define FORMKW(in)                              \
+    do{ int status = 0, kt = 0;                      \
+            fits_parse_template(in, card, &kt, &status);  \
+            if(status) fits_report_error(stderr, status);\
+            else cc_addrecord(fp, card); \
+    }while(0)
+#define FORMINT(key, val, comment) do{ \
+        snprintf(templ, FLEN_CARD, "%s = %d / %s", key, val, comment); \
+        FORMKW(templ); \
+}while(0)
+#define FORMFLT(key, val, comment) do{ \
+    snprintf(templ, FLEN_CARD, "%s = %g / %s", key, val, comment); \
+    FORMKW(templ); \
+}while(0)
+#define FORMSTR(key, val, comment) do{ \
+    snprintf(templ, 2*FLEN_CARD, "%s = '%s' / %s", key, val, comment); \
+    FORMKW(templ); \
+}while(0)
+
+    FORMKW("ORIGIN = 'SAO RAS' / Organization responsible for the data");
+    FORMKW("OBSERVAT = 'Special Astrophysical Observatory, Russia' / Observatory name");
+    if(img->model[0]) FORMSTR("DETECTOR", img->model, "Detector model");
+    if(GP->instrument) FORMSTR("INSTRUME", GP->instrument, "Instrument");
+    else FORMKW("INSTRUME = 'direct imaging'  / Instrument");
+    FORMFLT("EXPTIME", img->exposure_time, "Actual exposition time (sec)");
+    // BINNING / Binning
+    snprintf(templ, FLEN_CARD, "BINNING = '%d x %d' / Binning (hbin x vbin)", img->bin_x, img->bin_y);
+    FORMKW(templ);
+    FORMINT("XBINNING", img->bin_x, "Binning factor used on X axis");
+    FORMINT("YBINNING", img->bin_y, "Binning factor used on Y axis");
+    // pixel size
+    if(!isnan(img->pixel_x)){
+        FORMFLT("PIXSIZEX", img->pixel_x, "Pixel size X (um)");
+        if(!isnan(img->pixel_y)){
+            FORMFLT("PIXSIZEY", img->pixel_y, "Pixel size Y (um)");
+            snprintf(templ, FLEN_CARD, "PIXSIZE = '%.1f x %.1f' / Pixel size (h x v), um", img->pixel_x, img->pixel_y);
+            FORMKW(templ);
+        }
     }
+    // imtype
+    if(img->flags.dark) sprintf(bufc, "dark");
+    else if(GP->objtype) strncpy(bufc, GP->objtype, FLEN_CARD);
+    else sprintf(bufc, "light");
+    FORMSTR("IMAGETYP", bufc, "Image type");
+    // geometry
+    snprintf(templ, FLEN_CARD, "VIEWFLD = '(%d, %d)(%d, %d)' / Camera maximal field of view", img->field.xoff, img->field.yoff,
+             img->field.xoff + img->field.w, img->field.yoff + img->field.h);
+    FORMKW(templ);
+    snprintf(templ, FLEN_CARD, "ARRAYFLD = '(%d, %d)(%d, %d)' / Camera full array size (with overscans)", img->array.xoff, img->array.yoff,
+             img->array.xoff + img->array.w, img->array.yoff + img->array.h);
+    FORMKW(templ);
+    snprintf(templ, FLEN_CARD, "GEOMETRY = '(%d, %d)(%d, %d)' / Camera current frame geometry", img->geometry.xoff, img->geometry.yoff,
+             img->geometry.xoff + img->geometry.w, img->geometry.yoff + img->geometry.h);
+    FORMKW(templ);
+    FORMINT("X0", img->geometry.xoff, "Subframe left border without binning");
+    FORMINT("Y0", img->geometry.yoff, "Subframe upper border without binning");
+    // stat
+    FORMINT("DATAMIN", 0, "Min pixel value");
+    FORMINT("DATAMAX", (1<<img->bitpix) - 1, "Max pixel value");
+    if(img->gotstat){
+        FORMINT("STATMIN", img->min, "Min data value");
+        FORMINT("STATMAX", img->max, "Max data value");
+        FORMFLT("STATAVR", img->avr, "Average data value");
+        FORMFLT("STATSTD", img->std, "Std. of data value");
+    }
+    // camera parameters
+    if(!isnan(img->gain)) FORMFLT("CAMGAIN", img->gain, "CMOS gain value");
+    if(!isnan(img->brightness)) FORMFLT("CAMBRIGH", img->brightness, "CMOS brightness value");
+    if(!isnan(img->ccd_temp)) FORMFLT("CAMTEMP", img->ccd_temp, "Camera temperature at exp. end, degr C");
+    if(!isnan(img->tbody)) FORMFLT("BODYTEMP", img->tbody, "Camera body temperature at exp. end, degr C");
+    if(!isnan(img->thot)) FORMFLT("HOTTEMP", img->thot, "Camera peltier hot side temperature at exp. end, degr C");
+    // wheel
+    if(img->flags.havewheel){
+        if(img->wmodel[0]) FORMSTR("WHEEL", img->wmodel, "Filter wheel model");
+        if(img->wheelmax > 0) FORMINT("FILTMAX", img->wheelmax, "Amount of filter positions");
+        FORMINT("FILTER", img->wheelpos, "Current filter position");
+        if(!isnan(img->wheel_temp)) FORMFLT("FILTTEMP", img->wheel_temp, "Filter wheel body temperature, degr C");
+    }
+    // focuser
+    if(img->flags.havefocuser){
+        if(img->fmodel[0]) FORMSTR("FOCUSER", img->fmodel, "Focuser model");
+        if(!isnan(img->focpos)) FORMFLT("FOCUS", img->focpos, "Current focuser position, mm");
+        if(!isnan(img->focmin)) FORMFLT("FOCMIN", img->focmin, "Minimal focuser position, mm");
+        if(!isnan(img->focmax)) FORMFLT("FOCMAX", img->focmax, "Maximal focuser position, mm");
+        if(!isnan(img->foc_temp)) FORMFLT("FOCTEMP", img->foc_temp, "Focuser body temperature, degr C");
+    }
+    snprintf(templ, 2*FLEN_CARD, "TIMESTAM = %.6f / Time of acquisition end (UNIX)", img->timestamp);
+    FORMKW(templ);
+    FORMINT("IMSEQNO", (int)img->imnumber, "Number of image in full sequence");
+
+    if(GP->addhdr){ // add records from server-side files
+        char **nxtfile = GP->addhdr;
+        while(*nxtfile){
+            int got = cc_kwfromfile(fp, *nxtfile);
+            if(got == 0) WARNX(_("Added 0 FITS records from %s"), *nxtfile);
+            else verbose(VERBOSE_SECONDARY, _("Added %d FITS records from %s"), got, *nxtfile);
+            ++nxtfile;
+        }
+    }
+    // add these keywords after all to override records from files
+    if(GP->observers) FORMSTR("OBSERVER", GP->observers, "Observers");
+    if(GP->prog_id) FORMSTR("PROG-ID", GP->prog_id, "Observation program identifier");
+    if(GP->author) FORMSTR("AUTHOR", GP->author, "Author of the program");
+    if(GP->objname) FORMSTR("OBJECT", GP->objname, "Object name");
+
     // creation date/time
     int s = 0;
     fits_write_date(fp, &s);
@@ -274,9 +378,8 @@ fits_write_history(fp, bufhdr->buf, &s);
     //WRITEKEY(fp, TSTRING, "FILE", n, "Input file original name");
     if(nbytes == 1) TRYFITS(fits_write_img, fp, TBYTE, 1, width * height, img->data);
     else TRYFITS(fits_write_img, fp, TUSHORT, 1, width * height, img->data);
-    if(fitserror) goto cloerr;
-    TRYFITS(fits_close_file, fp);
 cloerr:
+    TRYFITS(fits_close_file, fp);
     pthread_mutex_unlock(&img->mutex);
     if(fitserror == 0){
         LOGMSG("Save file '%s'", fnam);
@@ -289,7 +392,7 @@ cloerr:
         ret = TRUE;
     }else{
         LOGERR("Can't save %s", fnam);
-        WARNX(_("Error saving file"));
+        WARNX(_("Error saving file %s"), fnam);
         fitserror = 0;
     }
     return ret;
@@ -357,7 +460,7 @@ cc_Focuser *startFocuser(){
         return NULL;
     }else{
         char *plugin = GP->commondev ? GP->commondev : GP->focuserdev;
-        if(!(focuser = open_focuser(plugin))) return NULL;
+        if(!(focuser = cc_open_focuser(plugin))) return NULL;
     }
     if(!focuser->check()){
         verbose(VERBOSE_MESG, _("No focusers found"));
@@ -365,6 +468,38 @@ cc_Focuser *startFocuser(){
         return NULL;
     }
     return focuser;
+}
+
+/**
+ * @brief setFocuserNo - set active focuser device number
+ * @param num - new number
+ * @param min (o) - minimal position
+ * @param max (o) - maximal position
+ * @return FALSE if failed
+ */
+int setFocuserNo(int num, float *min, float *max){
+    if(!focuser) return FALSE;
+    if(num < 0) num = 0;
+    if(num > focuser->Ndevices - 1){
+        WARNX(_("Found %d focusers, you point number %d"), focuser->Ndevices, num);
+        LOGERR("Found %d focusers, user pointed number %d", focuser->Ndevices, num);
+        return FALSE;
+    }
+    if(!focuser->setDevNo(num)){
+        WARNX(_("Can't set active focuser number"));
+        LOGERR("Can't set active focuser number");
+        return FALSE;
+    }
+    LOGMSG("Set focuser device number to %d", num);
+    if(!focuser->getMinPos || !focuser->getMinPos(&focminpos) ||
+        !focuser->getMaxPos || !focuser->getMaxPos(&focmaxpos)){
+        WARNX(_("Can't get focuser limit positions"));
+        LOGWARN("Can't get focuser limit positions");
+    }else{
+        if(min) *min = focminpos;
+        if(max) *max = focmaxpos;
+    }
+    return TRUE;
 }
 
 void focclose(){
@@ -387,16 +522,7 @@ void focusers(){
             verbose(VERBOSE_PRIMARY, _("Found focuser #%d: %s\n"), i, modname);
         }
     }
-    int num = GP->focdevno;
-    if(num < 0) num = 0;
-    if(num > focuser->Ndevices - 1){
-        WARNX(_("Found %d focusers, you point number %d"), focuser->Ndevices, num);
-        goto retn;
-    }
-    if(!focuser->setDevNo(num)){
-        WARNX(_("Can't set active focuser number"));
-        goto retn;
-    }
+    if(!setFocuserNo(GP->focdevno, NULL, NULL)) goto retn;
     char buf[BUFSIZ];
     if(focuser->getModelName(buf, BUFSIZ)){
         verbose(VERBOSE_SECONDARY, "Focuser model: %s", buf);
@@ -406,14 +532,10 @@ void focusers(){
         verbose(VERBOSE_PRIMARY, "FOCTEMP=%.1f", t);
         DBG("FOCTEMP=%.1f", t);
     }
-    float minpos, maxpos, curpos;
-    if(!focuser->getMinPos(&minpos) || !focuser->getMaxPos(&maxpos)){
-        WARNX(_("Can't get focuser limit positions"));
-        goto retn;
-    }
-    verbose(VERBOSE_PRIMARY, "FOCMINPOS=%g", minpos);
-    verbose(VERBOSE_PRIMARY, "FOCMAXPOS=%g", maxpos);
-    DBG("FOCMINPOS=%g, FOCMAXPOS=%g", minpos, maxpos);
+    verbose(VERBOSE_PRIMARY, "FOCMINPOS=%g", focminpos);
+    verbose(VERBOSE_PRIMARY, "FOCMAXPOS=%g", focmaxpos);
+    float curpos;
+    DBG("FOCMINPOS=%g, FOCMAXPOS=%g", focminpos, focmaxpos);
     if(!focuser->getPos(&curpos)){
         WARNX(_("Can't get current focuser position"));
         goto retn;
@@ -428,11 +550,11 @@ void focusers(){
         tagpos = curpos + GP->addsteps;
     }
     DBG("tagpos: %g", tagpos);
-    if(tagpos < minpos || tagpos > maxpos){
-        WARNX(_("Can't set position %g: out of limits [%g, %g]"), tagpos, minpos, maxpos);
+    if(tagpos < focminpos || tagpos > focmaxpos){
+        WARNX(_("Can't set position %g: out of limits [%g, %g]"), tagpos, focminpos, focmaxpos);
         goto retn;
     }
-    if(tagpos - minpos < __FLT_EPSILON__){
+    if(tagpos - focminpos < __FLT_EPSILON__){
         if(!focuser->home(GP->async)) WARNX(_("Can't home focuser"));
     }else{
         if(!focuser->setAbsPos(GP->async, tagpos)) WARNX(_("Can't set position %g"), tagpos);
@@ -447,7 +569,7 @@ cc_Wheel *startWheel(){
         return NULL;
     }else{
         char *plugin = GP->commondev ? GP->commondev : GP->wheeldev;
-        if(!(wheel = open_wheel(plugin))) return NULL;
+        if(!(wheel = cc_open_wheel(plugin))) return NULL;
     }
     if(!wheel->check()){
         verbose(VERBOSE_MESG, _("No wheels found"));
@@ -455,6 +577,35 @@ cc_Wheel *startWheel(){
         return NULL;
     }
     return wheel;
+}
+
+/**
+ * @brief setWheelNo - set number of active wheel
+ * @param num - number
+ * @param max (o) - if !NULL - maxpos
+ * @return FALSE if failed
+ */
+int setWheelNo(int num, int *max){
+    if(!wheel) return FALSE;
+    if(num < 0) num = 0;
+    if(num > wheel->Ndevices - 1){
+        WARNX(_("Found %d wheels, you point number %d"), wheel->Ndevices, num);
+        LOGERR("Found %d wheels, user pointed number %d", wheel->Ndevices, num);
+        return FALSE;
+    }
+    if(!wheel->setDevNo(num)){
+        WARNX(_("Can't set active wheel number"));
+        LOGERR("Can't set active wheel number");
+        return FALSE;
+    }
+    LOGMSG("Set wheel device number to %d", num);
+    if(!wheel->getMaxPos || !wheel->getMaxPos(&wmaxpos)){
+        WARNX(_("Can't get max wheel position"));
+        LOGERR("Can't get max wheel position");
+    }else{
+        if(max) *max = wmaxpos;
+    }
+    return TRUE;
 }
 
 void closewheel(){
@@ -477,16 +628,7 @@ void wheels(){
             verbose(VERBOSE_PRIMARY, _("Found wheel #%d: %s\n"), i, modname);
         }
     }
-    int num = GP->whldevno;
-    if(num < 0) num = 0;
-    if(num > wheel->Ndevices - 1){
-        WARNX(_("Found %d wheels, you point number %d"), wheel->Ndevices, num);
-        goto retn;
-    }
-    if(!wheel->setDevNo(num)){
-        WARNX(_("Can't set active wheel number"));
-        goto retn;
-    }
+    if(!setWheelNo(GP->whldevno, NULL)) goto retn;
     char buf[BUFSIZ];
     if(wheel->getModelName(buf, BUFSIZ)){
         verbose(VERBOSE_SECONDARY, _("Wheel model: %s"), buf);
@@ -495,19 +637,15 @@ void wheels(){
     if(wheel->getTbody(&t)){
         verbose(VERBOSE_PRIMARY, "WHEELTEMP=%.1f", t);
     }
-    int pos, maxpos;
+    int pos;
     if(wheel->getPos(&pos)){
         verbose(VERBOSE_PRIMARY, "WHEELPOS=%d", pos);
     }else WARNX(_("Can't get current wheel position"));
-    if(!wheel->getMaxPos(&maxpos)){
-        WARNX(_("Can't get max wheel position"));
-        goto retn;
-    }
-    verbose(VERBOSE_PRIMARY, "WHEELMAXPOS=%d", maxpos);
+    verbose(VERBOSE_PRIMARY, "WHEELMAXPOS=%d", wmaxpos);
     pos = GP->setwheel;
     if(pos == -1) goto retn; // no wheel commands
-    if(pos < 0 || pos > maxpos){
-        WARNX(_("Wheel position should be from 0 to %d"), maxpos);
+    if(pos < 0 || pos > wmaxpos){
+        WARNX(_("Wheel position should be from 0 to %d"), wmaxpos);
         goto retn;
     }
     if(!wheel->setPos(pos))
@@ -551,7 +689,7 @@ cc_Camera *startCCD(){
         return NULL;
     }else{
         char *plugin = GP->commondev ? GP->commondev : GP->cameradev;
-        if(!(camera = open_camera(plugin))) return NULL;
+        if(!(camera = cc_open_camera(plugin))) return NULL;
     }
     if(!camera->check()){
         WARNX(_("No cameras found"));
@@ -751,6 +889,46 @@ int prepare_ccds(){
 retn:
     if(!rtn) closecam();
     return rtn;
+}
+
+void fill_image_fields(cc_IMG *ima){
+    if(!ima) return;
+    ima->gotstat = 0; // fresh image without statistics - recalculate when save
+    ima->timestamp = sl_dtime(); // set timestamp
+    if(!camera->getgain || !camera->getgain(&ima->gain)) ima->gain = NAN;
+    if(!camera->getbrightness || !camera->getbrightness(&ima->brightness)) ima->brightness = NAN;
+    if(!camera->getTcold || !camera->getTcold(&ima->ccd_temp)){
+        DBG("Can't get CCD temperature");
+        ima->ccd_temp = NAN;
+    }else DBG("CCD Temperature=%g", ima->ccd_temp);
+    if(!camera->getTbody || !camera->getTbody(&ima->tbody)){
+        DBG("Can't get body temperature");
+        ima->tbody = NAN;
+    }else DBG("Body Temperature=%g", ima->tbody);
+    if(!camera->getThot || !camera->getThot(&ima->thot)){
+        DBG("Can't get Thot");
+        ima->thot = NAN;
+    }else DBG("Hot Temperature=%g", ima->thot);
+    ima->flags.dark = GP->dark;
+    ima->field = camera->field;
+    ima->array = camera->array;
+    ima->geometry = camera->geometry;
+    DBG("Geom: off(%d, %d), size(%d, %d)", ima->geometry.xoff, ima->geometry.yoff,
+            ima->geometry.w, ima->geometry.h);
+    if(wheel){
+        int i;
+        ima->flags.havewheel = 1;
+        if(wheel->getPos(&i)) ima->wheelpos = (uint8_t) i;
+        ima->wheelmax = wmaxpos;
+        if(!wheel->getTbody || !wheel->getTbody(&ima->wheel_temp)) ima->wheel_temp = NAN;
+    }
+    if(focuser){
+        ima->flags.havefocuser = 1;
+        ima->focmin = focminpos;
+        ima->focmax = focmaxpos;
+        if(!focuser->getPos || !focuser->getPos(&ima->focpos)) ima->focpos = NAN;
+        if(!focuser->getTbody || !focuser->getTbody(&ima->foc_temp)) ima->foc_temp = NAN;
+    }
 }
 
 /*

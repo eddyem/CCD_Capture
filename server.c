@@ -46,9 +46,9 @@ static cc_frameformat frmformatmax = {0}, curformat = {0}; // maximal format
 // image in shared memory
 static cc_IMG *ima = NULL;
 
-static float focmaxpos = 0., focminpos = 0.; // focuser extremal positions
-static int wmaxpos = 0.; // wheel max pos
-static float tremain = 0.; // time when capture done
+static float focmaxpos = 0.f, focminpos = 0.f; // focuser extremal positions
+static int wmaxpos = 0; // wheel max pos
+static float tremain = 0.f; // time when capture done
 
 // IPC key for shared memory (for client's getter)
 static key_t shmkey = IPC_PRIVATE;
@@ -61,7 +61,7 @@ typedef struct{
 
 // cat | awk '{print "{ " $3 ", \"\" }," }' | sort
 strpair allcommands[] = {
-    { CC_CMD_AUTHOR,       "FITS 'AUTHOR' field" },
+    //{ CC_CMD_AUTHOR,       "FITS 'AUTHOR' field" },
     { CC_CMD_BRIGHTNESS,   "camera brightness" },
     { CC_CMD_CAMDEVNO,     "camera device number" },
     { CC_CMD_CAMFLAGS,     "get camflags (bits: 0-start capture, 1-cancel, 2-restart server"},
@@ -81,23 +81,23 @@ strpair allcommands[] = {
     { CC_CMD_FTEMP,        "get focuser body temperature"},
     { CC_CMD_FRAMEFORMAT,  "camera frame format (X0,Y0,X1,Y1)" },
     { CC_CMD_GAIN,         "camera gain" },
-    { CC_CMD_GETHEADERS,   "get last file FITS headers" },
+    //{ CC_CMD_GETHEADERS,   "get last file FITS headers" },
     { CC_CMD_HBIN,         "horizontal binning" },
     { CC_CMD_HELP,         "show this help" },
     { CC_CMD_IMHEIGHT,     "last image height" },
     { CC_CMD_IMNUMBER,     "grabbed image number from server start"},
     { CC_CMD_IMWIDTH,      "last image width" },
     { CC_CMD_INFTY,        "an infinity loop taking images until there's connected clients" },
-    { CC_CMD_INSTRUMENT,   "FITS 'INSTRUME' field" },
+    //{ CC_CMD_INSTRUMENT,   "FITS 'INSTRUME' field" },
     { CC_CMD_IO,           "get/set camera IO" },
     { CC_CMD_8BIT,         "run in 8 bit mode instead of 16 bit" },
     { CC_CMD_FRAMEMAX,     "camera maximal available format" },
     { CC_CMD_NFLUSHES,     "camera number of preflushes" },
-    { CC_CMD_OBJECT,       "FITS 'OBJECT' field" },
-    { CC_CMD_OBJTYPE,      "FITS 'IMAGETYP' field" },
-    { CC_CMD_OBSERVER,     "FITS 'OBSERVER' field" },
+    //{ CC_CMD_OBJECT,       "FITS 'OBJECT' field" },
+    //{ CC_CMD_OBJTYPE,      "FITS 'IMAGETYP' field" },
+    //{ CC_CMD_OBSERVER,     "FITS 'OBSERVER' field" },
     { CC_CMD_PLUGINCMD,    "custom camera plugin command" },
-    { CC_CMD_PROGRAM,      "FITS 'PROG-ID' field" },
+    //{ CC_CMD_PROGRAM,      "FITS 'PROG-ID' field" },
     { CC_CMD_RESTART,      "restart server" },
     { CC_CMD_SHMEMKEY,     "get shared memory key" },
     { CC_CMD_SHUTTER,      "camera shutter's operations" },
@@ -106,7 +106,7 @@ strpair allcommands[] = {
     { CC_CMD_VBIN,         "vertical binning" },
     { CC_CMD_WDEVNO,       "wheel device number" },
     { CC_CMD_WLIST,        "list all connected wheels" },
-    { CC_CMD_WMAXPOS,      "get maximap wheel position"},
+    { CC_CMD_WMAXPOS,      "get maximal wheel position"},
     { CC_CMD_WPOS,         "wheel position" },
     { CC_CMD_WTEMP,        "get wheel body temperature"},
     {NULL, NULL},
@@ -168,6 +168,30 @@ static void fixima(){
         ima->datasize = ima->bytelen;
         // init shared semaphore
         cc_init_sem(TRUE);
+        if(camera->getModelName){
+            if(camera->getModelName(ima->model, MODELNM_SZ-1)) ima->model[MODELNM_SZ-1] = 0;
+            else ima->model[0] = 0;
+        }
+        ima->pixel_x = camera->pixX;
+        ima->pixel_y = camera->pixY;
+        // fill constant parameters
+        if(wheel){
+            int i;
+            if(wheel->getModelName){
+                if(wheel->getModelName(ima->wmodel, MODELNM_SZ-1)) ima->wmodel[MODELNM_SZ-1] = 0;
+                else ima->wmodel[0] = 0;
+            }
+            if(wheel->getMaxPos && wheel->getMaxPos(&i)) ima->wheelmax = i;
+            else ima->wheelmax = 0;
+        }
+        if(focuser){
+            if(focuser->getModelName){
+                if(focuser->getModelName(ima->fmodel, MODELNM_SZ-1)) ima->fmodel[MODELNM_SZ-1] = 0;
+                else ima->fmodel[0] = 0;
+            }
+            if(!focuser->getMinPos || !focuser->getMinPos(&ima->focmin)) ima->focmin = NAN;
+            if(!focuser->getMaxPos || !focuser->getMaxPos(&ima->focmax)) ima->focmax = NAN;
+        }
     }
     TIMESTAMP("Lock SHM image");
     cc_lock_shm(TRUE);
@@ -177,6 +201,9 @@ static void fixima(){
     DBG("curformat: %dx%d", curformat.w, curformat.h);
     ima->h = raw_height;
     ima->w = raw_width;
+    ima->bin_x = GP->hbin;
+    ima->bin_y = GP->vbin;
+    ima->exposure_time = GP->exptime;
     if(!camera->getbitpix || !camera->getbitpix(&ima->bitpix)) ima->bitpix = 16;
     if(ima->bitpix < 8 || ima->bitpix > 16) ima->bitpix = 16; // use maximum in any strange cases
     DBG("bitpix=%d", ima->bitpix);
@@ -232,8 +259,11 @@ static inline void cameracapturestate(){ // capturing - wait for exposition ends
             TIMESTAMP("Capture ready");
             tremain = 0.;
             // now capture frame
-            if(!ima || !ima->data) LOGERR("Can't capture image: data not initialized");
-            else{
+            if(!ima || !ima->data){
+                LOGERR("Can't capture image: data not initialized");
+                camstate = CAMERA_ERROR;
+                return;
+            }else{
                 TIMESTAMP("start capture");
                 if(!camera->capture){
                     WARNX(_("Camera plugin have no function `capture`"));
@@ -247,13 +277,10 @@ static inline void cameracapturestate(){ // capturing - wait for exposition ends
                     LOGERR("Can't capture image");
                     camstate = CAMERA_ERROR;
                     return;
-                }else{
-                    TIMESTAMP("Fill FITS header");
-                    ima->gotstat = 0; // fresh image without statistics - recalculate when save
-                    ima->timestamp = sl_dtime(); // set timestamp
-                    fillFITSheader(ima);
-                    ++ima->imnumber; // increment counter
                 }
+                fill_image_fields(ima);
+                //fillFITSheader(ima);
+                ++ima->imnumber; // increment counter
                 cc_unlock_shm();
                 LOGDBG("cameracapturestate(): SHM UNlocked");
                 TIMESTAMP("Captured and unlocked");
@@ -354,29 +381,7 @@ static int camdevini(int n){
     if(!camera->setgeometry || !camera->setgeometry(&curformat)) WARNX(_("Can't set given geometry"));
     return TRUE;
 }
-static int focdevini(int n){
-    if(!focuser) return FALSE;
-    if(!focuser->setDevNo(n)){
-        LOGERR("Can't set active focuser number");
-        return FALSE;
-    }
-    atomic_store(&focdevno, n);
-    LOGMSG("Set focuser device number to %d", n);
-    focuser->getMaxPos(&focmaxpos);
-    focuser->getMinPos(&focminpos);
-    return TRUE;
-}
-static int wheeldevini(int n){
-    if(!wheel) return FALSE;
-    if(!wheel->setDevNo(n)){
-        LOGERR("Can't set active wheel number");
-        return FALSE;
-    }
-    atomic_store(&wheeldevno, n);
-    LOGMSG("Set wheel device number to %d", n);
-    wheel->getMaxPos(&wmaxpos);
-    return TRUE;
-}
+
 
 /*******************************************************************************
  *************************** Service handlers **********************************
@@ -727,6 +732,7 @@ static cc_hresult darkhandler(int fd, _U_ const char *key, const char *val){
     if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
     return CC_RESULT_SILENCE;
 }
+#if 0
 static cc_hresult FITSparhandler(int fd, const char *key, const char *val){
     char buf[256], **fitskey = NULL;
     if(0 == strcmp(key, CC_CMD_AUTHOR)){
@@ -750,6 +756,7 @@ static cc_hresult FITSparhandler(int fd, const char *key, const char *val){
     if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
     return CC_RESULT_SILENCE;
 }
+#endif
 /*
 static cc_hresult handler(_U_ int fd, _U_ const char *key, _U_ const char *val){
     char buf[64];
@@ -795,7 +802,7 @@ static cc_hresult wsetNhandler(int fd, _U_ const char *key, const char *val){
         if(num > wheel->Ndevices - 1 || num < 0){
             return CC_RESULT_BADVAL;
         }
-        if(!wheeldevini(num)) return CC_RESULT_FAIL;
+        if(!setWheelNo(num, &wmaxpos)) return CC_RESULT_FAIL;
     }
     snprintf(buf, 63, CC_CMD_WDEVNO "=%d", atomic_load(&wheeldevno));
     if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
@@ -867,7 +874,7 @@ static cc_hresult fsetNhandler(int fd, _U_ const char *key, const char *val){
         if(num > focuser->Ndevices - 1 || num < 0){
             return CC_RESULT_BADVAL;
         }
-        if(!focdevini(num)) return CC_RESULT_FAIL;
+        if(!setFocuserNo(num, &focminpos, &focmaxpos)) return CC_RESULT_FAIL;
     }
     snprintf(buf, 63, CC_CMD_FDEVNO "=%d", atomic_load(&focdevno));
     if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
@@ -945,6 +952,7 @@ static cc_hresult pluginhandler(int fd, _U_ const char *key, const char *val){
     return r;
 }
 
+#if 0
 // get headers
 static cc_hresult gethdrshandler(int fd, _U_ const char *key, _U_ const char *val){
     if(!ima) return CC_RESULT_FAIL;
@@ -958,6 +966,7 @@ static cc_hresult gethdrshandler(int fd, _U_ const char *key, _U_ const char *va
     }
     return CC_RESULT_SILENCE;
 }
+#endif
 
 // for setters: do nothing when camera not in idle state
 static int CAMbusy(){
@@ -1020,6 +1029,7 @@ static cc_handleritem items[] = {
     {chkcc,  inftyhandler, CC_CMD_INFTY},
     {chkcc,  pluginhandler, CC_CMD_PLUGINCMD},
     {NULL,   tremainhandler, CC_CMD_TREMAIN},
+#if 0
     {chkcc,  gethdrshandler, CC_CMD_GETHEADERS},
     {NULL,   FITSparhandler, CC_CMD_AUTHOR},
     {NULL,   FITSparhandler, CC_CMD_INSTRUMENT},
@@ -1027,6 +1037,7 @@ static cc_handleritem items[] = {
     {NULL,   FITSparhandler, CC_CMD_OBJECT},
     {NULL,   FITSparhandler, CC_CMD_PROGRAM},
     {NULL,   FITSparhandler, CC_CMD_OBJTYPE},
+#endif
     {chkfoc, foclisthandler, CC_CMD_FOCLIST},
     {chkfoc, fsetNhandler, CC_CMD_FDEVNO},
     {chkfoc, fgotohandler, CC_CMD_FGOTO},
@@ -1073,10 +1084,6 @@ static void *sendimage(void *C){
         if(!cc_senddata(client, locimage, sizeof(cc_IMG))) break;
         // send image itself (client can close socket if don't need image data)
         if(!cc_senddata(client, locimage->data, locimage->bytelen)) break;
-        // send FITS header (client can close socket if don't need it)
-        for(size_t i = 0; i < locimage->headerstrings; ++i){ // send header
-            if(!cc_senddata(client, &locimage->fitsheader[i], FLEN_CARD)) break;
-        }
     }while(0);
     shutdown(client, SHUT_WR); // tell client we are closing socket
     recv(client, locimage->data, locimage->bytelen, MSG_NOSIGNAL); // block until client close his side
@@ -1104,12 +1111,21 @@ void server(int sock, int imsock){
     TIMEINIT();
     // init everything
     int ctr = 3;
-    if(startFocuser()) --ctr;
-    focdevini(0);
-    if(startWheel()) --ctr;
-    wheeldevini(0);
-    if(startCCD()) --ctr;
-    camdevini(0);
+    if(startFocuser()){
+        --ctr;
+        if(GP->focdevno < 0) GP->focdevno = 0;
+        setFocuserNo(GP->focdevno, &focminpos, &focmaxpos);
+    }
+    if(startWheel()){
+        --ctr;
+        if(GP->whldevno < 0) GP->whldevno = 0;
+        setWheelNo(GP->whldevno, &wmaxpos);
+    }
+    if(startCCD()){
+        --ctr;
+        if(GP->camdevno < 0) GP->camdevno = 0;
+        camdevini(GP->camdevno);
+    }
     if(ctr == 3){
         LOGERR("server(): no devices found");
         ERRX(_("No devices found"));

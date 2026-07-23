@@ -263,6 +263,7 @@ static void send_headers(int sock){
         if(GP->dark) SENDMSGW(CC_CMD_DARK, "=1");
         else SENDMSGW(CC_CMD_DARK, "=0");
     }
+#if 0
     // FITS header keywords:
 #define CHKHDR(x, cmd)   do{if(x) SENDMSG(cmd "=%s", x);}while(0)
     CHKHDR(GP->author, CC_CMD_AUTHOR);
@@ -272,6 +273,7 @@ static void send_headers(int sock){
     CHKHDR(GP->prog_id, CC_CMD_PROGRAM);
     CHKHDR(GP->objtype, CC_CMD_OBJTYPE);
 #undef CHKHDR
+#endif
 }
 
 /**
@@ -407,7 +409,7 @@ static int getsockimage(int *imsock){
  * @param askheader == TRUE for storing FITS-header
  * @return FALSE if failed to catch image
  */
-static int getimage(int askheader){
+static int getimage(/*int askheader*/){
     FNAME();
     int imsock = -1, shmlocked = FALSE, ret = FALSE;
     static double oldtimestamp = -1.;
@@ -434,6 +436,7 @@ static int getimage(int askheader){
         oldtimestamp = locima->timestamp;
         atomic_store(&grabno, locima->imnumber);
         TIMESTAMP("Got image #%zd", locima->imnumber);
+#if 0
         if(askheader){ // read FITS-header for later saving
             if(shmima){
                 if(locima->headerstrings > FITS_HEADER_STRINGS_MAX){
@@ -463,6 +466,7 @@ static int getimage(int askheader){
                 }
             }
         }else locima->headerstrings = 0;
+#endif
     }else WARNX(_("Still got old image"));
 eofg:
     if(imsock > -1) close(imsock); // reopen in next time in case of error
@@ -549,7 +553,7 @@ void client(int sock){
             if(lastImNo != cur){
                 lastImNo = cur;
                 verbose(VERBOSE_SECONDARY, _("Frame ready, try to grab"));
-                if(!getimage(TRUE)){
+                if(!getimage(/*TRUE*/)){
                     WARNX(_("Can't get next image"));
                 }else{
                     if(saveFITS(locima, &lastfilename)){
@@ -640,7 +644,7 @@ static void *grabnext(void _U_ *arg){
         }
         lastImNo = cur;
         TIMESTAMP("Frame ready (%d from start)", cur);
-        getimage(FALSE);
+        getimage(/*FALSE*/);
     }
     return NULL;
 }
@@ -667,7 +671,7 @@ static void *waitimage(void _U_ *arg){
         lastImNo = cur;
         TIMESTAMP("End of cycle #%d, start new", cur);
         TIMEINIT();
-        getimage(FALSE);
+        getimage(/*FALSE*/);
         atomic_store(&expstate, CAMERA_IDLE);
         DBG("Current state: %d", atomic_load(&expstate));
     }

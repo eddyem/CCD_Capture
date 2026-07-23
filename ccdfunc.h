@@ -29,12 +29,15 @@ int saveFITS(cc_IMG *img, char **outp); // for imageview module
 void focusers();
 void wheels();
 int prepare_ccds();
+void fill_image_fields(cc_IMG *ima);
 void ccds();
 void camstop();
 
 cc_Camera *startCCD();
 cc_Wheel *startWheel();
+int setWheelNo(int num, int *max);
 cc_Focuser *startFocuser();
+int setFocuserNo(int num, float *min, float *max);
 void focclose();
 void closewheel();
 void closecam();

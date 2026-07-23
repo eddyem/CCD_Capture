@@ -420,7 +420,7 @@ cc_IMG *cc_getshm(key_t key, size_t imsize){
 
 
 // find plugin
-void *open_plugin(const char *name){
+void *cc_open_plugin(const char *name){
     DBG("try to open lib %s", name);
     void* dlh = dlopen(name, RTLD_NOLOAD); // library may be already opened
     if(!dlh){
@@ -434,9 +434,9 @@ void *open_plugin(const char *name){
     return dlh;
 }
 
-cc_Focuser *open_focuser(const char *pluginname){
+cc_Focuser *cc_open_focuser(const char *pluginname){
     FNAME();
-    void* dlh = open_plugin(pluginname);
+    void* dlh = cc_open_plugin(pluginname);
     if(!dlh) return NULL;
     cc_Focuser* f = (cc_Focuser*) dlsym(dlh, "focuser");
     if(!f){
@@ -445,9 +445,9 @@ cc_Focuser *open_focuser(const char *pluginname){
     }
     return f;
 }
-cc_Camera *open_camera(const char *pluginname){
+cc_Camera *cc_open_camera(const char *pluginname){
     FNAME();
-    void* dlh = open_plugin(pluginname);
+    void* dlh = cc_open_plugin(pluginname);
     if(!dlh) return NULL;
     cc_Camera *c = (cc_Camera*) dlsym(dlh, "camera");
     if(!c){
@@ -456,9 +456,9 @@ cc_Camera *open_camera(const char *pluginname){
     }
     return c;
 }
-cc_Wheel *open_wheel(const char *pluginname){
+cc_Wheel *cc_open_wheel(const char *pluginname){
     FNAME();
-    void* dlh = open_plugin(pluginname);
+    void* dlh = cc_open_plugin(pluginname);
     if(!dlh) return NULL;
     cc_Wheel *w = (cc_Wheel*) dlsym(dlh, "wheel");
     if(!w){
@@ -768,6 +768,26 @@ cc_hresult cc_getfloat(int fd, cc_strbuff *cbuf, const char *cmd, float *val){
     return r;
 }
 
+/**
+ * @brief cc_addrecord - add pre-formated record to FITS file
+ * @param fp - pointer to FITS file
+ * @param rec - record to add
+ * @return
+ */
+int cc_addrecord(fitsfile *fp, char *rec){
+    if(!fp || !rec) return -1;
+    char key[FLEN_KEYWORD];
+    char *eq = strchr(rec, '=');
+    int status = 0;
+    if(eq){ // found 'key = value / comment'
+        size_t l = eq - rec;
+        if(l > FLEN_KEYWORD-1) l = FLEN_KEYWORD-1;
+        memcpy(key, rec, l); key[l] = 0;
+        fits_update_card(fp, key, rec, &status);
+    }else fits_write_record(fp, rec, &status);
+    if(status) fits_report_error(stderr, status);
+    return status;
+}
 
 // get next record from external buffer, newlines==1 if every record ends with '\n'
 char *cc_nextkw(char *buf, char record[FLEN_CARD], int newlines){
@@ -787,12 +807,12 @@ char *cc_nextkw(char *buf, char record[FLEN_CARD], int newlines){
 
 /**
  * @brief cc_kwfromfile - add records from file
- * @param img - buffer to add
+ * @param fp - FITS file
  * @param filename - file name with FITS headers ('\n'-terminated or by 80 chars)
- * @return amount of bytes added
+ * @return amount of records added
  */
-size_t cc_kwfromfile(cc_IMG *img, char *filename){
-    if(!img) return 0;
+int cc_kwfromfile(fitsfile *fp, char *filename){
+    if(!fp || !filename) return 0;
     sl_mmapbuf_t *buf = sl_mmap(filename);
     if(!buf || buf->len < 1){
         WARNX(_("Can't add FITS records from file %s"), filename);
@@ -805,7 +825,7 @@ size_t cc_kwfromfile(cc_IMG *img, char *filename){
     if(x && (x - data) < FLEN_CARD){ // we found newline -> this is a format with newlines
         newlines = 1;
     }
-    size_t written = 0;
+    int written = 0;
     do{
         data = cc_nextkw(data, rec, newlines);
         if(data > eodata) break;
@@ -813,10 +833,7 @@ size_t cc_kwfromfile(cc_IMG *img, char *filename){
         fits_parse_template(rec, card, &kt, &status);
         if(status) fits_report_error(stderr, status);
         else{
-            if(img->headerstrings < FITS_HEADER_STRINGS_MAX){
-                ++written;
-                snprintf(img->fitsheader[img->headerstrings++], FLEN_CARD, "%s", card);
-            }else break;
+            if(0 == cc_addrecord(fp, card)) ++written;
         }
     }while(data && *data);
     sl_munmap(buf);
@@ -1059,6 +1076,7 @@ int cc_copyimage(cc_IMG *dest, cc_IMG *src, int isshm){
     }
     DBG("Lock");
     pthread_mutex_lock(&dest->mutex);
+    dest->MAGICK = CC_SHM_MAGIC;
     if(!dest->data || dest->datasize < src->bytelen){
         size_t newsz = 1024 * (1 + src->bytelen / 1024);
         DBG("resize from %zd to %zd bytes", dest->datasize, newsz);
@@ -1073,7 +1091,8 @@ int cc_copyimage(cc_IMG *dest, cc_IMG *src, int isshm){
         dest->datasize = newsz;
         DBG("Success");
     }
-    DBG("Copy fields");
+    DBG("Copy %zd bytes of fields", offsetof(cc_IMG, end_of_copyable_data) - offsetof(cc_IMG, start_of_copyable_data));
+#if 0
 #define COPY(field) dest->field = src->field;
     COPY(timestamp);
     COPY(bitpix);
@@ -1081,7 +1100,21 @@ int cc_copyimage(cc_IMG *dest, cc_IMG *src, int isshm){
     COPY(h);
     COPY(bytelen);
     COPY(imnumber);
+    COPY(pixel_x);
+    COPY(pixel_y);
+    COPY(gain);
+    COPY(ccd_temp);
+    COPY(exposure_time);
+    COPY(bin_x);
+    COPY(bin_y);
 #undef COPY
+    memcpy(dest->model, src->model, MODELNM_SZ);
+#endif
+    uint8_t *tagaddr = (uint8_t*)dest + offsetof(cc_IMG, start_of_copyable_data);
+    uint8_t *srcaddr = (uint8_t*)src + offsetof(cc_IMG, start_of_copyable_data);
+    memcpy(tagaddr, srcaddr,
+        offsetof(cc_IMG, end_of_copyable_data) - offsetof(cc_IMG, start_of_copyable_data));
+    DBG("TS after copy: dest=%.5f, src=%.5f", dest->timestamp, src->timestamp);
     DBG("Copy %zd bytes of data", src->bytelen);
     void *srcdata = src->data;
     if(isshm){

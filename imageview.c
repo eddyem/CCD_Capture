@@ -1,4 +1,4 @@
-/*
+ /*
  * This file is part of the CCD_Capture project.
  * Copyright 2022 Edward V. Emelianov <edward.emelianoff@gmail.com>.
  *

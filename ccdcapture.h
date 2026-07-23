@@ -33,10 +33,28 @@
 // semaphore for SHM protection
 #define SEM_NAME "ccdcapture"
 
+#define MODELNM_SZ      64
+
+typedef union{
+    struct{
+        uint8_t dark : 1;       // dark or light frame?
+        uint8_t havefocuser:1;  // we have focuser device
+        uint8_t havewheel : 1;  // have wheel device (TODO: what if we have more than one wheel?)
+    };
+    uint8_t all;
+} camflags_t;
+
+// format of single frame
+typedef struct{
+    int w; int h;               // width & height
+    int xoff; int yoff;         // X and Y offset
+} cc_frameformat;
+
 // base image parameters - sent by socket and stored in shared memory
-typedef struct{ //  __attribute__((packed))
+typedef struct { //  __attribute__((packed))
     uint32_t MAGICK;            // magick (DEADBEEF) - to mark our shm
     pthread_mutex_t mutex;      // mutex for working with image data
+    uint8_t start_of_copyable_data; // service field - start of copyable data
     double timestamp;           // timestamp of image taken
     int w, h;                   // image size
     int gotstat;                // stat counted
@@ -46,10 +64,27 @@ typedef struct{ //  __attribute__((packed))
     uint8_t bitpix;             // bits per pixel (8 or 16)
     uint16_t max, min;          // min/max values
     float avr, std;             // statistics
-    size_t headerstrings;       // amount of records in header
+    // camera data (nan for float if camera have no such property)
+    camflags_t flags;           // flags
+    float pixel_x, pixel_y;     // pixel size, mkm
+    float gain, brightness;     // current gain & brightness config
+    float ccd_temp;             // cold side temperature
+    float tbody, thot;          // camera body & hot Peltier temperatures
+    float exposure_time;        // exposure time of given frame
+    uint16_t bin_x, bin_y;      // binning
+    char model[MODELNM_SZ];     // camera model
+    cc_frameformat field, array, geometry; // copy of same `camera` fields
+    // focuser data
+    float focpos, focmin, focmax;// current, minimal and maximal F position
+    float foc_temp;             // focuser temperature
+    char fmodel[MODELNM_SZ];    // focuser model
+    // wheel data
+    uint8_t wheelpos, wheelmax; // current and maximal wheel position
+    float wheel_temp;           // wheel temperature
+    char wmodel[MODELNM_SZ];    // wheel model
+    uint8_t end_of_copyable_data; // service field - end of copyable data
     /* `data` is uint8_t or uint16_t depending on `bitpix` */
     void *data;                 // pointer to data (next byte after this struct) - only for server
-    char fitsheader[FITS_HEADER_STRINGS_MAX][FLEN_CARD]; // FITS-header for given image
 } cc_IMG;
 
 typedef struct{
@@ -71,12 +106,6 @@ typedef struct{
 #define cc_buff_lock(b) pthread_mutex_lock(&((b)->mutex))
 #define cc_buff_trylock(b) pthread_mutex_trylock(&((b)->mutex))
 #define cc_buff_unlock(b) pthread_mutex_unlock(&((b)->mutex))
-
-// format of single frame
-typedef struct{
-    int w; int h;               // width & height
-    int xoff; int yoff;         // X and Y offset
-} cc_frameformat;
 
 typedef enum{
     SHUTTER_OPEN,       // open shutter now
@@ -264,6 +293,7 @@ typedef enum{
 #define CC_CMD_FASTSPD     "fastspeed"
 #define CC_CMD_DARK        "dark"
 #define CC_CMD_INFTY       "infty"
+#if 0
 // FITS file keywords
 #define CC_CMD_GETHEADERS  "getheaders"
 #define CC_CMD_AUTHOR      "author"
@@ -272,6 +302,7 @@ typedef enum{
 #define CC_CMD_OBJECT      "object"
 #define CC_CMD_PROGRAM     "program"
 #define CC_CMD_OBJTYPE     "objtype"
+#endif
 
 // focuser
 #define CC_CMD_FOCLIST     "foclist"
@@ -311,10 +342,10 @@ typedef struct{ // custom plugin parameters
 
 cc_hresult cc_plugin_customcmd(const char *str, cc_parhandler_t *handlers, cc_charbuff *ans);
 
-void *open_plugin(const char *name);
-cc_Focuser *open_focuser(const char *pluginname);
-cc_Camera *open_camera(const char *pluginname);
-cc_Wheel *open_wheel(const char *pluginname);
+void *cc_open_plugin(const char *name);
+cc_Focuser *cc_open_focuser(const char *pluginname);
+cc_Camera *cc_open_camera(const char *pluginname);
+cc_Wheel *cc_open_wheel(const char *pluginname);
 
 cc_charbuff *cc_charbufnew();
 int cc_charbuftest(cc_charbuff *b, size_t maxsize);
@@ -351,8 +382,9 @@ cc_hresult cc_getint(int fd, cc_strbuff *cbuf, const char *cmd, int *val);
 cc_hresult cc_setfloat(int fd, cc_strbuff *cbuf, const char *cmd, float val);
 cc_hresult cc_getfloat(int fd, cc_strbuff *cbuf, const char *cmd, float *val);
 
+int cc_addrecord(fitsfile *fp, char *rec);
 char *cc_nextkw(char *buf, char record[FLEN_CARD], int newlines);
-size_t cc_kwfromfile(cc_IMG *img, char *filename);
+int cc_kwfromfile(fitsfile *fp, char *filename);
 //int cc_charbuf2kw(cc_charbuff *b, fitsfile *f);
 
 void cc_init_sem(int isserver);
