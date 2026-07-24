@@ -263,17 +263,6 @@ static void send_headers(int sock){
         if(GP->dark) SENDMSGW(CC_CMD_DARK, "=1");
         else SENDMSGW(CC_CMD_DARK, "=0");
     }
-#if 0
-    // FITS header keywords:
-#define CHKHDR(x, cmd)   do{if(x) SENDMSG(cmd "=%s", x);}while(0)
-    CHKHDR(GP->author, CC_CMD_AUTHOR);
-    CHKHDR(GP->instrument, CC_CMD_INSTRUMENT);
-    CHKHDR(GP->observers, CC_CMD_OBSERVER);
-    CHKHDR(GP->objname, CC_CMD_OBJECT);
-    CHKHDR(GP->prog_id, CC_CMD_PROGRAM);
-    CHKHDR(GP->objtype, CC_CMD_OBJTYPE);
-#undef CHKHDR
-#endif
 }
 
 /**
@@ -284,11 +273,13 @@ static int readNbytes(int fd, size_t N, uint8_t *buf){
     size_t got = 0, need = N;
     double t0 = sl_dtime();
     while(sl_dtime() - t0 < CC_CLIENT_TIMEOUT /*&& sl_canread(fd)*/ && need){
+        DBG("Try to read %zd bytes", need);
         ssize_t rd = read(fd, buf + got, need);
-        if(rd <= 0){
-            if(errno == EAGAIN || errno == EWOULDBLOCK) continue;
-            WARNX(_("Server disconnected"));
-            signals(1);
+        DBG("readNbytes() got %zd; errno=%d", rd, errno);
+        if(rd == 0) return FALSE; // connection closed
+        if(rd < 0){
+            if(errno == EAGAIN) continue;
+            ERR(_("Server disconnected"));
         }
         got += rd; need -= rd;
         t0 = sl_dtime();
@@ -369,14 +360,15 @@ static int getsocksizes(int *imsock){
     }
     if(ima.MAGICK != CC_SHM_MAGIC || ima.bytelen < 1) return FALSE;
     // now copy fields
-#define COPY(field) locima->field = ima.field;
-    COPY(timestamp);
-    COPY(bitpix);
-    COPY(w);
-    COPY(h);
-    COPY(bytelen);
-    COPY(imnumber);
-#undef COPY
+    size_t oldsz = locima->datasize;
+    DBG("Copy %zd bytes of fields", offsetof(cc_IMG, end_of_copyable_data) - offsetof(cc_IMG, start_of_copyable_data));
+    uint8_t *tagaddr = (uint8_t*)locima + offsetof(cc_IMG, start_of_copyable_data);
+    uint8_t *srcaddr = (uint8_t*)&ima + offsetof(cc_IMG, start_of_copyable_data);
+    memcpy(tagaddr, srcaddr,
+           offsetof(cc_IMG, end_of_copyable_data) - offsetof(cc_IMG, start_of_copyable_data));
+    locima->datasize = oldsz; // restore size
+    DBG("image number: %zd, timestamp: %.3f; w/h: %d/%d",
+        locima->imnumber, locima->timestamp, locima->w, locima->h);
     return TRUE;
 }
 

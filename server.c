@@ -165,33 +165,12 @@ static void fixima(){
         size_t len = camera->array.h * camera->array.w * 2;
         ima = cc_getshm(GP->shmkey, len);
         if(!ima) ERR(_("Can't allocate memory for image"));
-        ima->datasize = ima->bytelen;
+        if(!image_init_camdata(ima)){
+            WARNX(_("Can't init camera data"));
+            LOGWARN("Can't init camera data");
+        }
         // init shared semaphore
         cc_init_sem(TRUE);
-        if(camera->getModelName){
-            if(camera->getModelName(ima->model, MODELNM_SZ-1)) ima->model[MODELNM_SZ-1] = 0;
-            else ima->model[0] = 0;
-        }
-        ima->pixel_x = camera->pixX;
-        ima->pixel_y = camera->pixY;
-        // fill constant parameters
-        if(wheel){
-            int i;
-            if(wheel->getModelName){
-                if(wheel->getModelName(ima->wmodel, MODELNM_SZ-1)) ima->wmodel[MODELNM_SZ-1] = 0;
-                else ima->wmodel[0] = 0;
-            }
-            if(wheel->getMaxPos && wheel->getMaxPos(&i)) ima->wheelmax = i;
-            else ima->wheelmax = 0;
-        }
-        if(focuser){
-            if(focuser->getModelName){
-                if(focuser->getModelName(ima->fmodel, MODELNM_SZ-1)) ima->fmodel[MODELNM_SZ-1] = 0;
-                else ima->fmodel[0] = 0;
-            }
-            if(!focuser->getMinPos || !focuser->getMinPos(&ima->focmin)) ima->focmin = NAN;
-            if(!focuser->getMaxPos || !focuser->getMaxPos(&ima->focmax)) ima->focmax = NAN;
-        }
     }
     TIMESTAMP("Lock SHM image");
     cc_lock_shm(TRUE);
@@ -279,7 +258,7 @@ static inline void cameracapturestate(){ // capturing - wait for exposition ends
                     return;
                 }
                 fill_image_fields(ima);
-                //fillFITSheader(ima);
+                LOGDBG("Captured new image %zdx%zd pix", ima->w, ima->h);
                 ++ima->imnumber; // increment counter
                 cc_unlock_shm();
                 LOGDBG("cameracapturestate(): SHM UNlocked");
@@ -378,7 +357,9 @@ static int camdevini(int n){
     if(GP->vbin < 1) GP->vbin = 1;
     fixima();
     if(!camera->setbin || !camera->setbin(GP->hbin, GP->vbin)) WARNX(_("Can't set binning %dx%d"), GP->hbin, GP->vbin);
-    if(!camera->setgeometry || !camera->setgeometry(&curformat)) WARNX(_("Can't set given geometry"));
+    if(!camera->setgeometry || !camera->setgeometry(&curformat)){
+        WARNX(_("Can't set given geometry"));
+    }else curformat = camera->geometry;
     return TRUE;
 }
 
@@ -616,7 +597,7 @@ static cc_hresult formathandler(int fd, const char *key, const char *val){
         fmt.w -= fmt.xoff; fmt.h -= fmt.yoff;
         int r = camera->setgeometry(&fmt);
         if(!r) return CC_RESULT_FAIL;
-        curformat = fmt;
+        curformat = camera->geometry;
         DBG("curformat: w=%d, h=%d", curformat.w, curformat.h);
         //fixima();
     }
@@ -1069,7 +1050,7 @@ static void *sendimage(void *C){
         close(client);
         return NULL;
     }
-    LOGDBG("sendimage(): SHM locked");
+    LOGDBG("sendimage(): SHM locked; new image size: %dx%d", ima->w, ima->h);
     cc_IMG *locimage = cc_newimage(ima->bitpix, ima->w, ima->h);
     if(!locimage || !cc_copyimage(locimage, ima, FALSE)){
         cc_unlock_shm();
@@ -1079,12 +1060,20 @@ static void *sendimage(void *C){
     }
     cc_unlock_shm();
     LOGDBG("sendimage(): SHM UNlocked");
+    int sent_ok = TRUE;
     do{
         // send image body
-        if(!cc_senddata(client, locimage, sizeof(cc_IMG))) break;
+        if(!cc_senddata(client, locimage, sizeof(cc_IMG))){ sent_ok = FALSE; break; }
         // send image itself (client can close socket if don't need image data)
-        if(!cc_senddata(client, locimage->data, locimage->bytelen)) break;
+        if(!cc_senddata(client, locimage->data, locimage->bytelen)){ sent_ok = FALSE; break; }
     }while(0);
+    if(!sent_ok){
+        DBG("Some error occured during data transmission");
+        close(client);
+        cc_freeimage(&locimage);
+        return NULL;
+    }
+    DBG("OK, wait until client receives data");
     shutdown(client, SHUT_WR); // tell client we are closing socket
     recv(client, locimage->data, locimage->bytelen, MSG_NOSIGNAL); // block until client close his side
     cc_freeimage(&locimage);

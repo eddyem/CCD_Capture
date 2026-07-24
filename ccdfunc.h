@@ -26,10 +26,13 @@ extern cc_Wheel *wheel;
 void calculate_stat(cc_IMG *image);
 size_t fillFITSheader(cc_IMG *img);
 int saveFITS(cc_IMG *img, char **outp); // for imageview module
+
+void fill_image_fields(cc_IMG *ima);
+int image_init_camdata(cc_IMG *ima);
+
 void focusers();
 void wheels();
 int prepare_ccds();
-void fill_image_fields(cc_IMG *ima);
 void ccds();
 void camstop();
 

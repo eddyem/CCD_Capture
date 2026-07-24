@@ -61,11 +61,13 @@ void signals(int signo){
     if(!GP->client){
         DBG("Cancel capturing and close all");
         stop_server();
-    }else exit(signo);
+    }else{
 #ifdef IMAGEVIEW
     DBG("KILL GL");
     closeGL();
 #endif
+    exit(signo);
+    }
     //DBG("exit(%d)", signo);
     //exit(signo);
 }
@@ -156,7 +158,9 @@ int main(int argc, char **argv){
         }
 #endif
         if(camerainit) ccds();
-        signals(0);
+        closewheel();
+        focclose();
+        return 0;
     }
     LOGMSG("Started");
 #ifndef EBUG

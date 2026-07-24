@@ -611,6 +611,7 @@ static void mkcuts(cc_IMG *img){
 static void change_displayed_image(cc_IMG *img){
     if(!win || !img) return;
     static size_t lastN = 0;
+    pthread_mutex_lock(&img->mutex);
     ssize_t delta = img->imnumber - lastN;
     TIMESTAMP("Got image #%zd", img->imnumber);
     if(delta > 0 && delta != 1) WARNX(_("Missed %zd images"), delta-1);
@@ -626,6 +627,7 @@ static void change_displayed_image(cc_IMG *img){
             WARN("realloc()");
             LOGERR("Realloc() error");
             win->image->rawdata = raw;
+            pthread_mutex_unlock(&img->mutex);
             return;
         }
         win->image->h = h; win->image->w = w;
@@ -635,6 +637,7 @@ static void change_displayed_image(cc_IMG *img){
             WARN("realloc()");
             LOGERR("Realloc() error");
             win->rawdata = raw;
+            pthread_mutex_unlock(&img->mutex);
             return;
         }
         DBG("win->image changed");
@@ -687,6 +690,7 @@ static void change_displayed_image(cc_IMG *img){
     DBG("Unlock");
     win->image->changed = 1;
     pthread_mutex_unlock(&win->mutex);
+    pthread_mutex_unlock(&img->mutex);
 }
 
 void closeGL(){ // killed by external signal or ctrl+c

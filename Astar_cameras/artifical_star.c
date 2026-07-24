@@ -287,8 +287,16 @@ static int camcapt(cc_IMG *ima){
     ima->bitpix = bitpix;
     ima->w = camera.geometry.w;
     ima->h = camera.geometry.h;
-    ima->bytelen = ima->w*ima->h*cc_getNbytes(ima);
-    bzero(ima->data, ima->h*ima->w*cc_getNbytes(ima));
+    size_t nbytes = cc_getNbytes(ima);
+    size_t bytelen = ima->w * ima->h * nbytes;
+    if(bytelen > ima->datasize){
+        WARNX(_("Image size greater than buffer!"));
+        LOGWARN("ArtStar: Image size greater than buffer!");
+        ima->h = ima->datasize / ima->w;
+    }
+    LOGDBG("ArtStar: create new artifical star image: %zdx%zd pix", ima->w, ima->h);
+    ima->bytelen = ima->w * ima->h * nbytes;
+    bzero(ima->data, ima->datasize);
     if(!star) ERRX(_("No star template - die"));
     if(bitpix == 16) gen16(ima);
     else gen8(ima);
@@ -368,7 +376,9 @@ static int camsetgeom(cc_frameformat *f){
     if(!f) return FALSE;
     if(f->xoff > ARRAYW-2 || f->yoff > ARRAYH-2) return FALSE;
     if(f->xoff < 0 || f->yoff < 0 || f->h < 0 || f->w < 0) return FALSE;
-    if(f->h + f->yoff > ARRAYH || f->w + f->xoff > ARRAYW) return FALSE;
+    if(f->h + f->yoff >= ARRAYH || f->w + f->xoff >= ARRAYW) return FALSE;
+    LOGDBG("ArtStar: geometry changed to: %zdx%zd (offset) - %zdx%zd (w/h)",
+           f->xoff, f->yoff, f->w, f->h);
     camera.geometry = *f;
     return TRUE;
 }

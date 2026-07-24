@@ -29,12 +29,6 @@
 #include <unistd.h>
 #include <usefull_macros.h>
 
-#include "client.h"
-#include "cmdlnopts.h"
-#ifdef IMAGEVIEW
-#include "imageview.h"
-#endif
-#include "server.h"
 #include "socket.h"
 
 #ifdef EBUG
@@ -415,6 +409,7 @@ cc_IMG *cc_getshm(key_t key, size_t imsize){
     bzero(ptr, sizeof(cc_IMG));
     ptr->data = (void*)((uint8_t*)ptr + sizeof(cc_IMG));
     ptr->MAGICK = CC_SHM_MAGIC;
+    ptr->datasize = imsize;
     return ptr;
 }
 
@@ -840,44 +835,6 @@ int cc_kwfromfile(fitsfile *fp, char *filename){
     return written;
 }
 
-#if 0
-/**
- * @brief cc_charbuf2kw - write all keywords from `b` to file `f`
- * `b` should be prepared by cc_kwfromfile or similar
- * @param b - buffer with '\n'-separated FITS keys
- * @param f - file to write
- * @return FALSE if failed
- */
-int cc_charbuf2kw(cc_charbuff *b, fitsfile *f){
-    if(!b || !f || !b->buflen) return FALSE;
-    char key[FLEN_KEYWORD + 1], card[FLEN_CARD+1]; // keyword to update
-    char *c = b->buf, *eof = b->buf + b->buflen;
-    while(c < eof){
-        char *e = strchr(c, '\n');
-        if(!e || e > eof) break;
-        //char *ek = strchr(c, ' ');
-        char *eq = strchr(c, '=');
-        //if(eq > ek) eq = ek; // if keyword is shorter than 8 letters
-        //size_t l = eq-c; if(l > FLEN_KEYWORD) l = FLEN_KEYWORD;
-        //memcpy(key, c, l); key[l] = 0;
-        memcpy(key, c, 8); key[8] = 0;
-        size_t l = e - c; if(l > FLEN_CARD) l = FLEN_CARD;
-        memcpy(card, c, l); card[l] = 0;
-        int status = 0;
-        if(eq - c == 8){ // key = val
-            DBG("Update key `%s` with `%s`", key, card);
-            fits_update_card(f, key, card, &status);
-        }else{ // comment etc
-            DBG("Write full record `%s`", card);
-            fits_write_record(f, card, &status);
-        }
-        if(status) fits_report_error(stderr, status);
-        c = e + 1;
-    }
-    return TRUE;
-}
-#endif
-
 static size_t print_val(cc_partype_t t, void *val, char *buf, size_t bufl){
     size_t l = 0;
     switch(t){
@@ -1065,7 +1022,7 @@ void cc_freeimage(cc_IMG **i){
  */
 int cc_copyimage(cc_IMG *dest, cc_IMG *src, int isshm){
     FNAME();
-    if(!src || !dest || !src->data) return FALSE;
+    if(!src || !dest || !src->data || src == dest) return FALSE;
     if(src->MAGICK != CC_SHM_MAGIC){
         WARNX(_("Wrong image: bad magick (0x%X instead of 0x%X)"), src->MAGICK, CC_SHM_MAGIC);
         return FALSE;
@@ -1075,6 +1032,8 @@ int cc_copyimage(cc_IMG *dest, cc_IMG *src, int isshm){
         return FALSE;
     }
     DBG("Lock");
+    if(isshm) cc_lock_shm(FALSE);
+    else pthread_mutex_lock(&src->mutex);
     pthread_mutex_lock(&dest->mutex);
     dest->MAGICK = CC_SHM_MAGIC;
     if(!dest->data || dest->datasize < src->bytelen){
@@ -1085,6 +1044,8 @@ int cc_copyimage(cc_IMG *dest, cc_IMG *src, int isshm){
             LOGERR("realloc() failed");
             WARN("realloc()");
             pthread_mutex_unlock(&dest->mutex);
+            if(isshm) cc_unlock_shm();
+            else pthread_mutex_unlock(&src->mutex);
             return FALSE;
         }
         dest->data = nxt;
@@ -1092,30 +1053,13 @@ int cc_copyimage(cc_IMG *dest, cc_IMG *src, int isshm){
         DBG("Success");
     }
     DBG("Copy %zd bytes of fields", offsetof(cc_IMG, end_of_copyable_data) - offsetof(cc_IMG, start_of_copyable_data));
-#if 0
-#define COPY(field) dest->field = src->field;
-    COPY(timestamp);
-    COPY(bitpix);
-    COPY(w);
-    COPY(h);
-    COPY(bytelen);
-    COPY(imnumber);
-    COPY(pixel_x);
-    COPY(pixel_y);
-    COPY(gain);
-    COPY(ccd_temp);
-    COPY(exposure_time);
-    COPY(bin_x);
-    COPY(bin_y);
-#undef COPY
-    memcpy(dest->model, src->model, MODELNM_SZ);
-#endif
+    size_t oldsz = dest->datasize;
     uint8_t *tagaddr = (uint8_t*)dest + offsetof(cc_IMG, start_of_copyable_data);
     uint8_t *srcaddr = (uint8_t*)src + offsetof(cc_IMG, start_of_copyable_data);
     memcpy(tagaddr, srcaddr,
         offsetof(cc_IMG, end_of_copyable_data) - offsetof(cc_IMG, start_of_copyable_data));
-    DBG("TS after copy: dest=%.5f, src=%.5f", dest->timestamp, src->timestamp);
     DBG("Copy %zd bytes of data", src->bytelen);
+    dest->datasize = oldsz;
     void *srcdata = src->data;
     if(isshm){
         srcdata = (void*)((uint8_t*)src + sizeof(cc_IMG));
@@ -1124,5 +1068,7 @@ int cc_copyimage(cc_IMG *dest, cc_IMG *src, int isshm){
     memcpy(dest->data, srcdata, src->bytelen);
     DBG("All OK");
     pthread_mutex_unlock(&dest->mutex);
+    if(isshm) cc_unlock_shm();
+    else pthread_mutex_unlock(&src->mutex);
     return TRUE;
 }

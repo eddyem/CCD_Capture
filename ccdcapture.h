@@ -293,16 +293,6 @@ typedef enum{
 #define CC_CMD_FASTSPD     "fastspeed"
 #define CC_CMD_DARK        "dark"
 #define CC_CMD_INFTY       "infty"
-#if 0
-// FITS file keywords
-#define CC_CMD_GETHEADERS  "getheaders"
-#define CC_CMD_AUTHOR      "author"
-#define CC_CMD_INSTRUMENT  "instrument"
-#define CC_CMD_OBSERVER    "observer"
-#define CC_CMD_OBJECT      "object"
-#define CC_CMD_PROGRAM     "program"
-#define CC_CMD_OBJTYPE     "objtype"
-#endif
 
 // focuser
 #define CC_CMD_FOCLIST     "foclist"
