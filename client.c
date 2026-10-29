@@ -22,6 +22,7 @@
 #include <signal.h>
 #include <stdio.h>
 #include <string.h>
+#include <stddef.h>
 #include <sys/socket.h>
 #include <usefull_macros.h>
 

@@ -28,7 +28,7 @@ option(EXAMPLES "Some examples" OFF)
 option(ASTAR "Artifical star plugin" OFF)
 
 # default flags
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -W -Wextra -fno-builtin-strlen")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c99 -Wall -W -Wextra -fno-builtin-strlen")
 
 message("Install dir prefix: ${CMAKE_INSTALL_PREFIX}")
 if(NOT DEFINED LOCALEDIR)
