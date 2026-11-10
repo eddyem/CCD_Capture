@@ -22,7 +22,6 @@
 #include <signal.h>
 #include <stdio.h>
 #include <string.h>
-#include <stddef.h>
 #include <sys/socket.h>
 #include <usefull_macros.h>
 
@@ -132,7 +131,9 @@ static int getans(int sock, const char *msg){
     cc_hresult res = CC_RESULT_FAIL;
     char buf[256];
     while(sl_dtime() - t0 < tmout){
-        if(1 == sl_canread(sock)){
+        int R = sl_canread(sock);
+        if(R < 0) break;
+        if(1 == R){
             ssize_t got = read(sock, buf, 255);
             if(got > 0){
                 DBG("Got %zd bytes (%s)", got, buf);
@@ -198,7 +199,7 @@ static void send_headers(int sock){
     // common information
     if(GP->listdevices) SENDCMDW(CC_CMD_CAMLIST);
     if(GP->camdevno > -1) SENDMSGW(CC_CMD_CAMDEVNO, "=%d", GP->camdevno);
-    if(GP->info){
+    if(GP->verbose > VERBOSE_PRIMARY){
         SENDCMDW(CC_CMD_HBIN);
         SENDCMDW(CC_CMD_VBIN);
         SENDCMDW(CC_CMD_CAMTEMPER);
@@ -208,7 +209,7 @@ static void send_headers(int sock){
     // focuser
     if(GP->listdevices) SENDMSG(CC_CMD_FOCLIST);
     if(GP->focdevno > -1) SENDMSG(CC_CMD_FDEVNO "=%d", GP->focdevno);
-    if(GP->info){
+    if(GP->verbose > VERBOSE_PRIMARY){
         SENDCMDW(CC_CMD_FGOTO);
         SENDCMDW(CC_CMD_FMINPOS);
         SENDCMDW(CC_CMD_FMAXPOS);
@@ -220,7 +221,7 @@ static void send_headers(int sock){
     // wheel
     if(GP->listdevices) SENDCMDW(CC_CMD_WLIST);
     if(GP->whldevno > -1) SENDMSGW(CC_CMD_WDEVNO, "=%d", GP->whldevno);
-    if(GP->info){
+    if(GP->verbose > VERBOSE_PRIMARY){
         SENDCMDW(CC_CMD_WPOS);
         SENDCMDW(CC_CMD_WMAXPOS);
         SENDCMDW(CC_CMD_WTEMP);
@@ -272,9 +273,13 @@ static void send_headers(int sock){
  */
 static int readNbytes(int fd, size_t N, uint8_t *buf){
     size_t got = 0, need = N;
+    DBG("Try to read %zd bytes", need);
     double t0 = sl_dtime();
-    while(sl_dtime() - t0 < CC_CLIENT_TIMEOUT /*&& sl_canread(fd)*/ && need){
-        DBG("Try to read %zd bytes", need);
+    while(sl_dtime() - t0 < CC_CLIENT_TIMEOUT && need){
+        if(!sl_canread(fd)){
+            usleep(1000);
+            continue;
+        }
         ssize_t rd = read(fd, buf + got, need);
         DBG("readNbytes() got %zd; errno=%d", rd, errno);
         if(rd == 0) return FALSE; // connection closed
@@ -289,7 +294,8 @@ static int readNbytes(int fd, size_t N, uint8_t *buf){
     return TRUE;
 }
 
-static int refresh_shm(){
+static int refresh_shm(int depthctr){
+    if(depthctr > 5) return FALSE;
     if(!shmima){
         shmima = cc_getshm(GP->shmkey, 0); // try to init client shm
         if(shmima){
@@ -305,14 +311,14 @@ static int refresh_shm(){
         shmdt(shmima);
         shmima = NULL;
         // refresh connection
-        return refresh_shm();
+        return refresh_shm(++depthctr);
     }
     struct shmid_ds buf;
     if(shmctl(shmid, IPC_STAT, &buf) == 0){
         if(buf.shm_perm.mode & SHM_DEST){ // marked for deletion
             shmdt(shmima);
             shmima = NULL;
-            return refresh_shm();
+            return refresh_shm(++depthctr);
         }
         // valid segment
         return TRUE;
@@ -335,10 +341,10 @@ static int lockshm(){
     return locked;
 }
 
-static int getshmimage(int *shmlocked){
-    if(!shmlocked || !shmima) return FALSE;
-    if(!refresh_shm()) return FALSE;
-    if(!*shmlocked && !(*shmlocked = lockshm())) return FALSE;
+static int getshmimage(/*int *shmlocked*/){
+    if(/*!shmlocked ||*/ !shmima) return FALSE;
+    if(!refresh_shm(0)) return FALSE;
+    //if(!*shmlocked && !(*shmlocked = lockshm())) return FALSE;
     DBG("Server's imno: %zd, bytelen: %zd", shmima->imnumber, shmima->bytelen);
     int ret = cc_copyimage(locima, shmima, TRUE);
     TIMESTAMP("Got by shared memory");
@@ -348,7 +354,7 @@ static int getshmimage(int *shmlocked){
 static int getsocksizes(int *imsock){
     if(!imsock || *imsock > -1) return FALSE;
     DBG("Open socket @ %s", GP->imageport);
-    *imsock = cc_open_socket(FALSE, GP->imageport, TRUE);
+    *imsock = cc_open_socket(FALSE, GP->host, GP->imageport, TRUE);
     if(*imsock < 0){
         WARNX(_("Can't open image transport socket"));
         return FALSE;
@@ -361,6 +367,7 @@ static int getsocksizes(int *imsock){
     }
     if(ima.MAGICK != CC_SHM_MAGIC || ima.bytelen < 1) return FALSE;
     // now copy fields
+    pthread_mutex_lock(&locima->mutex);
     size_t oldsz = locima->datasize;
     DBG("Copy %zd bytes of fields", offsetof(cc_IMG, end_of_copyable_data) - offsetof(cc_IMG, start_of_copyable_data));
     uint8_t *tagaddr = (uint8_t*)locima + offsetof(cc_IMG, start_of_copyable_data);
@@ -370,6 +377,7 @@ static int getsocksizes(int *imsock){
     locima->datasize = oldsz; // restore size
     DBG("image number: %zd, timestamp: %.3f; w/h: %d/%d",
         locima->imnumber, locima->timestamp, locima->w, locima->h);
+    pthread_mutex_unlock(&locima->mutex);
     return TRUE;
 }
 
@@ -378,6 +386,7 @@ static int getsockimage(int *imsock){
     pthread_mutex_lock(&locima->mutex);
     if(locima->datasize < locima->bytelen){
         size_t newsz = 1024 * (1 + locima->bytelen / 1024);
+        WARNX("Realloc from %zd to %zd", locima->datasize, newsz);
         void *nxt = realloc(locima->data, newsz);
         if(!nxt){
             LOGERR("realloc() failed");
@@ -386,6 +395,7 @@ static int getsockimage(int *imsock){
             return FALSE;
         }
         locima->data = nxt;
+        locima->datasize = newsz;
     }
     int ok = readNbytes(*imsock, locima->bytelen, locima->data);
     pthread_mutex_unlock(&locima->mutex);
@@ -399,12 +409,11 @@ static int getsockimage(int *imsock){
 
 /**
  * @brief getimage - read image from shared memory or socket
- * @param askheader == TRUE for storing FITS-header
  * @return FALSE if failed to catch image
  */
-static int getimage(/*int askheader*/){
+static int getimage(){
     FNAME();
-    int imsock = -1, shmlocked = FALSE, ret = FALSE;
+    int imsock = -1/*, shmlocked = FALSE*/, ret = FALSE;
     static double oldtimestamp = -1.;
     TIMESTAMP("Get image sizes (or full image over SHM)");
     if(!locima){
@@ -413,57 +422,24 @@ static int getimage(/*int askheader*/){
             WARN("calloc()"); return FALSE;
         }
     }
-    ret = getshmimage(&shmlocked);
-    if(!ret){ // can't get by shm -> try over NET
-        DBG("Try to get image over network");
+    if(GP->imageport){
         if(!getsocksizes(&imsock)) goto eofg;
         TIMESTAMP("Start of data read");
         ret = getsockimage(&imsock);
-        if(!ret){
-            WARNX(_("Can't read image data"));
-            goto eofg;
-        }
+    }else ret = getshmimage(/*&shmlocked*/);
+    if(!ret){
+        WARNX(_("Can't read image data"));
+        goto eofg;
     }
     DBG("timestamps new-old=%g; imno: %zd", locima->timestamp - oldtimestamp, locima->imnumber);
     if(locima->timestamp != oldtimestamp){ // test if image is really new
         oldtimestamp = locima->timestamp;
         atomic_store(&grabno, locima->imnumber);
         TIMESTAMP("Got image #%zd", locima->imnumber);
-#if 0
-        if(askheader){ // read FITS-header for later saving
-            if(shmima){
-                if(locima->headerstrings > FITS_HEADER_STRINGS_MAX){
-                    WARNX(_("Too many FITS headers, truncating"));
-                    locima->headerstrings = FITS_HEADER_STRINGS_MAX;
-                }
-                size_t rsz = FLEN_CARD * locima->headerstrings;
-                memcpy(locima->fitsheader, shmima->fitsheader, rsz);
-                cc_unlock_shm();
-                shmlocked = FALSE;
-            }else{
-                uint8_t card[FLEN_CARD];
-                for(size_t i = 0; i < locima->headerstrings; ++i){
-                    if(!readNbytes(imsock, FLEN_CARD, card)){
-                        WARNX(_("Can't read full header, got %zd records from %zd"), i, locima->headerstrings);
-                        break;
-                    }
-                    memcpy(&locima->fitsheader[i], card, FLEN_CARD);
-                }
-                close(imsock);
-                imsock = -1;
-            }
-            if(GP->addhdr){ // add records from client-side files
-                char **nxtfile = GP->addhdr;
-                while(*nxtfile){
-                    cc_kwfromfile(locima, *(nxtfile++));
-                }
-            }
-        }else locima->headerstrings = 0;
-#endif
     }else WARNX(_("Still got old image"));
 eofg:
     if(imsock > -1) close(imsock); // reopen in next time in case of error
-    if(shmlocked) cc_unlock_shm();
+    //if(shmlocked) cc_unlock_shm();
     return ret;
 }
 
@@ -486,7 +462,7 @@ static int curImNo(int sock){
 
 void client(int sock){
     if(sock < 0) ERRX(_("Can't run without command socket"));
-    if(!GP->forceimsock) refresh_shm(); // init shm buffer if user don't ask to force workign through image socket
+    if(!GP->imageport) refresh_shm(0); // init shm buffer if user don't ask to work through INET sockets
     if(GP->restart){
         SENDCMDW(CC_CMD_RESTART);
         return;
@@ -546,7 +522,7 @@ void client(int sock){
             if(lastImNo != cur){
                 lastImNo = cur;
                 verbose(VERBOSE_SECONDARY, _("Frame ready, try to grab"));
-                if(!getimage(/*TRUE*/)){
+                if(!getimage()){
                     WARNX(_("Can't get next image"));
                 }else{
                     if(saveFITS(locima, &lastfilename)){
@@ -588,7 +564,7 @@ void init_grab_sock(int sock){
     if(sock < 0) ERRX(_("Can't run without command socket"));
     controlfd = sock;
     send_headers(sock);
-    if(!GP->forceimsock && !shmima){ // init shm buffer if user don't ask to work through image socket
+    if(!GP->imageport && !shmima){ // init shm buffer if user don't ask to work through image socket
         shmima = cc_getshm(GP->shmkey, 0); // try to init client shm
         cc_init_sem(FALSE);
     }
@@ -600,8 +576,7 @@ static void *grabnext(void _U_ *arg){
     if(controlfd < 0) return NULL;
     int sock = controlfd;
     int lastImNo = curImNo(sock);
-    while(1){
-        if(!getWin()) exit(1);
+    while(getWin()){
         TIMESTAMP("Start of capturing cycle");
         atomic_store(&expstate, CAMERA_IDLE);
         TIMEINIT();
@@ -637,7 +612,7 @@ static void *grabnext(void _U_ *arg){
         }
         lastImNo = cur;
         TIMESTAMP("Frame ready (%d from start)", cur);
-        getimage(/*FALSE*/);
+        getimage();
     }
     return NULL;
 }
@@ -649,8 +624,7 @@ static void *waitimage(void _U_ *arg){
     int sock = controlfd;
     int lastImNo = curImNo(sock);
     double t0 = sl_dtime();
-    while(1){
-        if(!getWin()) exit(1);
+    while(getWin()){
         double tcur = sl_dtime();
         if(tcur - t0 >= CC_WAIT_TIMEOUT){
             SENDCMDW(CC_CMD_EXPSTATE); // `ping` server to know if it disconnected
@@ -664,7 +638,7 @@ static void *waitimage(void _U_ *arg){
         lastImNo = cur;
         TIMESTAMP("End of cycle #%d, start new", cur);
         TIMEINIT();
-        getimage(/*FALSE*/);
+        getimage();
         atomic_store(&expstate, CAMERA_IDLE);
         DBG("Current state: %d", atomic_load(&expstate));
     }

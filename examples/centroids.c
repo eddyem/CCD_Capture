@@ -31,13 +31,13 @@
 #define STRBUFSZ    (256)
 
 typedef struct{
-    int isun;           // command socket is UNIX socket instead of INET
     int shmkey;         // shared memory (with image data) key
     int infty;          // run in infinity loop (if not - run by requests)
     int nframes;        // amount of frames to take
     int help;           // show this help
     double exptime;     // time of exposition in seconds
     double background;  // fixed bg
+    char *port;         // net port
     char *sockname;     // UNIX socket name of command socket or port of local socket
     char *outfile;      // output file name
 } glob_pars;
@@ -47,7 +47,7 @@ static glob_pars G = {
     .shmkey = 7777777,
     .nframes = 10,
     .background = -1.,
-    .exptime = -1.
+    .exptime = -1.,
 };
 
 /*
@@ -56,8 +56,8 @@ static glob_pars G = {
 */
 sl_option_t cmdlnopts[] = {
     {"background",NEED_ARG, NULL,   'b',    arg_double, APTR(&G.background),"fixed background level"},
-    {"sock",    NEED_ARG,   NULL,   's',    arg_string, APTR(&G.sockname),  "command socket name or port"},
-    {"isun",    NO_ARGS,    NULL,   'U',    arg_int,    APTR(&G.isun),      "use UNIX socket"},
+    {"node",    NEED_ARG,   NULL,   'N',    arg_string, APTR(&G.sockname),  "INET command socket host or UNIX socket name"},
+    {"port",    NEED_ARG,   NULL,   'p',    arg_string, APTR(&G.port),      "port of INET command socket"},
     {"shmkey",  NEED_ARG,   NULL,   'k',    arg_int,    APTR(&G.shmkey),    "shared memory (with image data) key (default: 7777777)"},
     {"infty",   NO_ARGS,    NULL,   'i',    arg_int,    APTR(&G.infty),     "run in infinity capturing loop (else - request each frame)"},
     {"nframes", NEED_ARG,   NULL,   'n',    arg_int,    APTR(&G.nframes),   "make series of N frames (default: 10)"},
@@ -94,25 +94,7 @@ static void calcimg(){
             }else bg = 5.;
         }
     }
-    printf("bg=%g\n", bg);
-/* SYNC  lasts too long!
-#pragma omp parallel
-{
-    double Xsp = 0., X2sp = 0., Ysp = 0., Y2sp = 0., Isp = 0;
-    #pragma omp for nowait
-    for(int x = 0; x < W; ++x){
-        for(int y = 0; y < H; ++y){
-            double val = *d++ - bg;
-            if(val < DBL_EPSILON) continue;
-            Xsp += val * x; Ysp += val * y; X2sp += val * x * x; Y2sp += val * y * y;
-            Isp += val;
-        }
-    }
-    #pragma omp critical
-    {
-        Xs += Xsp; Ys += Ysp; X2s += X2sp; Y2s += Y2sp; Is += Isp;
-    }
-}*/
+    green("Background=%g\n", bg);
     for(int y = 0; y < H; ++y){
         for(int x = 0; x < W; ++x){
             // *d = (*d > bg) ? *d - bg : 0;
@@ -165,8 +147,13 @@ int main(int argc, char **argv){
         fprintf(out, "# Time\t\tXc\tYc\tI\tsX\tsY\t\n");
     }
     cc_strbuff *cbuf = cc_strbufnew(BUFSIZ, STRBUFSZ);
-    int sock = cc_open_socket(FALSE, G.sockname, !G.isun);
-    if(sock < 0) ERR("Can't open socket %s", G.sockname);
+    int sock = -1;
+    if(G.port){
+        sock = cc_open_socket(FALSE, G.sockname, G.port, TRUE);
+    }else{
+        sock = cc_open_socket(FALSE, G.sockname, NULL, FALSE);
+    }
+    if(sock < 0) ERR("Can't open command socket");
     int shmemkey = 0;
     if(CC_RESULT_OK == cc_getint(sock, cbuf, CC_CMD_SHMEMKEY, &shmemkey)){
         green("Got shm key: %d\n", shmemkey);

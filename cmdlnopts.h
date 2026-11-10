@@ -45,15 +45,15 @@ typedef struct{
     char *prog_id;      // programm identificator
     char *author;       // programm author
     char *logfile;      // when run as server log here
-    char *path;         // UNIX socket name
+    char *host;         // server's host name
     char *port;         // local INET socket port
     char *imageport;    // port to send/receive images (by default == port+1)
     char **addhdr;      // list of files from which to add header records
     char **plugincmd;   // plugin commands
     int restart;        // restart server
     int cancelexpose;   // cancel exp (for Grasshopper - forbid forever)
-    int client;         // run as client
-    int info;           // show main information about camera etc. in client's terminal
+    int client;         // run as client instead of standalone-mode
+    int server;         // run as server
     int viewer;         // passive client (only get last images)
     int listdevices;    // list connected devices
     int fanspeed;       // fan speed: 0-2
@@ -92,8 +92,7 @@ typedef struct{
 } glob_pars;
 
 
-// default & global parameters
-extern glob_pars const Gdefault;
+// global parameters
 extern glob_pars  *GP;
 
 glob_pars *parse_args(int argc, char **argv);

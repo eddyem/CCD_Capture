@@ -24,8 +24,6 @@
 #include <GL/glext.h>
 #include <GL/freeglut.h>
 
-extern float Z; // Z coordinate (zoom)
-
 void keyPressed(unsigned char key, int x, int y);
 void mousePressed(int key, int state, int x, int y);
 void mouseMove(int x, int y);

@@ -65,8 +65,9 @@ static size_t curtime(char *s_time){ // current date/time
 // check if I can create file prefix_XXXX.fits
 static int check_filenameprefix(char *buff, int buflen){
     for(int num = 1; num < 1000000; num++){
-        if(snprintf(buff, buflen-1, "%s_%06d.fits", GP->outfileprefix, num) < 1)
-            return FALSE;
+        int copied = snprintf(buff, buflen-1, "%s_%06d.fits", GP->outfileprefix, num);
+        if(copied < 1) return FALSE;
+        if(copied >= buflen) buff[buflen-1] = 0;
         struct stat filestat;
         if(stat(buff, &filestat)) // no such file or can't stat()
             return TRUE;
@@ -117,7 +118,7 @@ int saveFITS(cc_IMG *img, char **outp){
     struct tm *tm_time;
     double dsavetime = sl_dtime();
     time_t savetime = time(NULL);
-    fitsfile *fp;
+    fitsfile *fp = NULL;
     fitserror = 0;
     TRYFITS(fits_create_file, &fp, fnam);
     if(fitserror) goto cloerr;
@@ -253,7 +254,7 @@ int saveFITS(cc_IMG *img, char **outp){
     else TRYFITS(fits_write_img, fp, TUSHORT, 1, width * height, img->data);
 
 cloerr:
-    TRYFITS(fits_close_file, fp);
+    if(fp) TRYFITS(fits_close_file, fp);
     pthread_mutex_unlock(&img->mutex);
     if(fitserror == 0){
         LOGMSG("Save file '%s'", fnam);
@@ -528,7 +529,7 @@ void wheels(){
 }
 
 static cc_capture_status capt(){
-    cc_capture_status cs;
+    cc_capture_status cs = CAPTURE_NO;
     float tremain, tmpf;
     if(!camera || !camera->pollcapture){
         WARNX(_("Camera plugin have no capture polling funtion."));
@@ -663,11 +664,11 @@ int prepare_ccds(){
         verbose(VERBOSE_SECONDARY, _("Current settings: %d bits per pixel"), u8);
     float tmpf;
     if(camera->getbrightness && camera->getbrightness(&tmpf))
-        verbose(VERBOSE_SECONDARY, _("Current brightness: %g"), tmpf);
+        verbose(VERBOSE_SECONDARY, _("Current brightness: %f"), tmpf);
     if(camera->getgain && camera->getgain(&tmpf))
-        verbose(VERBOSE_SECONDARY, _("Current gain: %g"), &tmpf);
+        verbose(VERBOSE_SECONDARY, _("Current gain: %f"), tmpf);
     if(camera->getmaxgain && camera->getmaxgain(&tmpf))
-        verbose(VERBOSE_SECONDARY, _("Maximal gain: %g"), tmpf);
+        verbose(VERBOSE_SECONDARY, _("Maximal gain: %f"), tmpf);
     if(!isnan(GP->temperature)){
         if(!camera->setT)WARNX(_("Camera plugin have no temperature setter"));
         else{if(!camera->setT((float)GP->temperature)) WARNX(_("Can't set T to %g degC"), GP->temperature);
@@ -747,7 +748,7 @@ int prepare_ccds(){
     if(!camera->setfastspeed || !camera->setfastspeed(GP->fast))
         WARNX(_("Can't set readout speed"));
     else verbose(VERBOSE_PRIMARY, _("Readout mode: %s"), GP->fast ? "fast" : "normal");
-    if(!GP->outfile) verbose(VERBOSE_PRIMARY, _("Only show statistics"));
+    if(!GP->outfile && !GP->outfileprefix) verbose(VERBOSE_PRIMARY, _("Only show statistics"));
     // GET binning should be AFTER setgeometry!
     if(!camera->getbin || !camera->getbin(&GP->hbin, &GP->vbin))
         WARNX(_("Can't get current binning"));
@@ -923,15 +924,16 @@ void framerate(){
 
 static volatile int exitgrab = FALSE;
 static volatile size_t lastgrabno = 0;
+static pthread_t grabthread = 0;
 static void *grabnext(void *arg){
     FNAME();
     if(!arg) return NULL;
     cc_IMG *ima = (cc_IMG*)arg;
     do{
-        if(exitgrab) return NULL;
+        if(exitgrab) break;
         TIMESTAMP("Start next exp");
         TIMEINIT();
-        if(!camera) return NULL;
+        if(!camera) break;
         if(!camera->startexposition) ERRX(_("Camera plugin have no function `start exposition`"));
         if(!camera->startexposition()){
             ERRX(_("Can't start exposition"));
@@ -941,9 +943,9 @@ static void *grabnext(void *arg){
         while(camera->pollcapture && camera->pollcapture(&cs, NULL)){
             if(cs != CAPTURE_PROCESS) break;
             usleep(10000);
-            if(!camera) return NULL;
+            if(!camera) break;
         }
-        if(cs != CAPTURE_READY){ WARNX(_("Some error when capture")); return NULL;}
+        if(cs != CAPTURE_READY){ WARNX(_("Some error when capture")); break;}
         TIMESTAMP("get");
         if(!camera->capture) ERRX(_("Camera plugin have no function `capture`"));
         if(!camera->capture(ima)){ WARNX(_("Can't grab image")); continue; }
@@ -951,6 +953,7 @@ static void *grabnext(void *arg){
         //calculate_stat(ima);
         TIMESTAMP("OK");
     }while(1);
+    grabthread = 0;
     return NULL;
 }
 
@@ -962,7 +965,6 @@ static void *grabnext(void *arg){
 int ccdcaptured(cc_IMG *imgptr){
     if(!imgptr) return FALSE;
     //TIMESTAMP("ccdcaptured() start");
-    static pthread_t grabthread = 0;
     if(imgptr == (void*)-1){ // kill `grabnext`
         DBG("Wait for grabbing thread ends");
         if(grabthread){
@@ -1003,20 +1005,37 @@ int ccdcaptured(cc_IMG *imgptr){
  * @return 0 if OK
  */
 int start_socket(int isserver){
-    char *path = NULL;
-    int isnet = 0;
-    if(GP->path) path = GP->path;
-    else if(GP->port){ path = GP->port; isnet = 1; }
-    else ERRX(_("Point network port or UNIX-socket path"));
-    int sock = cc_open_socket(isserver, path, isnet), imsock = -1;
-    if(sock < 0){
-        LOGERR("Can't open socket");
-        ERRX(_("start_socket(): can't open socket"));
+    int locsock = -1, sock = -1, imsock = -1;
+    if(isserver){
+        // open local UNIX socket
+        locsock = cc_open_socket(isserver, UNIX_SOCK_NAME, NULL, FALSE);
+        if(locsock < 0){
+            LOGERR("Can't open command UNIX socket");
+            ERRX(_("start_socket(): can't open command UNIX socket"));
+        }
+        if(GP->imageport){
+            imsock = cc_open_socket(isserver, NULL, GP->imageport, TRUE);
+            if(imsock < 0){
+                LOGERR("Can't open image INET socket");
+                ERRX(_("start_socket(): can't open image INET socket"));
+            }
+        }
+    }
+    // if user pointed, open network sockets
+    if(GP->port){
+        sock = cc_open_socket(isserver, isserver ? NULL : GP->host, GP->port, TRUE);
+        if(sock < 0){
+            LOGERR("Can't open command INET socket");
+            ERRX(_("start_socket(): can't open command INET socket"));
+        }
+    }else if(!isserver){ // default: open UNIX socket for client
+        sock = cc_open_socket(FALSE, UNIX_SOCK_NAME, NULL, FALSE);
+        if(sock < 0){
+            ERRX(_("start_socket(): can't open command UNIX socket"));
+        }
     }
     if(isserver){
-        imsock = cc_open_socket(TRUE, GP->imageport, 2); // image socket should be networked
-        DBG("imsock=%d, image port=%s", imsock, GP->imageport);
-        server(sock, imsock);
+        server(locsock, sock, imsock);
     }else{
 #ifdef IMAGEVIEW
         if(GP->showimage){

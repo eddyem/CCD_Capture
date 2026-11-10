@@ -86,6 +86,7 @@ static int campoll(cc_capture_status *st, float *remain){
     if(!st) return FALSE;
     ASI_EXPOSURE_STATUS s;
     if(ASI_SUCCESS != ASIGetExpStatus(caminfo.CameraID, &s)){
+        *st = CAPTURE_ABORTED;
         DBG("Can't get exp status");
         return FALSE;
     }
@@ -113,14 +114,13 @@ static int campoll(cc_capture_status *st, float *remain){
 }
 
 static int camcapt(cc_IMG *ima){
-    if(!ima || !ima->data) return FALSE;
+    if(!ima || !ima->data || !cc_fiximage(16, camera.geometry.w, camera.geometry.h, ima)) return FALSE;
     unsigned char *d = (unsigned char *)ima->data;
     long image_size = ima->h * ima->w * 2;
     if(ASI_SUCCESS != ASIGetDataAfterExp(caminfo.CameraID, d, image_size)){
         WARNX("Couldn't read exposure data\n");
         return FALSE;
     }
-    ima->bitpix = 16;
     return TRUE;
 }
 
@@ -324,6 +324,7 @@ static int camsetbin(int h, int v){
     if(h > extrvalues.maxbin){
         WARNX(_("Maximal binning value is %d"), extrvalues.maxbin);
     }
+    // TODO: fix real binning
     if(zwo_setfloat(1., ASI_HARDWARE_BIN)){
         curbin = h;
         return TRUE;
@@ -350,6 +351,8 @@ static int camsetgeom(cc_frameformat *f){ // w,h, xoff, yoff
         DBG(_("Can't get geometry"));
         return FALSE;
     }
+    f->w *= curbin;
+    f->h *= curbin;
     DBG("curformat: w=%d, h=%d, bin=%d", f->w, f->h, curbin);
     DBG("w=%d, h=%d, bin=%d", f->w, f->h, curbin);
     if(ASI_SUCCESS != ASISetStartPos(caminfo.CameraID, f->xoff/curbin, f->yoff/curbin)){
@@ -360,8 +363,12 @@ static int camsetgeom(cc_frameformat *f){ // w,h, xoff, yoff
         DBG("Can't get start pos");
         return FALSE;
     }
+    f->xoff *= curbin;
+    f->yoff *= curbin;
     DBG("curstartpos: x=%d, y=%d", f->xoff, f->yoff);
     camera.geometry = *f;
+    //camera.geometry.w *= curbin; // unbinned geometry
+    //camera.geometry.h *= curbin;
     return TRUE;
 }
 

@@ -24,6 +24,8 @@ extern cc_Camera camera;
 extern cc_Focuser focuser;
 extern cc_Wheel wheel;
 
+static int bitdepth = 8;
+
 /**
  * @brief campoll - camera.pollcapture - polling of capture process status
  * @param st (o) - status of capture process
@@ -48,6 +50,7 @@ static int startexp(){
  * @return FALSE if failed or bad `ima`
  */
 static int camcapt(cc_IMG _U_ *ima){
+    if(!ima || !ima->data || !cc_fiximage(bitdepth, camera.geometry.w, camera.geometry.h, ima)) return FALSE;
     return FALSE;
 }
 
@@ -56,8 +59,10 @@ static int camcapt(cc_IMG _U_ *ima){
  * @param b - bit depth, 1 - high (16 bit), 0 - low (8 or other bit)
  * @return FALSE if failed
  */
-static int camsetbit(int _U_ b){
-    return FALSE;
+static int camsetbit(int b){
+    if(b) bitdepth = 16;
+    else bitdepth = 8;
+    return TRUE;
 }
 
 /**

@@ -66,7 +66,7 @@ sl_option_t cmdlnopts[] = {
     {"cameradev", NEED_ARG, NULL,   'C',    arg_string, APTR(&G.cameradev), N_("camera device plugin (e.g. devfli.so)")},
     {"focuserdev", NEED_ARG,NULL,   'F',    arg_string, APTR(&G.focuserdev),N_("focuser device plugin (e.g. devzwo.so)")},
     {"wheeldev", NEED_ARG,  NULL,   'W',    arg_string, APTR(&G.wheeldev),  N_("wheel device plugin (e.g. devdummy.so)")},
-    {"list",    NO_ARGS,    NULL,   'L',    arg_int,    APTR(&G.listdevices),N_("list connected devices")},
+    {"list",    NO_ARGS,    NULL,   'L',    arg_none,   APTR(&G.listdevices),N_("list connected devices")},
     {"camdevno",NEED_ARG,   NULL,    NA,    arg_int,    APTR(&G.camdevno),  N_("camera device number (if many: 0, 1, 2 etc)")},
     {"wheeldevno",NEED_ARG, NULL,    NA,    arg_int,    APTR(&G.whldevno),  N_("filter wheel device number (if many: 0, 1, 2 etc)")},
     {"focdevno",NEED_ARG,   NULL,    NA,    arg_int,    APTR(&G.focdevno),  N_("focuser device number (if many: 0, 1, 2 etc)")},
@@ -75,7 +75,7 @@ sl_option_t cmdlnopts[] = {
     {"verbose", NO_ARGS,    NULL,   'V',    arg_none,   APTR(&G.verbose),   N_("verbose level (-V - main messages, -VV - secondary messages, -VVV - debug)")},
     {"dark",    NO_ARGS,    NULL,   'd',    arg_int,    APTR(&G.dark),      N_("not open shutter, when exposing (\"dark frames\")")},
     {"8bit",    NO_ARGS,    NULL,   '8',    arg_int,    APTR(&G._8bit),     N_("run in 8-bit mode")},
-    {"fast",    NO_ARGS,    NULL,   'f',    arg_none,   APTR(&G.fast),      N_("fast readout mode")},
+    {"fast",    NO_ARGS,    NULL,   'f',    arg_int,    APTR(&G.fast),      N_("fast readout mode")},
     {"set-temp",NEED_ARG,   NULL,   't',    arg_double, APTR(&G.temperature),N_("set CCD temperature to given value (degr C)")},
     {"set-fan", NEED_ARG,   NULL,   NA,     arg_int,    APTR(&G.fanspeed),  N_("set fan speed (0 - off, 1 - low, 2 - high)")},
 
@@ -119,21 +119,20 @@ sl_option_t cmdlnopts[] = {
     {"brightness",NEED_ARG, NULL,   NA,     arg_float,  APTR(&G.brightness),N_("CMOS brightness level")},
 
     {"logfile", NEED_ARG,   NULL,   NA,     arg_string, APTR(&G.logfile),   N_("logging file name (if run as server)")},
-    {"path",    NEED_ARG,   NULL,   NA,     arg_string, APTR(&G.path),      N_("UNIX socket name (command socket)")},
-    {"port",    NEED_ARG,   NULL,   NA,     arg_string, APTR(&G.port),      N_("local INET command socket port")},
-    {"imageport",NEED_ARG,  NULL,   NA,     arg_string, APTR(&G.imageport), N_("INET image socket port")},
+    {"host",    NEED_ARG,   NULL,   NA,     arg_string, APTR(&G.host),      N_("server's host name")},
+    {"port",    NEED_ARG,   NULL,   NA,     arg_string, APTR(&G.port),      N_("INET command socket port (omit if use on same host with server)")},
+    {"imageport",NEED_ARG,  NULL,   NA,     arg_string, APTR(&G.imageport), N_("INET image socket port (default: port+1)")},
     {"client",  NO_ARGS,    &G.client,1,    arg_none,   NULL,               N_("run as client")},
+    {"server",  NO_ARGS,    &G.server,1,    arg_none,   NULL,               N_("run as server")},
     {"viewer",  NO_ARGS,    &G.viewer,1,    arg_none,   NULL,               N_("passive viewer (only get last images)")},
     {"restart", NO_ARGS,    &G.restart,1,   arg_none,   NULL,               N_("restart image server")},
     {"timeout", NEED_ARG,   NULL,   '0',    arg_double, APTR(&G.anstmout),  N_("network answer timeout (default: 0.1s)")},
-    {"info",    NO_ARGS,    &G.info, 1,     arg_none,   NULL,               N_("get base information about connected hardware (also increasing text messages level to 2)")},
 
     {"shmkey", NEED_ARG,    NULL,   'k',    arg_int,    APTR(&G.shmkey),    N_("shared memory (with image data) key (default: 7777777)")},
-    {"forceimsock",NO_ARGS, &G.forceimsock,1, arg_none, NULL,               N_("force using image through socket transition even if can use SHM")},
     {"infty", NEED_ARG,     NULL,   NA,     arg_int,    APTR(&G.infty),     N_("start (!=0) or stop(==0) infinity capturing loop")},
 
 #ifdef IMAGEVIEW
-    {"display", NO_ARGS,    NULL,   'D',    arg_int,   APTR(&G.showimage),  N_("Display image in OpenGL window")},
+    {"display", NO_ARGS,    NULL,   'D',    arg_int,    APTR(&G.showimage),  N_("Display image in OpenGL window")},
 #endif
     //{"",  NEED_ARG,   NULL,   '',    arg_double,   APTR(&G.),    N_("")},
 

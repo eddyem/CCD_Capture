@@ -231,7 +231,7 @@ static int geometrylimits(cc_frameformat *max, cc_frameformat *step){
 
 static int setdevno(int N){
     if(N > camera.Ndevices - 1) return FALSE;
-    FC2FN(fc2GetCameraFromIndex, 0, &guid);
+    FC2FN(fc2GetCameraFromIndex, N, &guid);
     FC2FN(fc2Connect, &guid);
     isopened = TRUE;
     disableauto();
@@ -291,7 +291,8 @@ rtn:
 static int capture(cc_IMG *ima){
     FNAME();
     if(canceled) return FALSE;
-    if(!ima || !ima->data || !isopened) return FALSE;
+    int bitpix = (is16bit) ? 16 : 8;
+    if(!ima || !ima->data || !isopened || !cc_fiximage(bitpix, camera.geometry.w, camera.geometry.h, ima)) return FALSE;
     static int toohot = FALSE;
     float f;
     if(getfloat(FC2_TEMPERATURE, &f)){
@@ -323,18 +324,16 @@ static int capture(cc_IMG *ima){
         OMP_FOR()
         for(int y = 0; y < height; ++y){
             uint16_t *Out = &((uint16_t*)(ima->data))[y*width];
-            const uint8_t *In = (uint8_t*)&convertedImage.pData[y*stride];
+            const uint16_t *In = (uint16_t*)&convertedImage.pData[y*stride];
             memcpy(Out, In, w2);
             //DBG("Row %d copied. First byte: %d", y, *((uint16_t*)In));
         }
     }else{
         OMP_FOR()
         for(int y = 0; y < height; ++y){
-            uint16_t *Out = &((uint16_t*)(ima->data))[y*width];
+            uint8_t *Out = &((uint8_t*)(ima->data))[y*width];
             const uint8_t *In = (uint8_t*)&convertedImage.pData[y*stride];
-            for(int x = 0; x < width; ++x){
-                *Out++ = *In++;
-            }
+            memcpy(Out, In, width);
             //DBG("Row %d copied. Last byte: %d", y, *((uint16_t*)In));
         }
     }

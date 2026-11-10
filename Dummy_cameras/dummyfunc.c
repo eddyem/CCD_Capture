@@ -49,7 +49,7 @@ static int campoll(cc_capture_status *st, float *remain){
     if(capstat != CAPTURE_PROCESS){
         if(st) *st = capstat;
         if(remain) *remain = 0.;
-        return FALSE;
+        return TRUE;
     }
     if(sl_dtime() - texpstart > exptime){
         if(st) *st = CAPTURE_READY;
@@ -71,7 +71,7 @@ static int startexp(){
 
 static int camcapt(cc_IMG *ima){
     static int n = 0;
-    if(!ima || !ima->data) return FALSE;
+    if(!ima || !ima->data || !cc_fiximage(bitpix, camera.geometry.w, camera.geometry.h, ima)) return FALSE;
 #ifdef EBUG
     double t0 = sl_dtime();
 #endif

@@ -292,7 +292,7 @@ static int fli_fhome(int async){
 
 static int fli_fgoto(int async, float pos){
     long tagpos = pos * FOCSCALE;
-    if(tagpos > focmaxpos) return FALSE;
+    if(tagpos > focmaxpos || tagpos < 0) return FALSE;
     DBG("tagpos: %ld, focuserpos: %ld", tagpos, focuserpos);
     tagpos -= focuserpos;
     if(labs(tagpos) < 2) return TRUE;
@@ -461,7 +461,8 @@ retn:
 }
 
 static int fli_capt(cc_IMG *ima){
-    if(!ima || !ima->data) return FALSE;
+    int bitpix = is16bit ? 16 : 8;
+    if(!ima || !ima->data || !cc_fiximage(bitpix, camera.geometry.w, camera.geometry.h, ima)) return FALSE;
     for(int row = 0; row < ima->h; row++){
         void *ptr = NULL;
         if(is16bit) ptr = (void*)(((uint16_t*)ima->data) + row * ima->w);
@@ -469,7 +470,6 @@ static int fli_capt(cc_IMG *ima){
         TRYFUNC(FLIGrabRow, camdev, ptr, ima->w);
         if(fli_err) return FALSE;
     }
-    ima->bitpix = is16bit ? 16 : 8;
     return TRUE;
 }
 
@@ -571,10 +571,10 @@ static int fli_shutter(cc_shutter_op cmd){
         case SHUTTER_CLOSE:
         break;
         case SHUTTER_OPENATHIGH:
-            shtr = FLI_SHUTTER_EXTERNAL_EXPOSURE_CONTROL|FLI_SHUTTER_EXTERNAL_TRIGGER_HIGH;
+            shtr = FLI_SHUTTER_EXTERNAL_EXPOSURE_CONTROL | FLI_SHUTTER_EXTERNAL_TRIGGER_HIGH;
         break;
         case SHUTTER_OPENATLOW:
-            shtr = FLI_SHUTTER_EXTERNAL_EXPOSURE_CONTROL|FLI_SHUTTER_EXTERNAL_TRIGGER_HIGH;
+            shtr = FLI_SHUTTER_EXTERNAL_EXPOSURE_CONTROL | FLI_SHUTTER_EXTERNAL_TRIGGER_LOW;
         break;
         default:
             return FALSE;
@@ -592,9 +592,10 @@ static int fli_confio(int io){
 
 static int fli_getio(int *io){
     if(!io) return FALSE;
-    long lio = (long)*io;
+    long lio;
     TRYFUNC(FLIReadIOPort, camdev, &lio);
     if(fli_err) return FALSE;
+    *io = (int) lio;
     return TRUE;
 }
 

@@ -6,3 +6,6 @@ target_link_libraries(ccd_client ccdcapture usefull_macros)
 
 add_executable(centroids centroids.c)
 target_link_libraries(centroids ccdcapture usefull_macros improc m)
+
+add_executable(centroids16 centroids16.c)
+target_link_libraries(centroids16 ccdcapture usefull_macros m)

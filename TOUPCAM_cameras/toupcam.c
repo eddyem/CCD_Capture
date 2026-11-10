@@ -247,6 +247,7 @@ static void EventCallback(unsigned nEvent, void _U_ *pCallbackCtx){
         case TOUPCAM_EVENT_ERROR:
             WARNX(_("Error occured"));
             camcancel();
+            return;
         case TOUPCAM_EVENT_IMAGE:
             break;
         default:
@@ -263,7 +264,7 @@ static void EventCallback(unsigned nEvent, void _U_ *pCallbackCtx){
         ++toupcam.imseqno;
         DBG("Image %lu (%dx%d) ready!", toupcam.imseqno, info.v3.width, info.v3.height);
         toupcam.state = IM_READY;
-        toupcam.imsz = info.v3.height * info.v3.width * toupcam.bytepix;
+        toupcam.imsz = (size_t)info.v3.height * info.v3.width * toupcam.bytepix;
         // geometry.h/w WITHOUT binning!
         camera.geometry.h = info.v3.height * toupcam.curbin;
         camera.geometry.w = info.v3.width * toupcam.curbin;
@@ -311,7 +312,8 @@ static int startexp(){
  */
 static int camcapt(cc_IMG *ima){
     TCHECK();
-    if(!ima || !ima->data || !toupcam.data) return FALSE;
+    int bitpix = toupcam.bytepix * 8;
+    if(!ima || !ima->data || !toupcam.data || !cc_fiximage(bitpix, camera.geometry.w, camera.geometry.h, ima)) return FALSE;
     //DBG("LOCK");
     pthread_mutex_lock(&toupcam.mutex);
     size_t fullsz = ima->w * ima->h * toupcam.bytepix;
@@ -324,7 +326,6 @@ static int camcapt(cc_IMG *ima){
               ima->w * ima->h * toupcam.bytepix, toupcam.imsz, ima->w, ima->h);
     }
     memcpy(ima->data, toupcam.data, fullsz);
-    ima->bitpix = toupcam.bytepix * 8;
     toupcam.lastcapno = toupcam.imseqno;
     pthread_mutex_unlock(&toupcam.mutex);
     //DBG("UNLOCK");
@@ -474,7 +475,7 @@ static int camsett(float t){
         if(Toupcam_put_Option(toupcam.hcam, TOUPCAM_OPTION_TEC, onoff) < 0) return FALSE;
         if(!onoff) return TRUE; // just turn off TEC if user wants >= 20degC
     }
-    short T = (short) t * 10.f;
+    short T = (short) (t * 10.f);
     DBG("Try to set T=%g", t);
     if(Toupcam_put_Temperature(toupcam.hcam, T) < 0) return FALSE;
     DBG("OK");

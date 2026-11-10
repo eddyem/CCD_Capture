@@ -23,11 +23,14 @@
 // timeout of trying to lock mutex (if gone, force locking for server)
 #define MUTEX_LOCK_TMOUT    0.5
 
+// timeout of closing client's image socket - 5s
+#define CLIENT_CLOSE_TMOUT  5.
+
 // pause (seconds) between temperature logging
 #define TLOG_PAUSE  60.
 
 // server-side functions
-void server(int fd, int imsock);
+void server(int unixsock, int fd, int imsock);
 char *makeabspath(const char *path, int shouldbe);
 
 void stop_server();

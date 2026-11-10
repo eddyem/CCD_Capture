@@ -207,7 +207,7 @@ static int setfastspeed(int fast){
 }
 
 static int setgeometry(cc_frameformat *f){
-    if(!f) return FALSE;
+    if(!f || f->h < 1 || f->w < 1) return FALSE;
     if(f->xoff > camera.field.w - 1) f->xoff = camera.field.w - 1;
     if(f->yoff > camera.field.h - 1) f->yoff = camera.field.h - 1;
     if(f->w - f->xoff > camera.array.w) f->w = camera.array.w - f->xoff;
@@ -309,7 +309,7 @@ static int pollcapt(cc_capture_status *st, float *remain){
         ApnGlueExpAbort();
         //ApnGlueStopExposure();
         DBG("ABORTED!");
-        if(*st) *st = CAPTURE_ABORTED;
+        if(st) *st = CAPTURE_ABORTED;
         return FALSE;
     }
     if(d < 0.) d = 0.1;
@@ -320,13 +320,13 @@ static int pollcapt(cc_capture_status *st, float *remain){
 
 static int capture(cc_IMG *ima){
     FNAME();
-    if(!ima || !ima->data) return FALSE;
+    int bitpix = is16bit ? 16 : 12;
+    if(!ima || !ima->data || !cc_fiximage(bitpix, imW, imH, ima)) return FALSE;
     DBG("ApnGlueReadPixels(%dx%d=%d)", imW, imH, imW * imH);
     if(ApnGlueReadPixels((uint16_t*)ima->data, imW * imH, whynot)){
         WARNX("Can't read image: %s", whynot);
         return FALSE;
     }
-    ima->bitpix = is16bit ? 16 : 12;
     return TRUE;
 }
 

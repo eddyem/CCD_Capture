@@ -21,11 +21,15 @@
 #include <fitsio.h> // FLEN_CARD
 #include <pthread.h>
 #include <semaphore.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h> // for size_t
 
 // max strings in header
 #define FITS_HEADER_STRINGS_MAX (1000)
+
+// local command socket name
+#define UNIX_SOCK_NAME  "@ccd_capture"
 
 // magic to mark our SHM
 #define CC_SHM_MAGIC   (0xdeadbeef)
@@ -54,12 +58,12 @@ typedef struct{
 typedef struct { //  __attribute__((packed))
     uint32_t MAGICK;            // magick (DEADBEEF) - to mark our shm
     pthread_mutex_t mutex;      // mutex for working with image data
+    size_t datasize;            // size of `data` buffer
     uint8_t start_of_copyable_data; // service field - start of copyable data
     double timestamp;           // timestamp of image taken
     int w, h;                   // image size
     int gotstat;                // stat counted
     size_t bytelen;             // size of image in bytes
-    size_t datasize;            // size of `data` buffer
     size_t imnumber;            // counter of images captured from server's start
     uint8_t bitpix;             // bits per pixel (8 or 16)
     uint16_t max, min;          // min/max values
@@ -347,6 +351,7 @@ cc_strbuff *cc_strbufnew(size_t size, size_t stringsize);
 void cc_strbufdel(cc_strbuff **buf);
 
 cc_IMG *cc_newimage(uint8_t bitpix, int w, int h);
+int cc_fiximage(uint8_t bitpix, int w, int h, cc_IMG *i);
 int cc_copyimage(cc_IMG *dest, cc_IMG *src, int isshm);
 void cc_freeimage(cc_IMG **i);
 
@@ -361,7 +366,7 @@ int cc_getNbytes(cc_IMG *image);
 int cc_read2buf(int fd, cc_strbuff *buf);
 int cc_refreshbuf(int fd, cc_strbuff *buf);
 size_t cc_getline(cc_strbuff *b);
-int cc_open_socket(int isserver, char *path, int isnet);
+int cc_open_socket(int isserver, char *path, char *port, int isnet);
 int cc_senddata(int fd, void *data, size_t l);
 int cc_sendmessage(int fd, const char *msg, int l);
 int cc_sendstrmessage(int fd, const char *msg);
@@ -373,7 +378,7 @@ cc_hresult cc_setfloat(int fd, cc_strbuff *cbuf, const char *cmd, float val);
 cc_hresult cc_getfloat(int fd, cc_strbuff *cbuf, const char *cmd, float *val);
 
 int cc_addrecord(fitsfile *fp, char *rec);
-char *cc_nextkw(char *buf, char record[FLEN_CARD], int newlines);
+char *cc_nextkw(char *buf, char record[FLEN_CARD], int newlines, ptrdiff_t rest);
 int cc_kwfromfile(fitsfile *fp, char *filename);
 //int cc_charbuf2kw(cc_charbuff *b, fitsfile *f);
 

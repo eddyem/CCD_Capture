@@ -51,7 +51,7 @@ static int filterpos = 0;
 static float focuserpos = 1., brightness = 1., gain = 0.;
 static float camtemp = -30., exptime = 0.1;
 static cc_capture_status capstat = CAPTURE_NO;
-static double texpstart = 0.;
+static double texpstart = -1.;
 static uint8_t bitpix = 16; // bit depth: 8 or 16
 static il_Image *imagemask = NULL, *imagebg; // mask & background
 static char *maskfilename = NULL, *bgfilename = NULL; // filenames
@@ -60,6 +60,7 @@ typedef struct{
     int Nstars; // amount of stars (1..MAX_STARS)
     int curstarno; // current star number
     int x0, y0; // center of field in array coordinates
+    int bias;
     double rotan0; // starting rotation angle
     double xs[MAX_STARS], ys[MAX_STARS]; // center of star field in array coordinates
     double fwhm; // stars min FWHM, arcsec
@@ -77,6 +78,7 @@ typedef struct{
 
 static settings_t settings = {
     .Nstars = 1,
+    .bias = 1000,
     .x0 = 512, .y0 = 512,
     .fwhm = 1.5, .beta = 1., .scale = 0.03,
     .fluct = 0.3, .noiselambda = 1.1, .darklambda = 1.
@@ -96,6 +98,7 @@ static il_Image *star = NULL; // template of star 0m
 static double FWHM0 = 0., scale0 = 0., BETA0 = 0.; // template fwhm/scale
 static int templ_wh = 0; // template width/height in pixels
 static double lambdamin = 1.;
+static int biasmin = 0, biasmax = 30000;
 
 /**
  * @brief test_template - test star template and recalculate new if need
@@ -166,7 +169,7 @@ DBG("MAKE STAR, wh=%d, beta=%g", templ_wh, settings.beta);
         if(X0 < 0 || X0 > templ_wh - 1 || Y0 < 0 || Y0 > templ_wh - 1) continue;\
         if(x0 < 0 || x0 > w-1 || y0 < 0 || y0 > h-1) continue;\
         if(X1 < 0 || X1 > templ_wh || Y1 < 0 || Y1 > templ_wh) continue;\
-        if(X0 > X1 || Y0 > Y1) return;\
+        if(X0 > X1 || Y0 > Y1) continue;\
         OMP_FOR()\
         for(int y = Y0; y < Y1; ++y){\
             type *out = &((type*)ima->data)[(y-Y0+y0)*w + x0];\
@@ -185,7 +188,7 @@ DBG("MAKE STAR, wh=%d, beta=%g", templ_wh, settings.beta);
         OMP_FOR()\
         for(int y = Y0; y < Y1; ++y){\
             type *out = &((type*)ima->data)[(y-Y0)*w];\
-            uint8_t *in = &((uint8_t*)imagebg->data)[y*imagemask->width + X0];\
+            uint8_t *in = &((uint8_t*)imagebg->data)[y*imagebg->width + X0];\
             for(int x = X0; x < X1; ++x, ++in, ++out){\
                 *out = (*out + *in > maxval) ? maxval : *out + *in;\
             }\
@@ -204,6 +207,12 @@ DBG("MAKE STAR, wh=%d, beta=%g", templ_wh, settings.beta);
                 if(*in == 0) *out = 0;\
             }\
         } \
+    }\
+    if(settings.bias > 0){/* add bias */ \
+        int lvl = settings.bias; if(maxval == 0xff) lvl >>= 8; size_t WH = w * h;\
+        type *out = (type*)ima->data;\
+        OMP_FOR()\
+        for(size_t i = 0; i < WH; ++i) out[i] = (out[i] + lvl > maxval) ? maxval : out[i] + lvl;\
     }\
     if(settings.noiselambda > 1. || settings.darklambda > 1.){ /* apply noise */ \
         w *= h; \
@@ -245,9 +254,11 @@ static int campoll(cc_capture_status *st, float *remain){
 static int startexp(){
     if(capstat == CAPTURE_PROCESS) return FALSE;
     capstat = CAPTURE_PROCESS;
-    double Tnow = sl_dtime(), dT = Tnow - texpstart, Xcd, Ycd;
-    if(dT < 0.) dT = 0.;
-    else if(dT > 1.) dT = 1.; // dT for fluctuations amplitude
+    double Tnow = sl_dtime();
+    if(texpstart < 0) texpstart = Tnow;
+    double dT = Tnow - texpstart, Xcd, Ycd;
+    if(dT < 0.) dT = 0.; // dT for fluctuations amplitude after last exposition
+    else if(dT > 1.) dT = 1.; // don't allow very large fluctuations as `star` could leave image
     if(Tstart < 0.) Tstart = Tnow;
     texpstart = Tnow;
     double Tfromstart = Tnow - Tstart;
@@ -280,22 +291,20 @@ static int startexp(){
 
 static int camcapt(cc_IMG *ima){
     DBG("Prepare, xc=%d, yc=%d, bitpix=%d", Xc, Yc, bitpix);
-    if(!ima || !ima->data) return FALSE;
+    if(!ima || !ima->data || !cc_fiximage(bitpix, camera.geometry.w, camera.geometry.h, ima)) return FALSE;
 #ifdef EBUG
     double t0 = sl_dtime();
 #endif
-    ima->bitpix = bitpix;
-    ima->w = camera.geometry.w;
-    ima->h = camera.geometry.h;
     size_t nbytes = cc_getNbytes(ima);
     size_t bytelen = ima->w * ima->h * nbytes;
     if(bytelen > ima->datasize){
-        WARNX(_("Image size greater than buffer!"));
+        WARNX(_("Image size (%zd) greater than buffer (%zd)!"), bytelen, ima->datasize);
         LOGWARN("ArtStar: Image size greater than buffer!");
-        ima->h = ima->datasize / ima->w;
+        ima->h = ima->datasize / ima->w / nbytes;
+        bytelen = ima->w * ima->h * nbytes;
     }
     LOGDBG("ArtStar: create new artifical star image: %zdx%zd pix", ima->w, ima->h);
-    ima->bytelen = ima->w * ima->h * nbytes;
+    ima->bytelen = bytelen;
     bzero(ima->data, ima->datasize);
     if(!star) ERRX(_("No star template - die"));
     if(bitpix == 16) gen16(ima);
@@ -373,11 +382,22 @@ static int camshutter(_U_ cc_shutter_op s){
 }
 
 static int camsetgeom(cc_frameformat *f){
+    FNAME();
     if(!f) return FALSE;
-    if(f->xoff > ARRAYW-2 || f->yoff > ARRAYH-2) return FALSE;
-    if(f->xoff < 0 || f->yoff < 0 || f->h < 0 || f->w < 0) return FALSE;
-    if(f->h + f->yoff >= ARRAYH || f->w + f->xoff >= ARRAYW) return FALSE;
-    LOGDBG("ArtStar: geometry changed to: %zdx%zd (offset) - %zdx%zd (w/h)",
+    DBG("offset: %d/%d; w/h: %d/%d", f->xoff, f->yoff, f->w, f->h);
+    if(f->xoff > ARRAYW-2 || f->yoff > ARRAYH-2){
+        DBG("Offset too large");
+        return FALSE;
+    }
+    if(f->xoff < 0 || f->yoff < 0 || f->h < 0 || f->w < 0){
+        DBG("Negative values");
+        return FALSE;
+    }
+    if(f->h + f->yoff > ARRAYH || f->w + f->xoff > ARRAYW){
+        DBG("h+off too high");
+        return FALSE;
+    }
+    LOGDBG("ArtStar: geometry changed to: %dx%d (offset) - %dx%d (w/h)",
            f->xoff, f->yoff, f->w, f->h);
     camera.geometry = *f;
     return TRUE;
@@ -509,6 +529,7 @@ static cc_hresult setXYs(const char *str, cc_charbuff *ans){
 }
 
 static cc_hresult setmag(const char *str, cc_charbuff *ans){
+    if(!str || !ans) return CC_RESULT_BADKEY;
     char buf[256], *bptr = buf;
     strncpy(buf, str, 255);
     char *val = cc_get_keyval(&bptr);
@@ -528,15 +549,17 @@ static cc_hresult setmag(const char *str, cc_charbuff *ans){
     }
     DBG("mag[%d]=%g", settings.curstarno, dval);
     settings.mag[settings.curstarno] = dval;
-    snprintf(buf, 255, "mag[%d]=%g\n", settings.curstarno, dval);
+    snprintf(buf, 255, "mag[%d]=%g", settings.curstarno, dval);
     cc_charbufaddline(ans, buf);
     return CC_RESULT_SILENCE;
 }
 
 static cc_hresult loadmask(const char *str, cc_charbuff *ans){
+    if(!str || !ans) return CC_RESULT_BADKEY;
     char buf[FILENAME_MAX+32], *bptr = buf;
     strncpy(buf, str, FILENAME_MAX+31);
     char *val = cc_get_keyval(&bptr);
+    if(!val || !*val) return CC_RESULT_BADVAL;
     if(strcmp(bptr, "mask") != 0) return CC_RESULT_BADKEY;
     if(imagemask) il_Image_free(&imagemask);
     imagemask = il_Image_read(val);
@@ -558,9 +581,11 @@ static cc_hresult loadmask(const char *str, cc_charbuff *ans){
 }
 
 static cc_hresult loadbg(const char *str, cc_charbuff *ans){
+    if(!str || !ans) return CC_RESULT_BADKEY;
     char buf[FILENAME_MAX+32], *bptr = buf;
     strncpy(buf, str, FILENAME_MAX+31);
     char *val = cc_get_keyval(&bptr);
+    if(!val || !*val) return CC_RESULT_BADVAL;
     if(strcmp(bptr, "bkg") != 0) return CC_RESULT_BADKEY;
     if(imagebg) il_Image_free(&imagebg);
     imagebg = il_Image_read(val);
@@ -580,6 +605,7 @@ static cc_hresult loadbg(const char *str, cc_charbuff *ans){
 // cmd, help, handler, ptr, min, max, type
 static cc_parhandler_t handlers[] = {
     {"beta", "Moffat `beta` parameter", NULL, (void*)&settings.beta, (void*)&betamin, NULL, CC_PAR_DOUBLE},
+    {"bias", "bias value", NULL, (void*)&settings.bias, (void*)&biasmin, (void*)&biasmax, CC_PAR_INT},
     {"bkg", "load background image", loadbg, (void*)&bgfilename, NULL, NULL, CC_PAR_STRING},
     {"curstar", "set number of current star to change parameters", NULL, (void*)&settings.curstarno, (void*)&nomin, (void*)&nomax, CC_PAR_INT},
     {"fluct", "stars position fluctuations (arcsec per sec)", NULL, (void*)&settings.fluct, (void*)&fluctmin, (void*)&fluctmax, CC_PAR_DOUBLE},

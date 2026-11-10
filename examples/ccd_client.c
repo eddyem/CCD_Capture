@@ -28,8 +28,9 @@
 #include "socket.h"
 
 typedef struct{
-    char *sockname;     // UNIX socket name of command socket or port of local socket
-    int isun;           // command socket is UNIX socket instead of INET
+    char *node;         // socket server's name/IP
+    char *port;         // port of INET socket
+    char *import;       // image port
     int shmkey;         // shared memory (with image data) key
     int infty;          // run in infinity loop (if not - run by requests)
     int nframes;        // amount of frames to take
@@ -49,8 +50,9 @@ static glob_pars G = {
  *  name    has_arg flag    val     type        argptr          help
 */
 sl_option_t cmdlnopts[] = {
-    {"sock",    NEED_ARG,   NULL,   's',    arg_string, APTR(&G.sockname),  "command socket name or port"},
-    {"isun",    NO_ARGS,    NULL,   'U',    arg_int,    APTR(&G.isun),      "use UNIX socket"},
+    {"node",    NEED_ARG,   NULL,   'N',    arg_string, APTR(&G.node),      "server's host (if working over net) or UNIX-socket path"},
+    {"port",    NEED_ARG,   NULL,   'p',    arg_string, APTR(&G.port),      "command socket port"},
+    {"import",  NEED_ARG,   NULL,   'P',    arg_string, APTR(&G.import),    "image socket port (if not 'port+1'"},
     {"shmkey",  NEED_ARG,   NULL,   'k',    arg_int,    APTR(&G.shmkey),    "shared memory (with image data) key (default: 7777777)"},
     {"infty",   NO_ARGS,    NULL,   'i',    arg_int,    APTR(&G.infty),     "run in infinity capturing loop (else - request each frame)"},
     {"nframes", NEED_ARG,   NULL,   'n',    arg_int,    APTR(&G.nframes),   "make series of N frames"},
@@ -86,10 +88,14 @@ int main(int argc, char **argv){
             printf("%4d: %s\n", i, argv[i]);
     }
     if(G.nframes < 1) ERRX("nframes should be > 0");
-    if(!G.sockname) ERRX("Point socket name or port");
     cc_strbuff *cbuf = cc_strbufnew(BUFSIZ, STRBUFSZ);
-    int sock = cc_open_socket(FALSE, G.sockname, !G.isun);
-    if(sock < 0) ERR("Can't open socket %s", G.sockname);
+    int sock = -1;
+    if(G.node){
+        sock = cc_open_socket(FALSE, G.node, G.port, TRUE);
+    }else{
+        sock = cc_open_socket(FALSE, G.node, NULL, FALSE);
+    }
+    if(sock < 0) ERR("Can't open command socket");
     int shmemkey = 0;
     if(CC_RESULT_OK == cc_getint(sock, cbuf, CC_CMD_SHMEMKEY, &shmemkey)){
         green("Got shm key: %d\n", shmemkey);

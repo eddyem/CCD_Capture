@@ -37,7 +37,6 @@
 #include "server.h"
 #include "socket.h"
 
-static int isserver = FALSE;
 static pid_t childpid = 0;
 
 // get struct size
@@ -57,20 +56,39 @@ void signals(int signo){
         exit(signo);
     }
     // slave: cancel exposition
-    if(signo) WARNX(_("Get signal %d - exit"), signo);
-    if(!GP->client){
+    if(signo){
+        WARNX(_("Get signal %d - exit"), signo);
+#ifdef IMAGEVIEW
+        if(!GP->server){
+            windowData *win = getWin();
+            if(win){
+                win->killthread = 1;
+                return;
+            }
+        }
+#endif
+    }
+    if(GP->server){
         DBG("Cancel capturing and close all");
-        stop_server();
+        stop_server(); // wait until 1s for server to stopped
     }else{
 #ifdef IMAGEVIEW
-    DBG("KILL GL");
-    closeGL();
+        DBG("KILL GL");
+        closeGL();
 #endif
-    exit(signo);
+        closewheel();
+        focclose();
+        closecam();
     }
-    //DBG("exit(%d)", signo);
-    //exit(signo);
+    DBG("exit(%d)", signo);
+    exit(signo);
 }
+
+typedef enum{
+    SERVER_MODE,
+    CLIENT_MODE,
+    STANDALONE_MODE
+} working_mode_t;
 
 int main(int argc, char **argv){
     sl_init();
@@ -90,48 +108,62 @@ int main(int argc, char **argv){
         GP->client = 1;
         GP->showimage = 1;
     }
-    if(GP->outfile && GP->outfileprefix) ERRX(_("Can't use outfile name and prefix together"));
+    if(GP->outfile && GP->outfileprefix){
+        WARNX(_("Can't use outfile name and prefix together"));
+        return 1;
+    }
     if(GP->outfile && !GP->rewrite){
         struct stat filestat;
-        if(0 == stat(GP->outfile, &filestat)) ERRX(_("File %s exists!"), GP->outfile);
-    }
-    if(GP->anstmout > 0.){
-        if(!cc_setAnsTmout(GP->anstmout)) ERRX(_("Can't set answer timeout to %g"), GP->anstmout);
-    }
-    if(GP->port){
-        if(GP->path){
-            WARNX(_("Options `port` and `path` can't be used together! Point `port` for TCP socket or `path` for UNIX."));
+        if(0 == stat(GP->outfile, &filestat)){
+            WARNX(_("File %s exists!"), GP->outfile);
             return 1;
         }
+    }
+    if(GP->anstmout > 0.){
+        if(!cc_setAnsTmout(GP->anstmout)){
+            WARNX(_("Can't set answer timeout to %g"), GP->anstmout);
+            return 1;
+        }
+    }
+    if(GP->client && GP->server){
+        WARNX(_("Can't run in client and server modes simultaneously"));
+        return 1;
+    }
+    working_mode_t mode = STANDALONE_MODE;
+    if(GP->client) mode = CLIENT_MODE;
+    else if(GP->server) mode = SERVER_MODE;
+    if(GP->imageport){
+        int port = atoi(GP->imageport);
+        if(port < CC_PORTN_MIN || port > CC_PORTN_MAX){
+            WARNX(_("Wrong image port value: %d"), port);
+            return 1;
+        }
+    }
+    if(GP->port){ // open TCP socket besides (or instead - for client) UNIX-socket
         int port = atoi(GP->port);
         if(port < CC_PORTN_MIN || port > CC_PORTN_MAX){
             WARNX(_("Wrong port value: %d"), port);
             return 1;
         }
-        if(!GP->client) isserver = TRUE;
+        if(!GP->imageport){ // make default: port + 1
+            GP->imageport = MALLOC(char, 32);
+            snprintf(GP->imageport, 31, "%d", 1 + port);
+            verbose(VERBOSE_PRIMARY, _("Set image port to %s\n"), GP->imageport);
+        }
     }
-    if(GP->path && !GP->client) isserver = TRUE;
-    /*if(!GP->path && !GP->port){ // standalone
-        WARNX("Point one of options: `port` or `path` for command socket");
-    }*/
-    if((isserver || GP->client) && !GP->imageport){
-        GP->imageport = MALLOC(char, 32);
-        if(!GP->port) sprintf(GP->imageport, "12345");
-        else snprintf(GP->imageport, 31, "%d", 1+atoi(GP->port));
-        verbose(VERBOSE_PRIMARY, _("Set image port to %s\n"), GP->imageport);
+    if(mode == CLIENT_MODE && (GP->commondev || GP->focuserdev || GP->cameradev || GP->wheeldev)){
+        WARNX(_("Can't be client and standalone in same time!"));
+        return 1;
     }
-    if(GP->client && (GP->commondev || GP->focuserdev || GP->cameradev || GP->wheeldev))
-        ERRX(_("Can't be client and standalone in same time!"));
     if(GP->logfile){
         int lvl = LOGLEVEL_ERR + GP->verbose;
         DBG("level = %d", lvl);
         if(lvl > LOGLEVEL_ANY) lvl = LOGLEVEL_ANY;
         verbose(VERBOSE_PRIMARY, _("Log file %s @ level %d\n"), GP->logfile, lvl);
         OPENLOG(GP->logfile, lvl, 1);
-        if(!sl_globlog) WARNX(_("Can't create log file"));
+        if(!sl_globlog) WARN(_("Can't create log file %s"), GP->logfile);
+        else LOGMSG("Started");
     }
-    if(GP->info && GP->verbose < VERBOSE_SECONDARY) // increase verbose messages level for `info`
-        GP->verbose = VERBOSE_SECONDARY;
     signal(SIGINT, signals);
     signal(SIGQUIT, signals);
     signal(SIGABRT, signals);
@@ -140,20 +172,21 @@ int main(int argc, char **argv){
     signal(SIGTSTP, SIG_IGN);
     signal(SIGPIPE, SIG_IGN);
     signal(SIGUSR1, signals); // restart server
-    if(!isserver){ // run in standalone or client mode
-        int camerainit = FALSE;
-        if(!GP->client){ // standalone mode
-            focusers(); // run focusers and wheels before showimage
-            wheels();
-            camerainit = prepare_ccds();
-        }else{ // client mode
-            return start_socket(isserver);
-        }
+    if(mode == STANDALONE_MODE){
+        focusers();
+        wheels();
+        int camerainit = prepare_ccds();
 #ifdef IMAGEVIEW
         if(GP->showimage){ // activate image window in capture or simple viewer mode
             imagefunc imfn = NULL;
-            if(GP->cameradev || GP->commondev){if(camerainit) imfn = ccdcaptured;} // capture mode
-            else imfn = NULL; // TODO - simple file viewer
+            if(camerainit) imfn = ccdcaptured; // capture mode
+            if(!imfn){
+                // TODO - simple file viewer
+                WARNX(_("Point camera device plugin to run viewer"));
+                closewheel();
+                focclose();
+                return 1;
+            }
             return viewer(imfn);
         }
 #endif
@@ -161,12 +194,21 @@ int main(int argc, char **argv){
         closewheel();
         focclose();
         return 0;
+    } else if(mode == CLIENT_MODE){
+        return start_socket(FALSE);
     }
-    LOGMSG("Started");
+    // server mode
+    LOGMSG("Started image server");
 #ifndef EBUG
     unsigned int pause = 5;
     while(1){
         childpid = fork();
+        if(childpid < 0){
+            WARN("fork() error");
+            LOGERR("fork() error");
+            sleep(1);
+            continue;
+        }
         if(childpid){ // master
             double t0 = sl_dtime();
             LOGMSG("Created child with pid %d", childpid);
@@ -183,6 +225,6 @@ int main(int argc, char **argv){
     }
 #endif
 
-    return start_socket(isserver);
+    return start_socket(TRUE);
 }
 

@@ -133,10 +133,13 @@ static void createWindow(){
 
 static void killwindow(){
     if(!win) return;
+    pthread_mutex_lock(&win->mutex);
     if(!win->killthread){
         // say threads to die
         win->killthread = 1;
     }
+    usleep(100000);
+    pthread_mutex_unlock(&win->mutex);
     if(win->menu){
         DBG("Destroy menu");
         glutDestroyMenu(win->menu);
@@ -202,6 +205,7 @@ static void RedrawWindow(){
     //DBG("ini=%d, win=%s", initialized, win ? "yes" : "no");
     if(!initialized || !win || win->killthread) return;
     //if(pthread_mutex_trylock(&win->mutex)) return;
+    pthread_mutex_lock(&win->mutex);
     GLfloat w = win->image->w, h = win->image->h;
     glutSetWindow(win->ID);
     glClearColor(0.0, 0.0, 0.5, 1.0);
@@ -212,7 +216,6 @@ static void RedrawWindow(){
     glEnable(GL_TEXTURE_2D);
     glBindTexture(GL_TEXTURE_2D, win->Tex);
     if(win->image->changed){
-        pthread_mutex_lock(&win->mutex);
         DBG("Image changed!");
         glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, win->image->w, win->image->h, 0,
@@ -220,7 +223,6 @@ static void RedrawWindow(){
        /* glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, win->image->w, win->image->h,
                         GL_RGB, GL_UNSIGNED_BYTE, win->image->rawdata);*/
         win->image->changed = 0;
-        pthread_mutex_unlock(&win->mutex);
     }
     w /= 2.f; h /= 2.f;
     float lr = 1., ud = -1.; // flipping coefficients (mirror image around Y by default)
@@ -235,7 +237,7 @@ static void RedrawWindow(){
     glDisable(GL_TEXTURE_2D);
     glFinish();
     glutSwapBuffers();
-    //pthread_mutex_unlock(&win->mutex);
+    pthread_mutex_unlock(&win->mutex);
 //DBG("redraw: %gs", dtime()-t0);
     usleep(1000);
 }
@@ -450,8 +452,12 @@ result: 0.0014689s
  * @param img (i)  - input image
  */
 static void equalize(cc_IMG *img){
-    double orig_hysto[0x10000] = {0.}; // original hystogram
-    uint8_t eq_levls[0x10000] = {0};   // levels to convert: newpix = eq_levls[oldpix]
+    static double *orig_hysto = NULL; // original hystogram
+    static uint8_t *eq_levls = NULL;   // levels to convert: newpix = eq_levls[oldpix]
+    if(!orig_hysto) orig_hysto = MALLOC(double, 0x10000);
+    else memset(orig_hysto, 0, sizeof(double)*0x10000);
+    if(!eq_levls) eq_levls = MALLOC(uint8_t, 0x10000);
+    else memset(eq_levls, 0, 0x10000);
     int s = img->h * img->w;
 //double t0 = dtime();
     /* -- takes too long because of sync
@@ -518,7 +524,9 @@ cuts: 0.00188208s
 
 // count image cuts as [median-sigma median+5sigma]
 static void mkcuts(cc_IMG *img){
-    int orig_hysto[0x10000] = {0.}; // original hystogram
+    static double *orig_hysto = NULL; // original hystogram
+    if(!orig_hysto) orig_hysto = MALLOC(double, 0x10000);
+    else memset(orig_hysto, 0, sizeof(double)*0x10000);
     int s = img->h * img->w;
     double sum = 0., sum2 = 0.;
     int bytes = cc_getNbytes(img);
@@ -621,25 +629,25 @@ static void change_displayed_image(cc_IMG *img){
     if(!win->image || ! win->rawdata || (win->image->h != h) || (win->image->w != w)){ // realloc image & raw image to new size
         //pthread_mutex_lock(&win->mutex);
         DBG("\n\nRealloc rawdata");
-        uint8_t *raw = win->image->rawdata;
-        win->image->rawdata = realloc(win->image->rawdata, s*3);
-        if(!win->image->rawdata){
+        uint8_t *raw = realloc(win->image->rawdata, s*3);
+        if(!raw){
             WARN("realloc()");
             LOGERR("Realloc() error");
-            win->image->rawdata = raw;
+            pthread_mutex_unlock(&win->mutex);
             pthread_mutex_unlock(&img->mutex);
             return;
         }
+        win->image->rawdata = raw;
         win->image->h = h; win->image->w = w;
-        raw = win->rawdata;
-        win->rawdata = realloc(win->rawdata, s);
-        if(!win->rawdata){
+        raw = realloc(win->rawdata, s);
+        if(!raw){
             WARN("realloc()");
             LOGERR("Realloc() error");
-            win->rawdata = raw;
+            pthread_mutex_unlock(&win->mutex);
             pthread_mutex_unlock(&img->mutex);
             return;
         }
+        win->rawdata = raw;
         DBG("win->image changed");
         //pthread_mutex_unlock(&win->mutex);
     }
@@ -697,8 +705,8 @@ void closeGL(){ // killed by external signal or ctrl+c
     if(!initialized) return;
     DBG("KILLL");
     camstop(); // cancel expositions
-    win->killthread = 1;
-    while(initialized){
+    if(win) win->killthread = 1;
+    while(initialized && win){
         usleep(100000);
         if(initialized) killwindow(); // kill here, if `viewer` died
     }

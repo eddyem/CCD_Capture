@@ -88,7 +88,7 @@ int cc_lock_shm(int isserver){
         while(sem_trywait(sem) && sl_dtime() - t0 < 0.1) sem_post(sem); // force locking
         if(sl_dtime() - t0 >= 0.1){
             LOGERR("cc_lock_shm(): failed to unlock");
-        }
+        }else return TRUE;
     }else{
         DBG("Image semaphore is locked too long by other side");
     }
@@ -144,49 +144,63 @@ void cc_remove_sem(){
 /**
  * @brief cc_open_socket - create socket and open it
  * @param isserver  - TRUE for server, FALSE for client
- * @param path      - UNIX-socket path or local INET socket port
- * @param isnet     - 1/2 for INET socket (1 - localhost, 2 - network), 0 for UNIX
+ * @param node      - UNIX-socket path or server's name / IP
+ * @param port      - server's port
+ * @param isnet     - 0 for UNIX-socket, 1 for INET
  * @return socket FD or -1 if failed
  */
-int cc_open_socket(int isserver, char *path, int isnet){
-    DBG("isserver=%d, path=%s, isnet=%d", isserver, path, isnet);
-    if(!path) return 1;
+int cc_open_socket(int isserver, char *node, char *port, int isnet){
+    DBG("isserver=%d, node=%s, isnet=%d", isserver, node, isnet);
     //DBG("path/port: %s", path);
     int sock = -1;
     struct addrinfo hints = {0}, *res;
     struct sockaddr_un unaddr = {0};
     if(isnet){
-        //DBG("Network socket");
+        if(!port){
+            WARNX(_("Not pointed port to open"));
+            return -1;
+        }
         hints.ai_family = AF_INET;
         hints.ai_socktype = SOCK_STREAM;
         hints.ai_flags = AI_PASSIVE;
-        const char *node = (isnet == 2) ? NULL : "127.0.0.1";
-        if(getaddrinfo(node, path, &hints, &res) != 0){
+        if(!isserver){
+            if(!node){
+                WARNX(_("Server's node not pointed"));
+                return -1;
+            }
+        }else node = NULL;
+        if(getaddrinfo(node, port, &hints, &res) != 0){
             WARN("getaddrinfo");
             return -1;
         }
     }else{
         DBG("UNIX socket");
-        char apath[128];
-        int len = sizeof(sa_family_t);
-        if(*path == 0){
+        char apath[UNIX_SOCK_PATH_MAX];
+        size_t len = offsetof(struct sockaddr_un, sun_path);
+        // check for anonymous socket
+        if(*node == 0 || *node == '@'){
             DBG("convert name");
             apath[0] = 0;
-            strncpy(apath+1, path+1, 126);
-            len += strlen(path+1);
-        }else if(strncmp("\\0", path, 2) == 0){
+            strncpy(apath+1, node + 1, UNIX_SOCK_PATH_MAX-2);
+            len += 1 + strlen(node + 1); // +NUL-prefix
+        }else if(strncmp("\\0", node, 2) == 0){
             DBG("convert name");
             apath[0] = 0;
-            strncpy(apath+1, path+2, 126);
-            len += strlen(path+2);
-        }else strcpy(apath, path);
+            strncpy(apath+1, node + 2, UNIX_SOCK_PATH_MAX-2);
+            len += 1 + strlen(node + 2);
+        }else{
+            strncpy(apath, node, UNIX_SOCK_PATH_MAX);
+            len += strlen(node);
+        }
+        if(len > UNIX_SOCK_PATH_MAX) len = UNIX_SOCK_PATH_MAX;
         //unlink(apath);
         unaddr.sun_family = AF_UNIX;
         hints.ai_addr = (struct sockaddr*) &unaddr;
-        hints.ai_addrlen = sizeof(unaddr);
+        hints.ai_addrlen = len;
         memcpy(unaddr.sun_path, apath, len); // if sun_path[0] == 0 we don't create a file
         hints.ai_family = AF_UNIX;
-        hints.ai_socktype = SOCK_SEQPACKET;
+        hints.ai_socktype = SOCK_STREAM;
+        //hints.ai_socktype = SOCK_SEQPACKET;
         res = &hints;
     }
     for(struct addrinfo *p = res; p; p = p->ai_next){
@@ -267,14 +281,16 @@ int cc_sendmessage(int fd, const char *msg, int l){
     static char *tmpbuf = NULL;
     static int buflen = 0;
     if(l + 1 > buflen){
-        buflen = 1024 * (1 + l/1024);
-        char *newbuf = realloc(tmpbuf, buflen);
+        int newlen = 1024 * (1 + l/1024);
+        char *newbuf = realloc(tmpbuf, newlen);
         if(!newbuf){
             WARN("realloc()");
             LOGERR("realloc()");
+            pthread_mutex_unlock(&mutex);
             return FALSE;
         }
         tmpbuf = newbuf;
+        buflen = newlen;
     }
     DBG("send to fd %d:\n%s[%d]", fd, msg, l);
     memcpy(tmpbuf, msg, l);
@@ -337,6 +353,7 @@ cc_hresult cc_str2hresult(const char *str){
  * @return `val`
  */
 char *cc_get_keyval(char **keyval){
+    if(!keyval || !*keyval || !**keyval) return NULL;
     DBG("Got string %s", *keyval);
     // remove starting spaces in key
     while(isspace(**keyval)) ++(*keyval);
@@ -345,9 +362,11 @@ char *cc_get_keyval(char **keyval){
         *val++ = 0;
         while(isspace(*val)) ++val;
     }
-    DBG("val = %s (%zd bytes)", val, (val)?strlen(val):0);
+    DBG("val = %s (%zd bytes)", val, (val) ? strlen(val) : 0);
+    size_t len = strlen(*keyval);
+    if(len < 1) return NULL;
     // remove trailing spaces in key
-    char *e = *keyval + strlen(*keyval) - 1; // last key symbol
+    char *e = *keyval + len - 1; // last key symbol
     while(isspace(*e) && e > *keyval) --e;
     e[1] = 0;
     // now we have key (`str`) and val (or NULL)
@@ -393,7 +412,7 @@ cc_IMG *cc_getshm(key_t key, size_t imsize){
         }
     }
     flags = (imsize) ? 0 : SHM_RDONLY; // client opens memory in readonly mode
-    cc_IMG *ptr = shmat(shmid, NULL, 0);
+    cc_IMG *ptr = shmat(shmid, NULL, flags);
     if(ptr == (void*)-1){
         if(imsize) WARN(_("Can't attach SHM segment %d"), key);
         return NULL;
@@ -492,6 +511,7 @@ cc_strbuff *cc_strbufnew(size_t bufsize, size_t stringsize){
     b->buf = MALLOC(char, bufsize);
     b->string = MALLOC(char, stringsize + 1); // for terminated zero
     b->strlen = stringsize;
+    pthread_mutex_init(&b->mutex, NULL);
     return b;
 }
 void cc_strbufdel(cc_strbuff **buf){
@@ -505,6 +525,7 @@ cc_charbuff *cc_charbufnew(){
     cc_charbuff *b = MALLOC(cc_charbuff, 1);
     b->bufsize = BUFSIZ;
     b->buf = MALLOC(char, BUFSIZ);
+    pthread_mutex_init(&b->mutex, NULL);
     return b;
 }
 // set buflen to 0
@@ -535,9 +556,12 @@ int cc_charbuftest(cc_charbuff *b, size_t maxsize){
     if(!b) return FALSE;
     if(b->bufsize - b->buflen > maxsize + 1) return TRUE;
     size_t newblks = (maxsize + BUFSIZ) / BUFSIZ;
-    b->bufsize += BUFSIZ * newblks;
-    DBG("Realloc charbuf to %zd", b->bufsize);
-    b->buf = realloc(b->buf, b->bufsize);
+    size_t newsize = b->bufsize + BUFSIZ * newblks;
+    DBG("Realloc charbuf to %zd", newsize);
+    char *newbuf = realloc(b->buf, newsize);
+    if(!newbuf) return FALSE;
+    b->buf = newbuf;
+    b->bufsize = newsize;
     return TRUE;
 }
 void cc_charbufdel(cc_charbuff **buf){
@@ -778,6 +802,7 @@ int cc_addrecord(fitsfile *fp, char *rec){
         size_t l = eq - rec;
         if(l > FLEN_KEYWORD-1) l = FLEN_KEYWORD-1;
         memcpy(key, rec, l); key[l] = 0;
+        while(l > 0 && isspace((unsigned char)key[l-1])) key[--l] = 0;
         fits_update_card(fp, key, rec, &status);
     }else fits_write_record(fp, rec, &status);
     if(status) fits_report_error(stderr, status);
@@ -785,18 +810,19 @@ int cc_addrecord(fitsfile *fp, char *rec){
 }
 
 // get next record from external buffer, newlines==1 if every record ends with '\n'
-char *cc_nextkw(char *buf, char record[FLEN_CARD], int newlines){
+char *cc_nextkw(char *buf, char record[FLEN_CARD], int newlines, ptrdiff_t rest){
     char *nextline = NULL;
-    int l = FLEN_CARD;
+    int l = FLEN_CARD > (int)rest ? (int)rest : FLEN_CARD;
     if(newlines){
         char *e = strchr(buf, '\n');
         if(e){
             if(e - buf < FLEN_CARD) l = e - buf + 1;
             nextline = e + 1;
         }
-    }else nextline = buf + (FLEN_CARD - 1);
+    }else nextline = buf + (l - 1);
     strncpy(record, buf, l);
     if(l < FLEN_CARD) record[l] = 0;
+    else record[FLEN_CARD-1] = 0;
     return nextline;
 }
 
@@ -817,26 +843,25 @@ int cc_kwfromfile(fitsfile *fp, char *filename){
     char rec[FLEN_CARD], card[FLEN_CARD];
     char *data = buf->data, *x = strchr(data, '\n'), *eodata = buf->data + buf->len;
     int newlines = 0;
-    if(x && (x - data) < FLEN_CARD){ // we found newline -> this is a format with newlines
+    if(x && (x - data) <= FLEN_CARD){ // we found newline -> this is a format with newlines
         newlines = 1;
     }
     int written = 0;
     do{
-        data = cc_nextkw(data, rec, newlines);
-        if(data > eodata) break;
+        data = cc_nextkw(data, rec, newlines, eodata - data);
         int status = 0, kt = 0;
         fits_parse_template(rec, card, &kt, &status);
         if(status) fits_report_error(stderr, status);
         else{
             if(0 == cc_addrecord(fp, card)) ++written;
         }
-    }while(data && *data);
+    }while(data && data < eodata && *data);
     sl_munmap(buf);
     return written;
 }
 
-static size_t print_val(cc_partype_t t, void *val, char *buf, size_t bufl){
-    size_t l = 0;
+static int print_val(cc_partype_t t, void *val, char *buf, size_t bufl){
+    int l = 0;
     switch(t){
         case CC_PAR_INT:
             l = snprintf(buf, bufl, "%d", *(int*)val);
@@ -872,14 +897,14 @@ cc_hresult cc_plugin_customcmd(const char *str, cc_parhandler_t *handlers, cc_ch
     cc_parhandler_t *phptr = handlers;
     cc_hresult result = CC_RESULT_BADKEY;
     char buf[512];
-#define ADDL(...) do{if(ans){size_t l = snprintf(bptr, L, __VA_ARGS__); bptr += l; L -= l;}}while(0)
-#define PRINTVAL(v) do{if(ans){size_t l = print_val(phptr->type, phptr->v, bptr, L); bptr += l; L -= l;}}while(0)
+#define ADDL(...) do{if(ans){int l = snprintf(bptr, L, __VA_ARGS__); bptr += l; L -= l; if(L <= 0){buf[511] = 0; L = 0; bptr = &buf[511];}}}while(0)
+#define PRINTVAL(v) do{if(ans){int l = print_val(phptr->type, phptr->v, bptr, L); bptr += l; L -= l; if(L <= 0){buf[511] = 0; L = 0; bptr = &buf[511];}}}while(0)
     while(phptr->cmd){
         if(0 == strcmp(kptr, phptr->cmd)){
             char *bptr = buf; size_t L = 511;
             result = CC_RESULT_OK;
             if(phptr->checker) result = phptr->checker(str, ans);
-            if(phptr->ptr){ // setter/getter
+            if(result == CC_RESULT_OK && phptr->ptr){ // setter/getter
                 if(val){if(result == CC_RESULT_OK){// setter: change value only if [handler] returns OK (`handler` could be value checker)
                     int ival; float fval; double dval;
 #define UPDATE_VAL(type, val, pr) do{ \
@@ -924,8 +949,8 @@ cc_hresult cc_plugin_customcmd(const char *str, cc_parhandler_t *handlers, cc_ch
         cc_charbufaddline(ans, "Custom plugin commands:\n");
         phptr = handlers;
         while(phptr->cmd){
-            char *bptr = buf; size_t L = 511;
-            ADDL("\t%s", phptr->cmd);
+            char *bptr = buf; int L = 511;
+            ADDL("  %s", phptr->cmd);
             if(phptr->type != CC_PAR_NONE){
                 ADDL(" = (");
                 switch(phptr->type){
@@ -956,7 +981,7 @@ cc_hresult cc_plugin_customcmd(const char *str, cc_parhandler_t *handlers, cc_ch
                 }
             }
             ADDL(" - ");
-            ADDL("%s\n", phptr->helpstring);
+            ADDL("%s", phptr->helpstring);
             cc_charbufaddline(ans, buf);
             ++phptr;
         }
@@ -981,9 +1006,9 @@ cc_IMG *cc_newimage(uint8_t bitpix, int w, int h){
     cc_IMG *newima = calloc(1, sizeof(cc_IMG));
     if(!newima){
         WARN("calloc()");
-        return FALSE;
+        return NULL;
     }
-    int N = bitpix / 8;
+    int N = (bitpix + 7) / 8;
     if(N < 1 || N > 2){
         DBG("Error: %d bytes per pixel", N);
         free(newima);
@@ -996,13 +1021,40 @@ cc_IMG *cc_newimage(uint8_t bitpix, int w, int h){
         free(newima);
         return NULL;
     }
+    newima->bitpix = bitpix;
     newima->datasize = newima->bytelen = ds;
+    DBG("Allocated image %d/%d (%zd bytes)", w, h, ds);
     newima->w = w;
     newima->h = h;
     newima->MAGICK = CC_SHM_MAGIC;
     pthread_mutex_init(&newima->mutex, NULL);
     DBG("Created new image %dx%d", w, h);
     return newima;
+}
+
+/**
+ * @brief cc_fiximage - fix data size of target image (realloc if need)
+ * @param bitpix - 8/12/16
+ * @param w - target width
+ * @param h - target height
+ * @param i - image
+ * @return FALSE if failed
+ */
+int cc_fiximage(uint8_t bitpix, int w, int h, cc_IMG *i){
+    int N = (bitpix + 7) / 8;
+    if(N < 1 || N > 2) return FALSE;
+    size_t total = N * w * h;
+    if(i->datasize < total){
+        void *buf = realloc(i->data, total);
+        if(!buf) return FALSE;
+        i->data = buf;
+        i->datasize = total;
+    }
+    i->bitpix = bitpix;
+    i->bytelen = total;
+    i->w = w;
+    i->h = h;
+    return TRUE;
 }
 
 void cc_freeimage(cc_IMG **i){
@@ -1032,8 +1084,9 @@ int cc_copyimage(cc_IMG *dest, cc_IMG *src, int isshm){
         return FALSE;
     }
     DBG("Lock");
-    if(isshm) cc_lock_shm(FALSE);
-    else pthread_mutex_lock(&src->mutex);
+    if(isshm){
+        if(!cc_lock_shm(FALSE)) return FALSE;
+    }else pthread_mutex_lock(&src->mutex);
     pthread_mutex_lock(&dest->mutex);
     dest->MAGICK = CC_SHM_MAGIC;
     if(!dest->data || dest->datasize < src->bytelen){

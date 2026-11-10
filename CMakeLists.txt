@@ -1,9 +1,9 @@
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 4.0)
 set(PROJ ccd_capture)
 set(PROJLIB ccdcapture)
 set(MAJOR_VERSION "1")
 set(MID_VERSION "2")
-set(MINOR_VERSION "1")
+set(MINOR_VERSION "2")
 
 set(LIBSRC ccdcapture.c)
 set(SOURCES main.c cmdlnopts.c ccdfunc.c server.c client.c)
@@ -28,7 +28,7 @@ option(EXAMPLES "Some examples" OFF)
 option(ASTAR "Artifical star plugin" OFF)
 
 # default flags
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c99 -Wall -W -Wextra -fno-builtin-strlen")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -W -Wextra -fno-builtin-strlen")
 
 message("Install dir prefix: ${CMAKE_INSTALL_PREFIX}")
 if(NOT DEFINED LOCALEDIR)
@@ -42,7 +42,7 @@ endif()
 add_definitions(-D_XOPEN_SOURCE=1234 -D_DEFAULT_SOURCE -D_GNU_SOURCE -DLOCALEDIR=\"${LOCALEDIR}\"
         -DPACKAGE_VERSION=\"${VERSION}\" -DGETTEXT_PACKAGE=\"${PROJ}\"
         -DMINOR_VERSION=\"${MINOR_VERSION}\" -DMID_VERSION=\"${MID_VERSION}\"
-        -DMAJOR_VERSION=\"${MAJOR_VESION}\")
+        -DMAJOR_VERSION=\"${MAJOR_VERSION}\")
 
 set(CMAKE_COLOR_MAKEFILE ON)
 

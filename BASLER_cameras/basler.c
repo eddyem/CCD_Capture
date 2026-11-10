@@ -238,11 +238,11 @@ static int getgeom(){
     if(!getInt("OffsetX", &i)) return FALSE;
     camera.field.xoff = i.val;
     camera.array.xoff = i.val;
-    camera.array.w -= i.val;
+    //camera.array.w -= i.val;
     if(!getInt("OffsetY", &i)) return FALSE;
     camera.field.yoff = i.val;
     camera.array.yoff = i.val;
-    camera.array.h -= i.val;
+    //camera.array.h -= i.val;
     camera.geometry = camera.field;
     return TRUE;
 }
@@ -266,7 +266,7 @@ static int geometrylimits(cc_frameformat *max, cc_frameformat *step){
 
 static int setdevno(int N){
     if(N > camera.Ndevices - 1) return FALSE;
-    PYLONFN(PylonCreateDeviceByIndex, 0, &hDev);
+    PYLONFN(PylonCreateDeviceByIndex, N, &hDev);
     isopened = TRUE;
     PYLONFN(PylonDeviceOpen, hDev, PYLONC_ACCESS_MODE_CONTROL | PYLONC_ACCESS_MODE_STREAM | PYLONC_ACCESS_MODE_EXCLUSIVE);
     disableauto();
@@ -345,7 +345,7 @@ static int pollcapt(cc_capture_status *st, float *remain){
 static int capture(cc_IMG *ima){
     FNAME();
     //double __t0 = dtime();
-    if(!ima || !ima->data || !imgBuf || !isopened) return FALSE;
+    if(!ima || !ima->data || !imgBuf || !isopened  || !cc_fiximage(bitdepth, camera.geometry.w, camera.geometry.h, ima)) return FALSE;
     static int toohot = FALSE;
     float_values f;
     //TIMESTAMP("start capt");
@@ -377,19 +377,17 @@ static int capture(cc_IMG *ima){
     int width = grabResult.SizeX, height = grabResult.SizeY, stride = grabResult.SizeX + grabResult.PaddingX;
     //TIMESTAMP("start converting");
     if(bitdepth > 8){
-        int s2 = stride<<1;
+        int s2 = stride<<1, w2 = width*2;
         OMP_FOR()
         for(int y = 0; y < height; ++y){
-            uint8_t *Out = &((uint8_t*)ima->data)[y*width];
-            const uint8_t *In = &imgBuf[y*s2];
-            for(int x = 0; x < width; ++x){
-                *Out++ = *In; In += 2;
-            }
+            uint16_t *Out = &((uint16_t*)ima->data)[y*width];
+            const uint16_t *In = (uint16_t*)&imgBuf[y*s2];
+            memcpy(Out, In, w2);
         }
     }else{
         OMP_FOR()
         for(int y = 0; y < height; ++y){
-            uint16_t *Out = &((uint16_t*)ima->data)[y*width];
+            uint8_t *Out = &((uint8_t*)ima->data)[y*width];
             const uint8_t *In = &imgBuf[y*stride];
             memcpy(Out, In, width);
         }

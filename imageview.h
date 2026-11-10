@@ -21,6 +21,7 @@
 #include <GL/gl.h>
 #include <math.h>
 #include <pthread.h>
+#include <signal.h>
 #include <stdbool.h>
 #include <string.h>
 
@@ -66,7 +67,7 @@ typedef struct{
     uint8_t flip;       // flipping settings
     pthread_t thread;   // identificator of thread that changes window data
     pthread_mutex_t mutex;// mutex for operations with image
-    int killthread;     // flag for killing data changing thread & also signal that there's no threads
+    volatile sig_atomic_t killthread; // flag for killing data changing thread & also signal that there's no threads
 } windowData;
 
 /*

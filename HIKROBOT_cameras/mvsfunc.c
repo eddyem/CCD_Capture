@@ -267,7 +267,7 @@ static int cam_findCCD(){
             if(!pDeviceInfo) continue;
             PrintDeviceInfo(pDeviceInfo);
         }
-    } else{
+    }else{
         WARNX("No HIKROBOT cameras found");
         return FALSE;
     }
@@ -444,21 +444,23 @@ retn:
 
 static int cam_capt(cc_IMG *ima){
     if(!handle || !pdata) return FALSE;
-    if(!ima || !ima->data) return FALSE;
     MVCC_ENUMVALUE EnumValue;
     TRY(GetEnumValue, "PixelSize", &EnumValue);
     DBG("PixelSize = %u", EnumValue.nCurValue);
     ONOK(){
-        int bytes = ima->h*ima->w * ((7 + ima->bitpix) / 8), stbytes = stImageInfo.nWidth * stImageInfo.nHeight;
+        int bitpix = 16;
+        int stbytes = stImageInfo.nWidth * stImageInfo.nHeight;
         if(EnumValue.nCurValue == 16){
-            ima->bitpix = 12;
+            bitpix = 12;
             stbytes *= 2;
         }else if(EnumValue.nCurValue == 8){
-            ima->bitpix = 8;
+            bitpix = 8;
         }else{
             WARNX("Unsupported pixel size");
             return FALSE;
         }
+        if(!ima || !ima->data || !cc_fiximage(bitpix, stImageInfo.nWidth, stImageInfo.nHeight, ima)) return FALSE;
+        int bytes = cc_getNbytes(ima);
         if(bytes > pdatasz) bytes = pdatasz;
         if(bytes != stbytes) WARNX("Different sizes of image buffer & grabbed image");
         DBG("Copy %d bytes (stbytes=%d)", bytes, stbytes);
@@ -490,7 +492,7 @@ static int cam_setgeometry(cc_frameformat *f){
 static int cam_settemp(float t){
     if(!handle) return FALSE;
     if(!changeenum("DeviceTemperatureSelector", 0)) return FALSE;
-    if(!changeenum("DeviceTemperature", t)) return FALSE;
+    if(!changefloat("DeviceTemperature", t)) return FALSE;
     return TRUE;
 }
 
