@@ -593,17 +593,24 @@ static cc_hresult formathandler(int fd, const char *key, const char *val){
     char buf[64];
     cc_frameformat fmt;
     DBG("key=%s, val=%s", key, val);
+    int maxx = frmformatmax.xoff+frmformatmax.w - 1, maxy = frmformatmax.yoff+frmformatmax.h - 1;
     if(val){
         if(!camera->setgeometry) return CC_RESULT_FAIL;
         if(0 == strcmp(key, CC_CMD_FRAMEMAX)){
             DBG("CANT SET MAXFORMAT");
-            return CC_RESULT_BADKEY; // can't set maxformat
+            return CC_RESULT_FAIL; // can't set maxformat
         }
         if(4 != sscanf(val, "%d,%d,%d,%d", &fmt.xoff, &fmt.yoff, &fmt.w, &fmt.h)){
             DBG("Wrong format %s", val);
             return CC_RESULT_BADVAL;
         }
+        if(fmt.xoff < frmformatmax.xoff) fmt.xoff = frmformatmax.xoff;
+        else if(fmt.xoff >= maxx) fmt.xoff = maxx - 1;
+        if(fmt.yoff < frmformatmax.yoff) fmt.yoff = frmformatmax.yoff;
+        else if(fmt.yoff >= maxy) fmt.yoff = maxy - 1;
         fmt.w -= fmt.xoff; fmt.h -= fmt.yoff;
+        if(fmt.w < 1 || fmt.w > frmformatmax.w) fmt.w = maxx - fmt.xoff + 1;
+        if(fmt.h < 1 || fmt.h > frmformatmax.h) fmt.h = maxy - fmt.yoff + 1;
         int r = camera->setgeometry(&fmt);
         if(!r) return CC_RESULT_FAIL;
         curformat = camera->geometry;
@@ -611,9 +618,9 @@ static cc_hresult formathandler(int fd, const char *key, const char *val){
         fixima();
     }
     if(0 == strcmp(key, CC_CMD_FRAMEMAX)) snprintf(buf, 63, CC_CMD_FRAMEMAX "=%d,%d,%d,%d",
-        frmformatmax.xoff, frmformatmax.yoff, frmformatmax.xoff+frmformatmax.w, frmformatmax.yoff+frmformatmax.h);
+        frmformatmax.xoff, frmformatmax.yoff, maxx, maxy);
     else snprintf(buf, 63, CC_CMD_FRAMEFORMAT "=%d,%d,%d,%d",
-        camera->geometry.xoff, camera->geometry.yoff, camera->geometry.xoff+camera->geometry.w, camera->geometry.yoff+camera->geometry.h);
+        camera->geometry.xoff, camera->geometry.yoff, camera->geometry.xoff+camera->geometry.w-1, camera->geometry.yoff+camera->geometry.h-1);
     if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
     return CC_RESULT_SILENCE;
 }
