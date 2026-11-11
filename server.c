@@ -440,13 +440,19 @@ static cc_hresult binhandler(_U_ int fd, const char *key, const char *val){
         if(!camera->setbin(GP->hbin, GP->vbin)){
             return CC_RESULT_BADVAL;
         }
+        if(camera->setgeometry){
+            cc_frameformat fmt = camera->geometry; // fix for old ROI
+            if(!camera->setgeometry(&fmt))
+                return CC_RESULT_FAIL;
+            curformat = camera->geometry;
+        }
+        fixima();
     }
     if(!camera->getbin) return CC_RESULT_SILENCE;
     int r = camera->getbin(&GP->hbin, &GP->vbin);
     if(r){
         if(0 == strcmp(key, CC_CMD_HBIN)) snprintf(buf, 63, "%s=%d", key, GP->hbin);
         else snprintf(buf, 63, "%s=%d", key, GP->vbin);
-        //if(val) fixima();
         if(!cc_sendstrmessage(fd, buf)) return CC_RESULT_DISCONNECTED;
         return CC_RESULT_SILENCE;
     }
@@ -602,7 +608,7 @@ static cc_hresult formathandler(int fd, const char *key, const char *val){
         if(!r) return CC_RESULT_FAIL;
         curformat = camera->geometry;
         DBG("curformat: w=%d, h=%d", curformat.w, curformat.h);
-        //fixima();
+        fixima();
     }
     if(0 == strcmp(key, CC_CMD_FRAMEMAX)) snprintf(buf, 63, CC_CMD_FRAMEMAX "=%d,%d,%d,%d",
         frmformatmax.xoff, frmformatmax.yoff, frmformatmax.xoff+frmformatmax.w, frmformatmax.yoff+frmformatmax.h);
@@ -673,7 +679,7 @@ static cc_hresult _8bithandler(int fd, _U_ const char *key, const char *val){
         int s = atoi(val);
         if(s != 0 && s != 1) return CC_RESULT_BADVAL;
         if(!camera->setbitdepth(!s)) return CC_RESULT_FAIL;
-        //fixima();
+        fixima();
         GP->_8bit = s;
     }
     snprintf(buf, 63, CC_CMD_8BIT "=%d", GP->_8bit);
