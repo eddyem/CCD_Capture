@@ -71,7 +71,8 @@ static int startexp(){
 
 static int camcapt(cc_IMG *ima){
     static int n = 0;
-    if(!ima || !ima->data || !cc_fiximage(bitpix, camera.geometry.w, camera.geometry.h, ima)) return FALSE;
+    if(!ima || !ima->data ||
+        !cc_fiximage(bitpix, camera.geometry.w / curhbin, camera.geometry.h / curvbin, ima)) return FALSE;
 #ifdef EBUG
     double t0 = sl_dtime();
 #endif

@@ -168,7 +168,7 @@ add_custom_command(
     DEPENDS ru_file_updated
 )
 
-add_custom_command(
+add_custom_target(
     OUTPUT ru_file_updated
     COMMAND [ -f ${RU_FILE} ] && ${GETTEXT_MSGMERGE_EXECUTABLE} -Uis ${RU_FILE} ${PO_FILE} || cp ${PO_FILE} ${RU_FILE}
     COMMAND ${CMAKE_COMMAND} -E touch ru_file_updated
@@ -176,3 +176,5 @@ add_custom_command(
 )
 
 add_custom_target(MO_FILE ALL DEPENDS ${MO_FILE})
+add_dependencies(${PROJ} MO_FILE)
+install(FILES ${MO_FILE} DESTINATION "${LOCALEDIR}/ru/LC_MESSAGES")

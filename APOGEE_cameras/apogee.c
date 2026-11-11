@@ -46,7 +46,7 @@ static double expt[2] = {0.}; // min/max exposition time
 static double exptime = 0.; // actual exposition time
 static double tstart = 0.; // exposure start time
 static char whynot[BUFSIZ]; // temporary buffer for error messages
-static int imW = 0, imH = 0; // size of output image
+static int imW = 0, imH = 0; // size of output image (BINNED!)
 static int pid = -1, vid = -1;
 static int isexposuring = 0;
 
@@ -224,8 +224,8 @@ static int setgeometry(cc_frameformat *f){
     if(ApnGlueSetExpGeom(f->w, f->h, ow, 0, hbin, vbin,
                         f->xoff, f->yoff, &imW, &imH, whynot)){
         WARNX("Can't set geometry: %s", whynot);
-        imW = f->w;
-        imH = f->h;
+        imW = f->w / hbin;
+        imH = f->h / vbin;
     }else{
         camera.geometry = *f;
     }

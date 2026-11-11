@@ -462,7 +462,8 @@ retn:
 
 static int fli_capt(cc_IMG *ima){
     int bitpix = is16bit ? 16 : 8;
-    if(!ima || !ima->data || !cc_fiximage(bitpix, camera.geometry.w, camera.geometry.h, ima)) return FALSE;
+    if(!ima || !ima->data ||
+        !cc_fiximage(bitpix, camera.geometry.w / curhbin, camera.geometry.h / curvbin, ima)) return FALSE;
     for(int row = 0; row < ima->h; row++){
         void *ptr = NULL;
         if(is16bit) ptr = (void*)(((uint16_t*)ima->data) + row * ima->w);

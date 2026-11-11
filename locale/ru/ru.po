@@ -235,7 +235,7 @@ msgstr  "Не могу считать заголовок изображения по сокету"
 
 #: main.c:129
 msgid   "Can't run in client and server modes simultaneously"
-msgstr  ""
+msgstr  "Не могу одновременно запустить клиент и сервер"
 
 #: ccdfunc.c:684
 #, c-format
@@ -499,12 +499,12 @@ msgstr  "Преобразование гистограммы: %s"
 
 #: cmdlnopts.c:123
 msgid   "INET command socket port (omit if use on same host with server)"
-msgstr  ""
+msgstr  "порт командного сетевого сокета"
 
 #: cmdlnopts.c:124
 #, fuzzy
 msgid   "INET image socket port (default: port+1)"
-msgstr  "порт локального сетевого сокета передачи изображения"
+msgstr  "порт сетевого сокета передачи изображения"
 
 #: ccdfunc.c:90
 msgid   "Image not saved: neither filename nor filename prefix pointed"

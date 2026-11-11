@@ -313,17 +313,18 @@ static int startexp(){
 static int camcapt(cc_IMG *ima){
     TCHECK();
     int bitpix = toupcam.bytepix * 8;
-    if(!ima || !ima->data || !toupcam.data || !cc_fiximage(bitpix, camera.geometry.w, camera.geometry.h, ima)) return FALSE;
+    int realw = camera.geometry.w / toupcam.curbin, realh = camera.geometry.h / toupcam.curbin;
+    if(!ima || !ima->data || !toupcam.data || !cc_fiximage(bitpix, realw, realh, ima)) return FALSE;
     //DBG("LOCK");
     pthread_mutex_lock(&toupcam.mutex);
     size_t fullsz = ima->w * ima->h * toupcam.bytepix;
     if(toupcam.imsz != fullsz){
         if(toupcam.imsz < fullsz) fullsz = toupcam.imsz;
-        int realw = camera.geometry.w / toupcam.curbin;
         if(ima->w != realw) ima->w = realw;
         ima->h = fullsz / realw / toupcam.bytepix;
         WARNX("Asked image size (%zd) not equal real (%zd); set w=%d, h=%d!",
               ima->w * ima->h * toupcam.bytepix, toupcam.imsz, ima->w, ima->h);
+        ima->bytelen = fullsz;
     }
     memcpy(ima->data, toupcam.data, fullsz);
     toupcam.lastcapno = toupcam.imseqno;

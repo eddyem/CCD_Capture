@@ -345,7 +345,8 @@ static int pollcapt(cc_capture_status *st, float *remain){
 static int capture(cc_IMG *ima){
     FNAME();
     //double __t0 = dtime();
-    if(!ima || !ima->data || !imgBuf || !isopened  || !cc_fiximage(bitdepth, camera.geometry.w, camera.geometry.h, ima)) return FALSE;
+    if(!ima || !ima->data || !imgBuf || !isopened  ||
+        !cc_fiximage(bitdepth, camera.geometry.w / curhbin, camera.geometry.h / curvbin, ima)) return FALSE;
     static int toohot = FALSE;
     float_values f;
     //TIMESTAMP("start capt");
